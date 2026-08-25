@@ -16,6 +16,6 @@ services/worker-persistence/worker-persistence
 services/service-websocket/service-websocket
 services/worker-alert/worker-alert
 services/api-vehicle/api-vehicle
-worker-live/worker-live
+services/worker-live/worker-live
 cmd/migrate-tenant/migrate-tenant
 loadtest/loadtest
