@@ -1,0 +1,283 @@
+# =====================================================================
+# Alerting Rules — adatrack GPS (PRD §8.3 + Phase B4.1 thresholds)
+#
+# Reference thresholds (INCIDENT_RUNBOOK §4):
+#   CPU host/container  > 70% (5m) WARNING, > 85% CRITICAL
+#   Memory host         > 80% WARNING
+#   MySQL connections   > 80% max_connections CRITICAL
+#   NATS pending        > 50% max WARNING, > 90% CRITICAL
+#   Error rate          > 5% WARNING
+# =====================================================================
+groups:
+  - name: adatrack-cpu-memory
+    rules:
+      # Host CPU
+      - alert: HostCPUHigh
+        expr: 100 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100 > 70
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU tinggi (>70%)"
+          description: "CPU host {{ $labels.instance }} = {{ $value }}% selama 5 menit"
+
+      - alert: HostCPUCritical
+        expr: 100 - avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100 > 85
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Host CPU kritis (>85%)"
+          description: "CPU host {{ $labels.instance }} = {{ $value }}% > 85%"
+
+      - alert: HostMemoryHigh
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory host tinggi (>80%)"
+          description: "Memory host {{ $labels.instance }} {{ $value }}% — risiko OOM"
+
+      - alert: ContainerCPUHigh
+        expr: rate(container_cpu_usage_seconds_total{container!=""}[5m]) * 100 > 70
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container CPU tinggi"
+          description: "CPU container {{ .Labels.container }} > 70%"
+
+  - name: adatrack-mysql
+    rules:
+      - alert: MySQLConnectionsCritical
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Koneksi MySQL > 80% max_connections"
+          description: "threads_connected mendekati max_connections — cek connection pooling"
+
+      - alert: MySQLSlowQueriesRising
+        expr: rate(mysql_global_status_slow_queries[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow queries melonjak"
+          description: "Terlalu banyak slow query — cek indeks / query history < 1.5s"
+
+  - name: adatrack-services
+    rules:
+      - alert: ServiceDown
+        expr: up{job="adatrack-services"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service down: {{ $labels.instance }}"
+          description: "Endpoint /metrics {{ $labels.instance }} tidak merespon — cek dokumentasi runbook"
+
+      - alert: NATSPendingHigh
+        expr: nats_pending_messages > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NATS pending tinggi (>5000)"
+          description: "Pending NATS {{ $value }} — cek worker persistence"
+
+      - alert: NATSPendingCritical
+        expr: sum(nats_pending_messages) > 9000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "NATS pending > 90% of max (9000) — PRD §8.3"
+          description: "Page on-call, periksa persistence layer"
+
+      - alert: MySQLInsertLatencyCritical
+        expr: histogram_quantile(0.99, sum(rate(mysql_insert_duration_seconds_bucket[5m])) by (le, job)) > 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL insert latency p99 > 10s — PRD §8.3"
+          description: "Cek DB, mungkin perlu optimasi query"
+
+      - alert: TenantResolutionLatencyCritical
+        expr: histogram_quantile(0.99, sum(rate(tenant_resolution_duration_ms_bucket[5m])) by (le, job)) > 500
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tenant resolution p99 > 500ms — PRD §8.3"
+          description: "Master DB lambat; cek pool/koneksi"
+
+      # Pool exhaustion: mysql_pool_connections_active dibaca per company;
+      # default MYSQL_MAX_OPEN_CONNS = 50 → threshold 90% ≈ 45.
+      - alert: CompanyDBPoolExhaustion
+        expr: max by (job) (mysql_pool_connections_active) > 45
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Company DB pool > 90% max — PRD §8.3"
+          description: "Scale koneksi DB atau investigasi pool stuck ({{ $labels.company_code }})"
+
+      - alert: TenantLookupErrorRateHigh
+        expr: sum(rate(tenant_lookup_errors_total[5m])) / clamp_min(sum(rate(nats_messages_consumed_total[5m])), 1) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tenant lookup error rate > 5% — PRD §8.3"
+          description: "Device tak terdaftar membanjiri; cek allowlist vehicle_imei_map"
+
+      - alert: TCPConnectionRateHigh
+        expr: rate(tcp_connections_total{job="adatrack-services"}[5m]) * 60 > 450
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Koneksi TCP baru tinggi (>450/menit)"
+          description: "Proyeksi mendekati limit 4500 koneksi aktif — scale ingestion layer"
+
+      - alert: ErrorRateHigh
+        expr: sum(rate(mysql_insert_errors_total[5m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Insert errors terdeteksi"
+          description: "Batch insert gagal — cek P10 database"
+
+      - alert: WebSocketBroadcastLatency
+        expr: histogram_quantile(0.99, sum(rate(ws_message_duration_seconds_bucket{job="adatrack-services"}[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebSocket broadcast latency > 1s (PRD §8.3 WARNING)"
+          description: "P99 broadcast > 1 detik — cek jaringan / I11 runbook"
+
+  # =====================================================================
+  # READ REPLICA PostgreSQL (keputusan 2026-08-25 — PRD §7.1.1)
+  # Replika = skala BACA; primary = tulis. Alert menjaga dua risiko utama:
+  #   a) slot menahan WAL sampai penuhkan disk PRIMARY;
+  #   b) standby putus/lambat → sumber baca basi.
+  # Metrik dari postgres-exporter (queries.yaml) — hanya ada series saat
+  # provider=postgres; saat provider=mysql grup ini sunyi (tidak fire).
+  # =====================================================================
+  - name: adatrack-postgres-replication
+    rules:
+      - alert: PgSlotWALRetentionWarning
+        expr: max(adatrack_pg_replication_slots_retained_wal_bytes) > 536870912 # 512 MiB
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slot replikasi menahan WAL > 512MiB"
+          description: "Slot {{ $labels.slot_name }} menahan {{ $value | humanize1024 }}B — replica lama mati? Cek postgres_replica / pertimbangkan resync."
+
+      - alert: PgSlotWALRetentionCritical
+        expr: max(adatrack_pg_replication_slots_retained_wal_bytes) > 2147483648 # 2 GiB
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Slot replikasi menahan WAL > 2GiB — risiko penuhkan disk primary"
+          description: "Perbaiki replica atau drop+resync slot '{{ $labels.slot_name }}' (runbook HIGH_AVAILABILITY.md). JANGAN asal drop: data replika harus di-basebackup ulang."
+
+      - alert: PgSlotNotReserved
+        expr: max(adatrack_pg_replication_slots_wal_status_code) >= 2 # unreserved | lost
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "wal_status slot = unreserved/lost — WAL sudah dibuang"
+          description: "Replika tidak bisa lanjut streaming; wajib pg_basebackup ulang (resync). Slot code={{ $value }}."
+
+      - alert: PgSlotExtended
+        expr: max(adatrack_pg_replication_slots_wal_status_code) == 1 # extended
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "wal_status slot = extended (mendekati batas retensi)"
+          description: "Segera hidupkan replica atau resync sebelum status memburuk ke unreserved."
+
+      - alert: PgSlotInactive
+        expr: max(adatrack_pg_slot_health_inactive) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ada replication slot tidak aktif > 10m"
+          description: "Replika pemilik slot tidak terhubung — cek container postgres_replica."
+
+      - alert: PgStandbyNotStreaming
+        expr: max(adatrack_pg_replication_status_streaming_count) < 1
+        for: 5m
+        labels:
+          severity: warning
+          # read replica basi → query baca ke :5533 tidak segar
+        annotations:
+          summary: "Tidak ada standby streaming — read replica basi"
+          description: "Query baca ke replika berisiko stale; cek postgres_replica & jalankan replication-status.sh"
+
+      - alert: PgExporterAbsent
+        expr: absent(adatrack_pg_replication_status_streaming_count)
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "postgres-exporter tidak mengirim metrik replikasi"
+          description: "Normal bila DATABASE_PROVIDER=mysql (exporter ber-profile postgres). Selain itu cek container postgres-exporter."
+
+      - alert: PgReplicationLagHigh
+        expr: max(adatrack_pg_replication_status_max_replay_lag_seconds) > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Lag replay replika > 60s"
+          description: "Read replica tertinggal {{ $value }}s — query baca mungkin basi; cek IO/network/disk replika"
+
+      - alert: PgReplicationLagCritical
+        expr: max(adatrack_pg_replication_status_max_replay_lag_seconds) > 300
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Lag replay replika > 5m"
+          description: "Replika nyaris tak berguna sbg read replica; investigasi sekarang"
+
+  # =====================================================================
+  # DISK HOST (proteksi lintas-provider: MySQL WAL/binlog maupun PG WAL-slot
+  # sama-sama bisa memenuhi disk primary). node-exporter wajib memakai
+  # --path.rootfs=/rootfs agar filesystem host terlihat.
+  # =====================================================================
+  - name: adatrack-disk
+    rules:
+      - alert: HostDiskSpaceWarning
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint=~"/(rootfs)?$",fstype!~"tmpfs|overlay.*|squashfs|nsfs"}
+             / node_filesystem_size_bytes{mountpoint=~"/(rootfs)?$",fstype!~"tmpfs|overlay.*|squashfs|nsfs"}) * 100 > 80
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk host > 80% ({{ $labels.device }})"
+          description: "Terpakai {{ printf \"%.1f\" $value }}% — WAL slot/binlog/dump bisa memenuhi disk"
+
+      - alert: HostDiskSpaceCritical
+        expr: |
+          (1 - node_filesystem_avail_bytes{mountpoint=~"/(rootfs)?$",fstype!~"tmpfs|overlay.*|squashfs|nsfs"}
+             / node_filesystem_size_bytes{mountpoint=~"/(rootfs)?$",fstype!~"tmpfs|overlay.*|squashfs|nsfs"}) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk host KRITIS > 90% ({{ $labels.device }})"
+          description: "DB dapat berhenti menulis. Bersihkan dump lama/WAL atau tambah kapasitas SEKARANG"

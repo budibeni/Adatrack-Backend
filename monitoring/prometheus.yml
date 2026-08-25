@@ -1,0 +1,76 @@
+# =====================================================================
+# Prometheus configuration — adatrack GPS Monitoring (Phase B4)
+#
+# Topologi dev saat ini: keenam service Go berjalan DI HOST (bind dari
+# backend/.env), infra (MySQL/Redis/NATS) di container compose. Prometheus
+# berjalan di container → men-scrape service host via host.docker.internal
+# (docker-compose.monitoring.yml memberi extra_hosts host-gateway).
+#
+# Port metrik aktual (backend/.env):
+#   ingestion-tcp      :8090   (/metrics)
+#   worker-persistence :8091
+#   worker-live        :8092
+#   worker-alert       :8093
+#   service-websocket  :9090   (WEBSOCKET_METRICS_ADDR)
+#   api-vehicle        :8081   (/metrics di server HTTP utamanya)
+# =====================================================================
+
+global:
+  scrape_interval: 15s      # default scrape every 15s
+  evaluation_interval: 15s  # evaluate rules every 15s
+
+# Alerting: Alertmanager endpoint (see docker-compose.monitoring.yml)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+# Alerting + SLO recording rules (PRD §8.3 + B4)
+rule_files:
+  - /etc/monitoring/alerting-rules.yml
+  - /etc/monitoring/slo-rules.yml
+
+scrape_configs:
+  # Service Go di HOST dev (via host-gateway).
+  - job_name: "adatrack-services"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "host.docker.internal:8090" # ingestion-tcp
+          - "host.docker.internal:8091" # worker-persistence
+          - "host.docker.internal:8092" # worker-live
+          - "host.docker.internal:8093" # worker-alert
+          - "host.docker.internal:9090" # service-websocket metrics
+          - "host.docker.internal:8081" # api-vehicle
+
+  # Alternatif bila service dijalankan sebagai container (nama network compose).
+  - job_name: "adatrack-services-containers"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "ingestion-tcp:9201"
+          - "worker-persistence:9202"
+          - "worker-live:9203"
+          - "worker-alert:9204"
+    # Target container yang tidak hidup hanya menandai up==0 utk job ini;
+    # alert ServiceDown difilter ke job adatrack-services agar tidak berisik.
+
+  - job_name: "node"  # host metrics (CPU, Mem, Disk)
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: "cadvisor"  # per-container CPU/Memory
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: "mysql"  # MySQL engine metrics
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]
+
+  # PostgreSQL engine + READ REPLICA metrics (slot WAL, streaming, lag).
+  # Target akan tampak DOWN bila provider=mysql — itu normal (exporter
+  # ber-profile "postgres"); alert PG berbasis series, bukan up==0.
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+

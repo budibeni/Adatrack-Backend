@@ -1,0 +1,62 @@
+{
+  "__inputs": [],
+  "__requires": [{"type": "grafana", "id": "grafana", "name": "Grafana", "version": "8.0.0"}, {"type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0"}],
+  "annotations": {"list": []},
+  "editable": true,
+  "title": "adatrack Core",
+  "uid": "adatrack-core",
+  "version": 1,
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Host CPU Usage (%)",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "100 - avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100", "legendFormat": "{{instance}}", "refId": "A"}],
+      "datasource": null
+    },
+    {
+      "id": 2,
+      "title": "Memory Host Usage (%)",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100", "legendFormat": "{{instance}}", "refId": "A"}],
+      "datasource": null
+    },
+    {
+      "id": 3,
+      "title": "HTTP Request Duration P99",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))", "legendFormat": "{{endpoint}}", "refId": "A"}],
+      "datasource": null
+    },
+    {
+      "id": 4,
+      "title": "Active WebSocket Connections",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "ws_connections_active", "legendFormat": "{{topic}}", "refId": "A"}],
+      "datasource": null
+    },
+    {
+      "id": 5,
+      "title": "MySQL Connections vs Max",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "mysql_global_status_threads_connected", "legendFormat": "connected", "refId": "A"}, {"expr": "mysql_global_variables_max_connections", "legendFormat": "max", "refId": "B"}],
+      "datasource": null
+    },
+    {
+      "id": 6,
+      "title": "NATS Pending Messages",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "sum(nats_pending_messages) by (subject)", "legendFormat": "{{subject}}", "refId": "A"}],
+      "datasource": null
+    }
+  ]
+}

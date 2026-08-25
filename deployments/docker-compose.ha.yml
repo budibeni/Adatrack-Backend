@@ -1,0 +1,117 @@
+# =====================================================================
+# Docker Compose — High Availability rehearsal (Phase B4)
+#
+# Replikasi PRIMARY → REPLICA untuk latihan failover sesuai
+# docs/HIGH_AVAILABILITY.md §3/§5 (active-passive, "murah & mudah").
+#
+#   - mysql-replica    : replica MySQL (GTID)              — profile "mysql"
+#   - postgres-replica : replica PostgreSQL (streaming + slot) — profile "postgres"
+#   - redis-replica    : replica Redis                     — selalu ikut
+#
+# Profile mengikuti DATABASE_PROVIDER di backend/.env (PRD §7.1.1): overlay
+# ini aman dijalankan di bawah provider mana pun karena HANYA replica engine
+# terpilih yang dibuat.
+#
+# Jalankan (di samping compose dev yang sudah UP):
+#   cd backend/deployments && docker compose -f docker-compose.ha.yml \
+#        --env-file ../.env up -d      # COMPOSE_PROFILES dibaca dari ../.env
+#
+# Setup & verifikasi replikasi READ — backend/scripts/replication/:
+#   MySQL    : setup-mysql-replication.sh      (GTID; replica read_only)
+#   Postgres : setup-postgres-replication.sh   (streaming WAL + slot; idempoten)
+#   Redis    : drill-redis-failover.sh         (latihan failover §5 #4 + fail-back)
+#   Status   : replication-status.sh           (MySQL + PostgreSQL + Redis)
+# CATATAN (2026-08-25): replika DATABASE = READ replica utk skala baca; primary
+# = jalur tulis. Bukan untuk backup/failover — skrip promote-* database telah
+# DIHAPUS. Pengecualian sesuai dokumen HA §3/§5: REPLICA REDIS tetap memakai
+# jalur failover-cepat (promote-redis-replica.sh) karena sifatnya state live
+# TTL 5 mnt — latih via drill-redis-failover.sh (§7 #5).
+#
+# CATATAN JUJUR: simulasi 1-host utk rehearsal prosedur; produksi tetap
+# 2 server fisik sesuai dokumen HA.
+# =====================================================================
+name: adatrack_gps_system
+
+services:
+  mysql-replica:
+    image: mysql:8.0
+    container_name: mysql_replica
+    restart: unless-stopped
+    # Hanya relevan saat DATABASE_PROVIDER=mysql (PRD §7.1.1).
+    profiles: ["mysql"]
+    command:
+      - --server-id=2
+      - --relay-log-recovery=ON
+      - --read-only=ON
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+    env_file:
+      - ../.env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - "${MYSQL_REPLICA_PORT:-3407}:3306"
+    volumes:
+      - mysql_replica_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: postgres_replica
+    restart: unless-stopped
+    # Hanya relevan saat DATABASE_PROVIDER=postgres (PRD §7.1.1).
+    profiles: ["postgres"]
+    # Bootstrap streaming replication: pg_basebackup -R dari primary lalu
+    # start READ-ONLY sebagai read replica — melayani SELECT; tulis tetap ke
+    # primary (read/write split, PRD §7.1.1). Bukan untuk backup/failover.
+    entrypoint: ["/usr/local/bin/replica-entrypoint.sh", "postgres"]
+    env_file:
+      - ../.env
+    environment:
+      # Superuser cluster replica identik dgn primary agar clone konsisten.
+      POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+      POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-user@gps2608}
+      PGDATA: /var/lib/postgresql/data
+      REPLICA_SOURCE_HOST: host.docker.internal
+      REPLICA_SOURCE_PORT: ${POSTGRES_PORT:-5432}
+      REPLICATION_SLOT: ${POSTGRES_REPLICATION_SLOT:-pg_replica_slot}
+      POSTGRES_REPLICA_USER: ${POSTGRES_REPLICA_USER:-replicator}
+      POSTGRES_REPLICA_PASSWORD: ${POSTGRES_REPLICA_PASSWORD:-repl-pass-change-me}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${POSTGRES_REPLICA_PORT:-5433}:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ../database/pg-replication/replica-entrypoint.sh:/usr/local/bin/replica-entrypoint.sh:ro
+    healthcheck:
+      # Sehat = bisa menerima koneksi DAN berada dalam mode recovery (standby).
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} && psql -U $${POSTGRES_USER} -d $${POSTGRES_DB} -tAc 'SELECT pg_is_in_recovery()' | grep -q t"]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+
+  redis-replica:
+    image: redis:7-alpine
+    container_name: redis_replica
+    restart: unless-stopped
+    command: ["redis-server", "--replicaof", "host.docker.internal", "${REDIS_PORT}", "--replica-read-only", "yes"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${REDIS_REPLICA_PORT:-6490}:6379"
+    volumes:
+      - redis_replica_data:/data
+
+volumes:
+  mysql_replica_data:
+  postgres_replica_data:
+  redis_replica_data:
+

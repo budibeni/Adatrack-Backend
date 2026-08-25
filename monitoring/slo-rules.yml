@@ -1,0 +1,42 @@
+# =====================================================================
+# SLO Recording & Alerting Rules — adatrack GPS (Phase B4)
+#
+# Konversi target "uptime >= 99.9%" (PRD §12) menjadi SLO berbasis
+# availability scrape: error budget = 0.1% downtime dalam window.
+#   - adatrack:slo_availability_ratio_30d : rasio up 30 hari (SLO utama)
+#   - adatrack:slo_error_budget_remaining : sisa budget (0..1, negatif = burn)
+# Alert berdasarkan burn rate cepat (jam) & lambat (3 hari).
+# =====================================================================
+groups:
+  - name: adatrack-slo
+    interval: 30s
+    rules:
+      - record: adatrack:slo_availability_ratio_5m
+        expr: avg(avg_over_time(up{job="adatrack-services"}[5m]))
+
+      - record: adatrack:slo_availability_ratio_30d
+        expr: avg(avg_over_time(up{job="adatrack-services"}[30d]))
+
+      - record: adatrack:slo_error_budget_remaining
+        expr: 1 - ((1 - adatrack:slo_availability_ratio_30d) / 0.001)
+
+      # Burn rate cepat: kehilangan ketersediaan >14.4x budget dalam 1 jam
+      # (= ~2% downtime 1 jam) → page.
+      - alert: SLOBudgetBurnFast
+        expr: (1 - adatrack:slo_availability_ratio_5m) > (14.4 * 0.001)
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SLO burn rate cepat — uptime terancam < 99.9%"
+          description: "Availability 5m {{ $value | humanizePercentage }}; periksa ServiceDown / runbook insiden"
+
+      # Sisa budget habis (≤ 0) pada window 30 hari → post-mortem wajib.
+      - alert: SLOBudgetExhausted
+        expr: adatrack:slo_error_budget_remaining <= 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Error budget 30 hari habis (<99.9% uptime)"
+          description: "Post-mortem analysis diperlukan (PRD §8.3 baris 'System uptime < 99.9%')"

@@ -1,0 +1,86 @@
+# =====================================================================
+# postgres-exporter-queries.yaml — custom collector untuk READ REPLICA
+# PostgreSQL (keputusan 2026-08-25, PRD §7.1.1).
+#
+# Dimuat via --extend.query-path pada service `postgres-exporter`
+# (docker-compose.monitoring.yml, profile "postgres").
+#
+# Desain: setiap query SELALU mengembalikan >= 1 baris (aggregate) sehingga
+# series Prometheus tidak pernah "hilang" selama exporter hidup → alert
+# `< 1` / `> 0` bisa dievaluasi andal. Detail slot per-nama tetap diberikan
+# lewat group terpisah berlabel slot_name.
+# =====================================================================
+
+adatrack_pg_replication_slots:
+  # Retensi WAL per-slot: bila replica mati lama, restart_lsn tidak maju dan
+  # pg_wal_lsn_diff membesar = disk PRIMARY tergerus (risiko utama read-replica).
+  query: |
+    SELECT
+      slot_name,
+      CASE wal_status
+        WHEN 'reserved'   THEN 0
+        WHEN 'extended'   THEN 1
+        WHEN 'unreserved' THEN 2
+        WHEN 'lost'       THEN 3
+        ELSE -1
+      END AS wal_status_code,
+      CASE active WHEN true THEN 1 ELSE 0 END AS active_flag,
+      COALESCE(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn), 0)::double precision AS retained_wal_bytes
+    FROM pg_replication_slots
+  metrics:
+    - slot_name:
+        usage: "LABEL"
+        description: "Nama physical replication slot"
+    - wal_status_code:
+        usage: "GAUGE"
+        description: "0=reserved 1=extended 2=unreserved 3=lost"
+    - active_flag:
+        usage: "GAUGE"
+        description: "1 bila walsender aktif terhubung"
+    - retained_wal_bytes:
+        usage: "GAUGE"
+        description: "Byte WAL ditahan slot sejak restart_lsn"
+
+adatrack_pg_slot_health:
+  # Baris agregat tunggal — penjaga series: slot hilang/didrop pun tetap
+  # terekspor (total=0) sehingga PgSlotInactive & absent() bisa beda kasus.
+  query: |
+    SELECT
+      count(*)::double precision                                        AS total,
+      count(*) FILTER (WHERE NOT active)::double precision              AS inactive,
+      count(*) FILTER (WHERE wal_status <> 'reserved')::double precision AS non_reserved
+    FROM pg_replication_slots
+  metrics:
+    - total:
+        usage: "GAUGE"
+        description: "Jumlah replication slot"
+    - inactive:
+        usage: "GAUGE"
+        description: "Slot aktif=false (replika pemiliknya tidak streaming)"
+    - non_reserved:
+        usage: "GAUGE"
+        description: "Slot dengan wal_status != reserved"
+
+adatrack_pg_replication_status:
+  # Baris agregat tunggal dari sisi PRIMARY: apakah ada standby streaming,
+  # dan seberapa jauh ketinggalan replay-nya (kesegaran READ replica).
+  query: |
+    SELECT
+      count(*) FILTER (WHERE state = 'streaming')::double precision AS streaming_count,
+      count(*)::double precision                                    AS walreceivers,
+      COALESCE(max(EXTRACT(EPOCH FROM replay_lag)), 0)::double precision AS max_replay_lag_seconds,
+      COALESCE(max(pg_wal_lsn_diff(sent_lsn, replay_lsn)), 0)::double precision AS max_replay_delta_bytes
+    FROM pg_stat_replication
+  metrics:
+    - streaming_count:
+        usage: "GAUGE"
+        description: "Standby dalam state streaming (target >= 1)"
+    - walreceivers:
+        usage: "GAUGE"
+        description: "Total walsender/walreceiver terhubung"
+    - max_replay_lag_seconds:
+        usage: "GAUGE"
+        description: "Lag replay maksimum (detik) antar standby"
+    - max_replay_delta_bytes:
+        usage: "GAUGE"
+        description: "Selisih sent vs replay LSN maksimum (byte)"

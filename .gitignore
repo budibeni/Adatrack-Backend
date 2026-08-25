@@ -1,0 +1,21 @@
+# Environment files — JANGAN commit secret/dev config
+.env
+.env.*
+!.env.example
+
+# Log & artifact lokal
+*.log
+*.test
+
+# Binary hasil build lokal — pakai path spesifik (jangan basename,
+# karena basename sama dgn nama direktori service sehingga ikut
+# mengecualikan direktori tsb beserta .env.example di dalamnya)
+services/ingestion-tcp/ingestion-tcp
+services/ingestion-tcp/ingestion-tcp.test
+services/worker-persistence/worker-persistence
+services/service-websocket/service-websocket
+services/worker-alert/worker-alert
+services/api-vehicle/api-vehicle
+worker-live/worker-live
+cmd/migrate-tenant/migrate-tenant
+loadtest/loadtest

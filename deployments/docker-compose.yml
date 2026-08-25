@@ -1,0 +1,14 @@
+name: adatrack_gps_system
+
+# ============================================================================
+# DEPLOYMENTS compose (PROD baseline) — DELEGASI ke sumber kebenaran dev.
+# Definisi service MySQL/Redis/NATS/jetStream tinggal di
+# `backend/docker-compose.yml` (B0 "single source of truth").
+# File ini men-`include` file tsb sehingga konvensi deployment sama persis
+# dengan dev (tanpa drift). Volume name di-scope per project; untuk prod
+# over-ride nama volume / env via `.env` deployment.
+#
+#   docker compose -f backend/deployments/docker-compose.yml up -d
+# ============================================================================
+include:
+  - ../docker-compose.yml

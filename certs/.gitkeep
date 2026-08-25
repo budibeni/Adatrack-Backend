@@ -1,0 +1,3 @@
+# Placeholder — dev TLS certificates are generated at runtime by
+# backend/scripts/gen-dev-cert.sh (self-signed, for local dev HTTPS/WSS only).
+# Production must use a real CA/cert (certbot/ACM) — never commit keys.

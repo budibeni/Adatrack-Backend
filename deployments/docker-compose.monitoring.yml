@@ -1,0 +1,156 @@
+# =====================================================================
+# Docker Compose — Monitoring & Observability Stack (Phase B4.1)
+#
+# Menambah layer observasi ke infra dev (backend/docker-compose.yml):
+#   - prometheus         : scrape aplikasi + infra + DB
+#   - alertmanager       : alerting (email/slack placeholder rules)
+#   - grafana            : dashboard "adatrack Core"
+#   - node-exporter      : metrik host CPU/Memory/Disk
+#   - cadvisor           : metrik per-container
+#   - mysqld-exporter    : metrik engine MySQL (profile "mysql" saja — tidak up
+#                          saat DATABASE_PROVIDER=postgres, lihat PRD §7.1.1)
+#   - postgres-exporter  : metrik engine PostgreSQL + replikasi/WAL-slot
+#                          (profile "postgres" — mirror dari mysqld-exporter;
+#                          custom queries: monitoring/postgres-exporter-queries.yaml)
+#
+# Jalankan: docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+# =====================================================================
+name: adatrack_gps_system
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    restart: unless-stopped
+    # B4: service Go berjalan di HOST dev — beri akses host-gateway agar
+    # target host.docker.internal:<port> bisa di-scrape dari container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - "--config.file=/etc/monitoring/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ../monitoring:/etc/monitoring:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - cadvisor
+      - node-exporter
+      # mysqld-exporter SENGAJA tidak di-depend: service itu ber-profile "mysql"
+      # (PRD §7.1.1); depends_on ke service non-aktif membuat `up` gagal.
+      - alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      # Datasource Prometheus otomatis (provisioned)
+      GF_INSTALL_PLUGINS: "grafana-clock-panel"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Mount dashboard JSON so the file-based provisioning provider
+      # (provisioning/dashboards/dashboards.yml -> /var/lib/grafana/dashboards)
+      # can actually find + import "adatrack Core" (B4.1).
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node_exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      # WAJIB agar node_filesystem_* merefleksikan disk HOST (alert disk
+      # adatrack-disk bergantung padanya).
+      - "--path.rootfs=/rootfs"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    ports:
+      - "9100:9100"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    ports:
+      - "8080:8080"
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: mysqld_exporter
+    restart: unless-stopped
+    # Hanya relevan untuk provider "mysql" (PRD §7.1.1). Saat provider=postgres,
+    # exporter ini tidak ikut up dan target scrape mysql_* akan down (normal);
+    # postgres_exporter = work-on-later.
+    profiles: ["mysql"]
+    # B4: berjalan standalone di samping compose dev (adatrack_gps_dev) —
+    # MySQL dijangkau via host-gateway pada port ter-publish MYSQL_PORT
+    # (bukan DNS "mysql" milik network proyek lain).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # mysqld_exporter v0.15.1 tidak mendukung DATA_SOURCE_NAME.
+      # Password di-expand via os.ExpandEnv dari .my.cnf virtual [client] section.
+      MYSQLD_EXPORTER_PASSWORD: "${MYSQL_PASSWORD}"
+    command:
+      - --mysqld.username=${MYSQL_USER}
+      - --mysqld.address=host.docker.internal:${MYSQL_PORT:-3306}
+    ports:
+      - "9104:9104"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres_exporter
+    restart: unless-stopped
+    # Mirror dari mysqld-exporter: hanya relevan saat provider "postgres"
+    # (PRD §7.1.1). Men-scrape PRIMARY (sumber pg_stat_replication/slots).
+    profiles: ["postgres"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Format terpisah URI/USER/PASS agar password dgn karakter khusus
+      # (@, |, dll.) TIDAK perlu di-URL-encode.
+      DATA_SOURCE_URI: "host.docker.internal:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-adatrack_gps_db}?sslmode=${POSTGRES_SSLMODE:-disable}"
+      DATA_SOURCE_USER: "${POSTGRES_USER:-adatrack_gps_user}"
+      DATA_SOURCE_PASS: "${POSTGRES_PASSWORD:-}"
+      PG_EXPORTER_EXTEND_QUERY_PATH: "/etc/pg-exporter/postgres-exporter-queries.yaml"
+    volumes:
+      - ../monitoring/postgres-exporter-queries.yaml:/etc/pg-exporter/postgres-exporter-queries.yaml:ro
+
+volumes:
+  prometheus_data:
+  grafana_data:

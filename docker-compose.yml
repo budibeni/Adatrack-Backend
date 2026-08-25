@@ -1,0 +1,142 @@
+name: adatrack_gps_system
+
+# ============================================================================
+# SINGLE SOURCE OF TRUTH — docker-compose DEV (B0).
+# Infrastruktur dev: MySQL 8.0 (multi-tenant), Redis 7, NATS JetStream.
+#
+# DATABASE PROVIDER FLEKSIBEL (PRD §7.1.1): provider DB persistent dipilih via
+# DATABASE_PROVIDER di backend/.env ("mysql" | "postgres"). Service `mysql` dan
+# `postgres` masing-masing diberi compose profile sesuai nama provider-nya,
+# sehingga HANYA database terpilih yang ikut up (Redis & NATS selalu up):
+#   - Disarankan : backend/scripts/compose-up.sh up -d
+#                  (menurunkan profil OTOMATIS dari DATABASE_PROVIDER + validasi)
+#   - Manual     : set COMPOSE_PROFILES=<provider> di backend/.env lalu
+#                  `cd backend && docker compose up -d`
+#   - Deployments: docker compose -f backend/deployments/docker-compose.yml \
+#                    --env-file backend/.env up -d
+# Ganti provider = `docker compose down` dulu, ubah DATABASE_PROVIDER, lalu
+# provisikan schema provider tujuan (database/init atau database/init-pg).
+# Data TIDAK bermigrasi otomatis antar engine.
+# Service Go (ingestion-tcp, worker-*, api, websocket) berjalan di host dev
+# memakai env backend/.env, MENYAMBUNG ke container infra via port host.
+#
+# Jalankan:  docker compose up -d            (dari backend/)
+# Verifikasi: docker compose ps  → 3 service sehat.
+# `deployments/docker-compose.yml` men-delegasikan (include) file ini agar
+# tidak terjadi drift definisi (isi dev = prod-baseline).
+# ============================================================================
+
+services:
+  # Provider "mysql" (alternatif) — hanya up bila COMPOSE_PROFILES mengandung
+  # "mysql" (diturunkan dari DATABASE_PROVIDER oleh backend/scripts/compose-up.sh;
+  # lihat header file ini & PRD §7.1.1). Default proyek = postgres.
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
+    profiles: ["mysql"]
+    # GTID + binlog wajib di PRIMARY agar menjadi sumber replikasi
+    # (mysql-replica pada deployments/docker-compose.ha.yml ber-GTID;
+    # paritas dgn flag replika — setup-mysql-replication.sh bergantung ini).
+    command:
+      - --server-id=1
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MASTER_DB_NAME: ${MASTER_DB_NAME}
+      COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX}
+    ports:
+      - "${MYSQL_PORT}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./database/migrations:/db/migrations:ro
+      - ./database/seed:/db/seed:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # --- Provider alternatif "postgres": hanya up bila DATABASE_PROVIDER=postgres
+  #     (COMPOSE_PROFILES=postgres) — MySQL tidak perlu ikut up (PRD §7.1.1).
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: always
+    profiles: ["postgres"]
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+      POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-user@gps2608}
+      # Replikasi streaming (deployments/docker-compose.ha.yml, PRD §7.1.1):
+      # dipakai init-script pembuat role + pg_hba saat pertama init volume.
+      POSTGRES_REPLICA_USER: ${POSTGRES_REPLICA_USER:-replicator}
+      POSTGRES_REPLICA_PASSWORD: ${POSTGRES_REPLICA_PASSWORD:-repl-pass-change-me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init-pg:/docker-entrypoint-initdb.d:ro
+      # Seed referensi wilayah (250 negara s/d 83k desa) — dipakai oleh
+      # 02b-seed-reference.sh saat init pertama (paritas dgn jalur MySQL).
+      - ./database/seed:/db/seed:ro
+      # 04-create-replicator-role.sh (di dalam init-pg/) menyiapkan role+pg_hba
+      # streaming replication otomatis saat init pertama. Volume LAMA → jalankan
+      # scripts/replication/setup-postgres-replication.sh.
+      - ./database/migrations:/db/migrations:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "${POSTGRES_USER:-adatrack_gps_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats
+    restart: always
+    env_file:
+      - .env
+    command: ["-js", "-sd", "/data", "-m", "8222"] # JetStream + persist /data + HTTP monitoring (healthcheck)
+    ports:
+      - "${NATS_CLIENT_PORT}:4222" # client
+      - "${NATS_HEALTHZ_PORT}:8222" # monitoring/health
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  mysql_data:
+  redis_data:
+  nats_data:
+  postgres_data:

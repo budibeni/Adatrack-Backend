@@ -1,0 +1,26 @@
+# =====================================================================
+# Alertmanager — routing + receiver untuk alert adatrack GPS
+# Konfigurasi email/slack: isi token & alamat sesuai lingkungan produksi.
+# =====================================================================
+
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: "default"
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: "default"
+      continue: true
+
+receivers:
+  - name: "default"
+    # Contoh email. Untuk SMS/email aktual, konfigurasikan webhook/SMTP di sini.
+    email_configs:
+      - to: "oncall@example.com"
+        from: "adatrack-alerts@example.com"
+        smarthost: "smtp.example.com:587"
+        auth_username: "adatrack-alerts@example.com"
+        auth_password: "CHANGE-ME"
