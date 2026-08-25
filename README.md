@@ -4,11 +4,6 @@ Backend **Real-Time GPS Tracking & adatrack Management** untuk platform pelacaka
 **5.000+ device**, telemetri setiap **5 detik**, dengan target latensi end-to-end **< 800 ms**,
 throughput **2.000 msg/s peak**, dan uptime **>= 99,9%**.
 
-> Dokumentasi proyek yang lebih lengkap: `PRD_UPDATED.md`, `PRD_GAPS_ANALYSIS.md`,
-> `FEATURE_COMPLETENESS_ANALYSIS.md` dan road map backend `.clinerules/03-backend-phases.md`.
-> Penanganan insiden (CPU/Memory/RDS/service stuck/dll): `docs/INCIDENT_RUNBOOK.md`.
-> Panduan umum pemakaian: `docs/PANDUAN.md`.
-
 ---
 
 ## Daftar Isi
@@ -132,7 +127,7 @@ backend/
 
 ## Model Multi-Tenant
 
-Arsitektur **master DB (auth & governance) + company DB (data)** ala PRD §6.
+Arsitektur **master DB (auth & governance) + company DB (data)**
 
 ### Master DB — `adatrack_gps_master`
 
@@ -172,7 +167,7 @@ Satu schema per tenant, berisi: `user_vehicles`, `vehicles`, `telemetry_logs`
 
 ## Persistence Provider (MySQL / PostgreSQL)
 
-PRD §7.1.1: engine persistent dipilih via `DATABASE_PROVIDER`.
+engine persistent dipilih via `DATABASE_PROVIDER`.
 
 - `DATABASE_PROVIDER=postgres` (**default**) vs `DATABASE_PROVIDER=mysql`.
 - docker-compose hanya men-start DB terpilih (compose profiles), memakai helper
@@ -301,13 +296,13 @@ secara otomatis → `adatrack_gps_{company_code}` (dan schema PG setara).
 
 ## Konvensi NATS Subjects
 
-Subjek NATS (dari PRD §subjects / GAPS):
+Subjek NATS:
 
 - `telemetry.raw.<imei>`   : raw telemetry (queue `persistence`, `live`, `ws`, `alert`)
 - `telemetry.live.<imei>`  : update live ke WebSocket
 - `telemetry.error.<imei>` : parse error
 - `alert.geofence.<company>` · `alert.speed.*` · `alert.offline.*` · `alert.battery.*` · `alert.sos.*`
-- `alert.fuel.<company>`   : (PRD v1.3.0 Modul 7, fuel) — plan B5a
+- `alert.fuel.<company>`   : 
 - `media.event.<company>` · `media.capture.request.<company>` : dashcam event media — plan B5b
 - `notify.alert.<vehicle_id>` : notifikasi ke WebSocket (fan-out RBAC)
 - Queue groups: `persistence`, `live`, `websocket`, `alert` (+ `media` utk service-media).
@@ -350,13 +345,12 @@ Hasil validasi: E2E 1000 msg/s sustained **0 data loss**; 2000 msg/s peak 0 loss
 
 ## Monitoring, SLO & Alerting
 
-- Stack: `monitoring/prometheus.yml`, `monitoring/alerting-rules.yml` (baris
-  lengkap PRD §8.3), `monitoring/slo-rules.yml` (uptime ≥ 99,9% → error budget +
+- Stack: `monitoring/prometheus.yml`, `monitoring/alerting-rules.yml`, `monitoring/slo-rules.yml` (uptime ≥ 99,9% → error budget +
   burn-rate), `monitoring/grafana/`.
 - Exporter: `mysqld_exporter`/`postgres-exporter`, `node_exporter`, `cAdvisor`.
 - Up via `deployments/docker-compose.monitoring.yml`.
 - Setiap service Go expose `/metrics` (`client_golang` Go collector: goroutines,
-  GC, resident memory) + matrix PRD §8.1 (`http_*`, `ws_*`, `rbac_*`, `tenant_*`,
+  GC, resident memory) + matrix (`http_*`, `ws_*`, `rbac_*`, `tenant_*`,
   `db_*`, `alerts_created_total`, `batch_insert_*`, dsb.).
 - Insiden (CPU/Memory/RDS/service stuck): ikuti `docs/INCIDENT_RUNBOOK.md`.
 
@@ -410,21 +404,14 @@ Ringkas (detail lengkap di `.clinerules/03-backend-phases.md`):
 | B1 — Pipeline Data (ingestion → Redis + MySQL/Postgres) | ✅ |
 | B2 — service-websocket (REST + WS + RBAC) | ✅ |
 | B3 — Alerts, Geofence & api-vehicle | ✅ |
-| B5a — Fuel Sensor (PRD v1.3.0) | ⬜ Not started |
-| B5b — Dashcam Event Media (PRD v1.3.0) | ⬜ Not started |
+| B5a — Fuel Sensor | ⬜ Not started |
+| B5b — Dashcam Event Media | ⬜ Not started |
 | B4 — Performance, Monitoring, Hardening, HA | 🔄 In progress |
 
 > **Frontend (F1–F4) tidak boleh dimulai sampai seluruh fase backend (B0–B4)
 > selesai** — lihat `.clinerules/02-roadmap-overview.md` & `.clinerules/04-frontend-phases.md`.
 
 ---
-
-## Referensi
-
-- `PRD_UPDATED.md`, `PRD_GAPS_ANALYSIS.md`, `FEATURE_COMPLETENESS_ANALYSIS.md`
-- `docs/HIGH_AVAILABILITY.md`, `docs/POSTGRES_PROVIDER.md`,
-  `docs/INCIDENT_RUNBOOK.md`, `docs/DATABASE_ARCHITECTURE.md`,
-  `docs/PANDUAN.md`, `docs/device-connection-guide.md`, `docs/docs-device/`
 
 **Catatan:** Dokumen ini adalah panduan ringkas; untuk detail batas/hak hingga
 persetujuan ide teknis, selalu acu `.env.example`, `docker-compose.yml`, dan
