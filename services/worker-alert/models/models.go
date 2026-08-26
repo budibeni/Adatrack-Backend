@@ -20,16 +20,23 @@ type TelemetryMessage struct {
 	Acc         *bool   `json:"acc,omitempty"`
 	Timestamp   int64   `json:"timestamp"`
 	Raw         string  `json:"raw,omitempty"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 // Alert types as stored in alerts.alert_type (company migration 008).
 const (
-	AlertTypeGeofence  = "GEOFENCE_BREACH"
-	AlertTypeSpeed     = "OVERSPEEDING"
-	AlertTypeOffline   = "OFFLINE"
-	AlertTypeBattery   = "BATTERY_LOW"
-	AlertTypeSOS       = "SOS"
-	AlertTypeRouteDev  = "ROUTE_DEVIATION"
+	AlertTypeGeofence = "GEOFENCE_BREACH"
+	AlertTypeSpeed    = "OVERSPEEDING"
+	AlertTypeOffline  = "OFFLINE"
+	AlertTypeBattery  = "BATTERY_LOW"
+	AlertTypeSOS      = "SOS"
+	AlertTypeRouteDev = "ROUTE_DEVIATION"
+	AlertTypeFuelDrop = "FUEL_DROP" // B5a: fuel sensor
+	AlertTypeRefuel   = "REFUEL"    // B5a: fuel sensor
 )
 
 // Alert lifecycle status values (alerts.status enum, lowercase).
@@ -43,8 +50,8 @@ const (
 type AlertRecord struct {
 	ID          uint64
 	VehicleID   uint64
-	AlertType   string  // GEOFENCE_BREACH | OVERSPEEDING | OFFLINE | BATTERY_LOW | SOS | ROUTE_DEVIATION
-	Severity    string  // low | medium | high | critical
+	AlertType   string // GEOFENCE_BREACH | OVERSPEEDING | OFFLINE | BATTERY_LOW | SOS | ROUTE_DEVIATION
+	Severity    string // low | medium | high | critical
 	Description string
 	Status      string
 	VehicleLat  *float64
@@ -54,13 +61,13 @@ type AlertRecord struct {
 
 // GeofenceDef is one active geofence loaded from the company DB (migration 005).
 type GeofenceDef struct {
-	ID            uint64
-	Name          string
-	AreaType      string // "circle" | "polygon"
-	CenterLat     float64 // circle only (from GeoJSON Point)
-	CenterLon     float64
-	RadiusMeters  float64 // circle only
-	Boundary      [][2]float64 // polygon only: [{lat,lon},...] from boundary_points or GeoJSON ring
+	ID           uint64
+	Name         string
+	AreaType     string  // "circle" | "polygon"
+	CenterLat    float64 // circle only (from GeoJSON Point)
+	CenterLon    float64
+	RadiusMeters float64      // circle only
+	Boundary     [][2]float64 // polygon only: [{lat,lon},...] from boundary_points or GeoJSON ring
 }
 
 // GeofenceState tracks per-zone inside/outside state for a vehicle (Redis
@@ -72,24 +79,34 @@ type GeofenceState struct {
 
 // SpeedConfig is one row of speed_configs (company migration 007).
 type SpeedConfig struct {
-	VehicleID     *int64  // nil = global default
+	VehicleID     *int64 // nil = global default
 	SpeedLimitKMH float64
 	GraceMargin   float64
+}
+
+// FuelConfig is one row of fuel_configs (B5a, company migration 014).
+// vehicle_id nil = default global company; per-vehicle row menang.
+type FuelConfig struct {
+	VehicleID       *int64  // nil = global default
+	DropThreshold   float64 // delta turun yang memicu FUEL_DROP
+	RefuelThreshold float64 // delta naik yang memicu REFUEL
+	WindowSeconds   int     // window antar pembacaan yang dibandingkan
+	Enabled         bool
 }
 
 // RouteAssignment is one active route_assignment joined with routes + vehicles
 // (company migrations 011 + 012).
 type RouteAssignment struct {
-	AssignmentID  uint64
-	RouteID       uint64
-	RouteName     string
-	VehicleID     uint64
-	IMEI          string
-	DriverUserID  uint64
-	Status        string // not_started | in_progress | completed | delayed
-	StartedAt     *time.Time
-	Waypoints     []Waypoint
-	EstimatedSec  *int
+	AssignmentID uint64
+	RouteID      uint64
+	RouteName    string
+	VehicleID    uint64
+	IMEI         string
+	DriverUserID uint64
+	Status       string // not_started | in_progress | completed | delayed
+	StartedAt    *time.Time
+	Waypoints    []Waypoint
+	EstimatedSec *int
 }
 
 // Waypoint is one point of a planned route.
@@ -109,9 +126,8 @@ type NotifPreference struct {
 
 // OpenSOSAlert is an unacknowledged SOS alert due for automatic escalation.
 type OpenSOSAlert struct {
-	ID            uint64
-	VehicleID     uint64
-	CreatedAt     time.Time
+	ID             uint64
+	VehicleID      uint64
+	CreatedAt      time.Time
 	AcknowledgedAt *time.Time
 }
-

@@ -16,9 +16,9 @@ import (
 
 // Package-level app state injected once by main via Init.
 var (
-	appCfg    *internal.Config
-	appRedis  *internal.RedisClient
-	appTenant *tenant.Manager // master + per-company DB pools (PRD §6)
+	appCfg      *internal.Config
+	appRedis    *internal.RedisClient
+	appTenant   *tenant.Manager // master + per-company DB pools (PRD §6)
 	metricsHTTP http.Handler
 )
 
@@ -84,6 +84,12 @@ func writeSuccess(c *gin.Context, status int, data interface{}, page ...*models.
 		resp.Pagination = page[0]
 	}
 	c.JSON(status, resp)
+}
+
+// writeSuccessWithTotal writes a success envelope with a top-level total_records
+// (GAP #1 — history-style endpoints whose data is an array of points).
+func writeSuccessWithTotal(c *gin.Context, status int, data interface{}, total int64) {
+	c.JSON(status, models.OkResponse{Status: "success", Data: data, TotalRecords: &total})
 }
 
 // writeError writes the GAP #3 error envelope.
@@ -266,4 +272,3 @@ func atoiDefault(s string, def int) int {
 	}
 	return n
 }
-

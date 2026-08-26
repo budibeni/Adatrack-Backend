@@ -15,6 +15,11 @@ type TelemetryMessage struct {
 	HDOP        float64 `json:"hdop,omitempty"`
 	Battery     uint8   `json:"battery_level,omitempty"`
 	Timestamp   int64   `json:"timestamp"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 // LiveState is stored under Redis key adatrack_gps:{company_code}:vehicle:state:<IMEI>
@@ -28,6 +33,10 @@ type LiveState struct {
 	Heading     int16   `json:"heading"`
 	Status      string  `json:"status"`
 	LastSeen    int64   `json:"last_seen"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	FuelLevel *float64 `json:"fuel_level,omitempty"`
+	FuelTempC *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 // Batch / TTL tuning for the live state writer.

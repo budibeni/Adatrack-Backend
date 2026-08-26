@@ -95,6 +95,37 @@ func (s *companyStore) InsertAlert(a models.AlertRecord) (uint64, error) {
 	return uint64(id), nil
 }
 
+// FuelConfigFor returns the effective fuel config (B5a, migration 014): an
+// enabled vehicle-specific row wins over the global default (vehicle_id IS
+// NULL). READ path (replica).
+func (s *companyStore) FuelConfigFor(vehicleID uint64) (models.FuelConfig, bool, error) {
+	rows, err := s.ro.Query(
+		`SELECT vehicle_id, drop_threshold, refuel_threshold, window_seconds, enabled
+		 FROM fuel_configs WHERE enabled = TRUE AND (vehicle_id = ? OR vehicle_id IS NULL)
+		 ORDER BY (vehicle_id IS NULL) ASC`, // vehicle-specific first
+		vehicleID,
+	)
+	if err != nil {
+		return models.FuelConfig{}, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			vid sql.NullInt64
+			cfg models.FuelConfig
+		)
+		if err := rows.Scan(&vid, &cfg.DropThreshold, &cfg.RefuelThreshold, &cfg.WindowSeconds, &cfg.Enabled); err != nil {
+			return models.FuelConfig{}, false, err
+		}
+		if vid.Valid {
+			v := vid.Int64
+			cfg.VehicleID = &v
+		}
+		return cfg, true, rows.Err()
+	}
+	return models.FuelConfig{}, false, rows.Err()
+}
+
 // HasOpenAlert reports whether an open alert of alertType already exists for
 // the vehicle (dedup guard for OFFLINE / BATTERY_LOW background monitors).
 func (s *companyStore) HasOpenAlert(vehicleID uint64, alertType string) (bool, error) {
@@ -136,5 +167,3 @@ func (s *companyStore) SpeedConfigFor(vehicleID uint64) (models.SpeedConfig, boo
 	}
 	return models.SpeedConfig{}, false, rows.Err()
 }
-
-

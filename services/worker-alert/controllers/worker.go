@@ -30,12 +30,12 @@ type WorkerAlert struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	routesMu   sync.RWMutex
-	routes     map[string]*models.RouteAssignment // key: company|imei
-	deviating  map[string]bool                    // key: assignmentKey -> currently outside threshold
-	sosMu      sync.Mutex
-	sosLast    map[string]time.Time // key: company|imei -> last SOS trigger time
-	batteryMu  sync.Mutex
+	routesMu    sync.RWMutex
+	routes      map[string]*models.RouteAssignment // key: company|imei
+	deviating   map[string]bool                    // key: assignmentKey -> currently outside threshold
+	sosMu       sync.Mutex
+	sosLast     map[string]time.Time // key: company|imei -> last SOS trigger time
+	batteryMu   sync.Mutex
 	batteryLast map[string]time.Time // dedup window for BATTERY_LOW
 
 	metrics *alertMetrics
@@ -54,6 +54,9 @@ type store interface {
 	// SpeedConfigFor resolves the effective speed config (vehicle-specific
 	// active row first, then global vehicle_id IS NULL).
 	SpeedConfigFor(vehicleID uint64) (models.SpeedConfig, bool, error)
+	// FuelConfigFor resolves the effective fuel config (B5a, migration 014):
+	// vehicle-specific active row first, then global vehicle_id IS NULL.
+	FuelConfigFor(vehicleID uint64) (models.FuelConfig, bool, error)
 	// ActiveGeofences lists geofences applicable to the vehicle (linked via
 	// geofence_vehicles; circle + polygon).
 	ActiveGeofences(vehicleID uint64) ([]models.GeofenceDef, error)
@@ -103,4 +106,3 @@ func (wa *WorkerAlert) internalRegistry() prometheus.Gatherer {
 	}
 	return prometheus.DefaultGatherer
 }
-

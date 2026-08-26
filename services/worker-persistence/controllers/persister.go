@@ -20,10 +20,11 @@ import (
 )
 
 var (
-	mu      sync.Mutex
-	pending []models.TelemetryRow
-	flushCh chan struct{}
-	natsCli *internal.NATSClient
+	mu          sync.Mutex
+	pending     []models.TelemetryRow
+	pendingFuel []models.TelemetryRow // B5a: fuel-only rows → fuel_logs
+	flushCh     chan struct{}
+	natsCli     *internal.NATSClient
 	// tenantMgr resolves company_code → company DB pool (worker-persistence
 	// task #6 / PRD §6.2 dynamic DB routing).
 	tenantMgr *tenant.Manager
@@ -59,11 +60,15 @@ var (
 		Help:    "company_code → DB pool resolution latency (ms)",
 		Buckets: prometheus.ExponentialBuckets(0.05, 2, 10),
 	})
+	fuelRowsPositionless = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "fuel_rows_positionless_total",
+		Help: "B5a fuel-only rows routed to fuel_logs (no telemetry_logs entry, no silent drop)",
+	})
 )
 
 // RegisterMetrics registers worker-persistence specific collectors.
 func RegisterMetrics(reg *prometheus.Registry) {
-	reg.MustRegister(messagesProcessed, batchInsertSize, batchInsertErrors, retryAttempts, tenantRoutingDuration)
+	reg.MustRegister(messagesProcessed, batchInsertSize, batchInsertErrors, retryAttempts, tenantRoutingDuration, fuelRowsPositionless)
 }
 
 // Configure binds the TenantManager + NATS clients (called once by main).
@@ -89,9 +94,14 @@ func Stop() {
 	mu.Lock()
 	snapshot := pending
 	pending = nil
+	snapshotFuel := pendingFuel
+	pendingFuel = nil
 	mu.Unlock()
 	if len(snapshot) > 0 {
 		insertBatch(snapshot)
+	}
+	if len(snapshotFuel) > 0 {
+		insertFuelBatch(snapshotFuel)
 	}
 	done := make(chan struct{})
 	go func() {
@@ -129,17 +139,30 @@ func handleMsg(msg *nats.Msg) error {
 		Satellites:  t.Satellites,
 		HDOP:        t.HDOP,
 		Battery:     t.Battery,
+		FuelLevel:   t.FuelLevel,
+		FuelVolume:  t.FuelVolume,
+		FuelTempC:   t.FuelTempC,
 	}
 	if row.CompanyCode == "" {
 		row.CompanyCode = "default" // fallback sebelum company terdaftar (PRD §6)
 	}
+	// B5a: fuel-only message (fuel reading present, no GPS fix) → fuel_logs.
+	// Position rows keep flowing to telemetry_logs even when they carry a
+	// merged fuel field (live merge path), so the flag is explicit here.
+	if row.FuelLevel != nil && row.Lat == 0 && row.Lon == 0 && row.Speed == 0 {
+		row.IsFuelOnly = true
+	}
 
 	mu.Lock()
-	pending = append(pending, row)
-	needFlush := len(pending) >= models.MaxBatchSize
+	if row.IsFuelOnly {
+		pendingFuel = append(pendingFuel, row)
+	} else {
+		pending = append(pending, row)
+	}
+	full := len(pending) >= models.MaxBatchSize || len(pendingFuel) >= models.MaxBatchSize
 	mu.Unlock()
 
-	if needFlush {
+	if full {
 		select {
 		case flushCh <- struct{}{}:
 		default:
@@ -162,7 +185,7 @@ func flusher() {
 			drainPending()
 		case <-tick.C:
 			mu.Lock()
-			nonEmpty := len(pending) > 0
+			nonEmpty := len(pending) > 0 || len(pendingFuel) > 0
 			mu.Unlock()
 			if nonEmpty {
 				drainPending()
@@ -173,23 +196,29 @@ func flusher() {
 	}
 }
 
-// drainPending snapshots the buffer and hands it to insertBatch.
+// drainPending snapshots both buffers and hands them to the insert paths.
 func drainPending() {
 	mu.Lock()
-	if len(pending) == 0 {
+	if len(pending) == 0 && len(pendingFuel) == 0 {
 		mu.Unlock()
 		return
 	}
 	rows := pending
 	pending = []models.TelemetryRow{}
+	fuelRows := pendingFuel
+	pendingFuel = []models.TelemetryRow{}
 	mu.Unlock()
 	insertBatch(rows)
+	insertFuelBatch(fuelRows)
 }
 
 // insertBatch persists rows into the company telemetry_logs table with retry +
 // error publishing. Rows are grouped per company_code and each group is inserted
 // into its own company DB (dynamic tenant routing, PRD §6.2).
 func insertBatch(rows []models.TelemetryRow) {
+	if len(rows) == 0 {
+		return
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -198,6 +227,87 @@ func insertBatch(rows []models.TelemetryRow) {
 			insertCompanyBatch(code, group)
 		}
 	}()
+}
+
+// insertFuelBatch (B5a) persists fuel-only rows into company fuel_logs with
+// retry + error publishing — same tenant routing pattern as insertBatch.
+func insertFuelBatch(rows []models.TelemetryRow) {
+	if len(rows) == 0 {
+		return
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		groups := GroupByCompany(rows)
+		for code, group := range groups {
+			insertFuelCompanyBatch(code, group)
+		}
+	}()
+}
+
+// insertFuelCompanyBatch inserts a group of fuel-only rows into
+// adatrack_gps_{code}.fuel_logs. Same retry/backoff/error-publish semantics as
+// insertCompanyBatch. Positionless readings never enter telemetry_logs; the
+// fuel_rows_positionless_total counter keeps the path observable (no silent drop).
+func insertFuelCompanyBatch(companyCode string, rows []models.TelemetryRow) {
+	start := time.Now()
+	db, err := resolveCompanyDB(companyCode)
+	tenantRoutingDuration.Observe(float64(time.Since(start).Microseconds()) / 1000.0)
+	if err != nil {
+		batchInsertErrors.WithLabelValues(companyCode).Inc()
+		slog.Error("tenant routing failed for fuel batch; rows moved to telemetry.error",
+			"company", companyCode, "rows", len(rows), "error", err)
+		for _, r := range rows {
+			publishErrFn(r.IMEI, []byte("tenant:routing:fuel"))
+		}
+		return
+	}
+
+	columns := []string{
+		"vehicle_id", "imei", "company_code", "fuel_level", "fuel_volume", "fuel_temp_c", "timestamp",
+	}
+	values := make([][]interface{}, len(rows))
+	for i, r := range rows {
+		values[i] = []interface{}{
+			r.VehicleID,
+			r.IMEI,
+			strings.ToLower(companyCode),
+			r.FuelLevel,  // *float64 → NULL bila nil
+			r.FuelVolume, // *float64 → NULL bila nil
+			r.FuelTempC,  // *float64 → NULL bila nil
+			r.EventTS,    // DATETIME (parseTime=true)
+		}
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= models.MaxRetries; attempt++ {
+		_, lastErr = internal.BatchInsertDB(db, dialect.Current(), "fuel_logs", columns, values,
+			internal.MySQLInsertDuration, internal.MySQLInsertErrors)
+		if lastErr == nil {
+			fuelRowsPositionless.Add(float64(len(rows)))
+			messagesProcessed.WithLabelValues(companyCode).Add(float64(len(rows)))
+			slog.Info("fuel batch inserted", "rows", len(rows), "company", companyCode)
+			return
+		}
+		if attempt < models.MaxRetries && isTransientError(lastErr) {
+			retryAttempts.Inc()
+			delay := models.BaseDelay * time.Duration(1<<uint(attempt))
+			slog.Warn("fuel batch insert failed, retrying", "company", companyCode,
+				"attempt", attempt+1, "delay", delay, "error", lastErr)
+			time.Sleep(delay)
+			continue
+		}
+		break
+	}
+
+	// Retries exhausted -> publish each failed record to telemetry.error.<IMEI>.
+	batchInsertErrors.WithLabelValues(companyCode).Inc()
+	slog.Error("fuel batch insert failed after retries", "company", companyCode,
+		"rows", len(rows), "error", lastErr)
+	payload := []byte("batch:fail:fuel")
+	for _, r := range rows {
+		publishError(r.IMEI, payload)
+	}
 }
 
 // GroupByCompany buckets rows by CompanyCode (case-insensitive), preserving
@@ -253,7 +363,7 @@ func insertCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 
 	var lastErr error
 	for attempt := 0; attempt <= models.MaxRetries; attempt++ {
-				_, lastErr = internal.BatchInsertDB(db, dialect.Current(), "telemetry_logs", columns, values,
+		_, lastErr = internal.BatchInsertDB(db, dialect.Current(), "telemetry_logs", columns, values,
 			internal.MySQLInsertDuration, internal.MySQLInsertErrors)
 		if lastErr == nil {
 			batchInsertSize.Observe(float64(len(rows)))

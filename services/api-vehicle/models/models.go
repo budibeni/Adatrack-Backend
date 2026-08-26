@@ -8,9 +8,10 @@ import (
 
 // OkResponse is the standard success envelope: { status, data, pagination? }.
 type OkResponse struct {
-	Status     string          `json:"status"`
-	Data       interface{}     `json:"data"`
-	Pagination *PaginationInfo `json:"pagination,omitempty"`
+	Status       string          `json:"status"`
+	Data         interface{}     `json:"data"`
+	Pagination   *PaginationInfo `json:"pagination,omitempty"`
+	TotalRecords *int64          `json:"total_records,omitempty"` // GAP #1: riwayat berformat array titik
 }
 
 // PaginationInfo describes page/limit/total for list endpoints.
@@ -40,24 +41,24 @@ type MasterUser struct {
 	PasswordHash string
 	FullName     string
 	// --- Enterprise-standard identity fields (migration 011) ---
-	Username            string       // nullable; COALESCE('') in query
-	FirstName           string       // nullable; COALESCE('') in query
-	LastName            string       // nullable; COALESCE('') in query
-	PhoneNumber         string       // nullable; E.164; COALESCE('') in query
-	EmailVerified       bool         // NOT NULL DEFAULT FALSE
-	PhoneVerified       bool         // NOT NULL DEFAULT FALSE
-	MFAEnabled          bool         // NOT NULL DEFAULT FALSE
-	Locale              string       // NOT NULL DEFAULT 'id'
-	AvatarURL           string       // nullable; COALESCE('') in query
-	FailedLoginAttempts int         // NOT NULL DEFAULT 0
-	PasswordChangedAt   *time.Time  // nullable
-	LockedUntil         *time.Time  // nullable — account lockout expiry
-	DeletedAt           *time.Time  // nullable — soft delete (NULL = active)
-	LastLogin           *time.Time  // nullable
-	CreatedBy           *uint64     // nullable FK → master.users.id (audit)
-	UpdatedBy           *uint64     // nullable FK → master.users.id (audit)
-	Role                string       // global role: Admin | Manager | Operator | Driver
-	Status              string       // active | inactive | suspended
+	Username            string     // nullable; COALESCE('') in query
+	FirstName           string     // nullable; COALESCE('') in query
+	LastName            string     // nullable; COALESCE('') in query
+	PhoneNumber         string     // nullable; E.164; COALESCE('') in query
+	EmailVerified       bool       // NOT NULL DEFAULT FALSE
+	PhoneVerified       bool       // NOT NULL DEFAULT FALSE
+	MFAEnabled          bool       // NOT NULL DEFAULT FALSE
+	Locale              string     // NOT NULL DEFAULT 'id'
+	AvatarURL           string     // nullable; COALESCE('') in query
+	FailedLoginAttempts int        // NOT NULL DEFAULT 0
+	PasswordChangedAt   *time.Time // nullable
+	LockedUntil         *time.Time // nullable — account lockout expiry
+	DeletedAt           *time.Time // nullable — soft delete (NULL = active)
+	LastLogin           *time.Time // nullable
+	CreatedBy           *uint64    // nullable FK → master.users.id (audit)
+	UpdatedBy           *uint64    // nullable FK → master.users.id (audit)
+	Role                string     // global role: Admin | Manager | Operator | Driver
+	Status              string     // active | inactive | suspended
 }
 
 // AuthUser is the authenticated caller stored in the gin context.
@@ -75,7 +76,7 @@ type LoginResponse struct {
 	Token            string          `json:"token"`
 	TokenType        string          `json:"token_type"`
 	ExpiresIn        int64           `json:"expires_in"`
-	RefreshToken     string          `json:"refresh_token,omitempty"`     // B4 hardening
+	RefreshToken     string          `json:"refresh_token,omitempty"`      // B4 hardening
 	RefreshExpiresIn int64           `json:"refresh_expires_in,omitempty"` // detik; B4 hardening
 	User             AuthUserPayload `json:"user"`
 }
@@ -95,21 +96,21 @@ type AuthUserPayload struct {
 
 // CreateVehicleRequest is the POST /vehicles body.
 type CreateVehicleRequest struct {
-	IMEI           string  `json:"imei" binding:"required"`
-	PlateNumber    string  `json:"plate_number" binding:"required"`
-	Make           *string `json:"make,omitempty"`
-	Model          *string `json:"model,omitempty"`
-	Variant        *string `json:"variant,omitempty"`
-	Year           *int    `json:"year_of_manufacture,omitempty"`
-	Color          *string `json:"color,omitempty"`
-	FuelType       *string `json:"fuel_type,omitempty"`
-	VehicleTypeCd  *string `json:"vehicle_type_code,omitempty"`
-	CategoryCd     *string `json:"vehicle_category_code,omitempty"`
-	DriverUserID   *uint64 `json:"driver_user_id,omitempty"`
-	DeviceModel    *string `json:"device_model,omitempty"`
-	FirmwareVer    *string `json:"firmware_version,omitempty"`
-	RegNumber      *string `json:"registration_number,omitempty"`
-	Notes          *string `json:"notes,omitempty"`
+	IMEI          string  `json:"imei" binding:"required"`
+	PlateNumber   string  `json:"plate_number" binding:"required"`
+	Make          *string `json:"make,omitempty"`
+	Model         *string `json:"model,omitempty"`
+	Variant       *string `json:"variant,omitempty"`
+	Year          *int    `json:"year_of_manufacture,omitempty"`
+	Color         *string `json:"color,omitempty"`
+	FuelType      *string `json:"fuel_type,omitempty"`
+	VehicleTypeCd *string `json:"vehicle_type_code,omitempty"`
+	CategoryCd    *string `json:"vehicle_category_code,omitempty"`
+	DriverUserID  *uint64 `json:"driver_user_id,omitempty"`
+	DeviceModel   *string `json:"device_model,omitempty"`
+	FirmwareVer   *string `json:"firmware_version,omitempty"`
+	RegNumber     *string `json:"registration_number,omitempty"`
+	Notes         *string `json:"notes,omitempty"`
 }
 
 // UpdateVehicleRequest is the PATCH /vehicles/:id body (partial update).
@@ -154,12 +155,12 @@ type AssignUserRequest struct {
 
 // SpeedConfigItem is the response for a speed_configs row.
 type SpeedConfigItem struct {
-	ID            uint64   `json:"id"`
-	VehicleID     *uint64  `json:"vehicle_id,omitempty"` // nil = global default
-	SpeedLimitKMH float64  `json:"speed_limit_kmh"`
-	GraceMarginKMH float64 `json:"grace_margin_kmh"`
-	IsActive      bool     `json:"is_active"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID             uint64    `json:"id"`
+	VehicleID      *uint64   `json:"vehicle_id,omitempty"` // nil = global default
+	SpeedLimitKMH  float64   `json:"speed_limit_kmh"`
+	GraceMarginKMH float64   `json:"grace_margin_kmh"`
+	IsActive       bool      `json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // CreateSpeedConfigRequest is the POST /speed-configs body.
@@ -188,13 +189,13 @@ type Waypoint struct {
 
 // RouteItem is the API representation of a routes row (migration 011).
 type RouteItem struct {
-	ID                   uint64          `json:"id"`
-	Name                 string          `json:"name"`
-	Waypoints            []Waypoint      `json:"waypoints"`
-	EstimatedDurationSec *int            `json:"estimated_duration_sec,omitempty"`
-	CreatedBy            uint64          `json:"created_by"` // user_company_access.user_id
-	IsActive             bool            `json:"is_active"`
-	CreatedAt            time.Time       `json:"created_at"`
+	ID                   uint64           `json:"id"`
+	Name                 string           `json:"name"`
+	Waypoints            []Waypoint       `json:"waypoints"`
+	EstimatedDurationSec *int             `json:"estimated_duration_sec,omitempty"`
+	CreatedBy            uint64           `json:"created_by"` // user_company_access.user_id
+	IsActive             bool             `json:"is_active"`
+	CreatedAt            time.Time        `json:"created_at"`
 	Assignments          []AssignmentItem `json:"assignments,omitempty"`
 }
 

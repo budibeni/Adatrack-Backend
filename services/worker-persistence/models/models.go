@@ -16,11 +16,18 @@ type TelemetryMessage struct {
 	Battery     uint8   `json:"battery_level,omitempty"`
 	// Timestamp is the device event time (unix seconds).
 	Timestamp int64 `json:"timestamp"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 // TelemetryRow is a single row queued for the batch insert. CompanyCode is the
 // routing key: rows are grouped per company and inserted into the company DB
-// adatrack_gps_{lowercase(company_code)}.telemetry_logs.
+// adatrack_gps_{lowercase(company_code)}.telemetry_logs. Rows with IsFuelOnly
+// (B5a fuel sensor reading without GPS fix) are routed to fuel_logs instead —
+// they never enter telemetry_logs.
 type TelemetryRow struct {
 	IMEI        string
 	CompanyCode string
@@ -32,6 +39,12 @@ type TelemetryRow struct {
 	Satellites  uint8
 	HDOP        float64
 	Battery     uint8
+	ACC         bool
+	// --- B5a: Fuel sensor fields ---
+	FuelLevel  *float64
+	FuelVolume *float64
+	FuelTempC  *float64
+	IsFuelOnly bool // true = partial message without GPS fix → fuel_logs
 }
 
 // Batch tuning constants for the persistence worker.

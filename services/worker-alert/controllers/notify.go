@@ -37,6 +37,10 @@ func alertPrefTypes(alertType string) []string {
 		return []string{"offline"}
 	case models.AlertTypeRouteDev:
 		return []string{"route_deviation", "route"}
+	case models.AlertTypeFuelDrop:
+		return []string{"fuel_drop", "fuel"}
+	case models.AlertTypeRefuel:
+		return []string{"refuel", "fuel"}
 	default:
 		return []string{lowerCode(alertType)}
 	}

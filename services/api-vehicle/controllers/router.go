@@ -53,6 +53,14 @@ func setupRouter() http.Handler {
 		authed.PATCH("/speed-configs/:id", speedConfigsUpdateHandler)
 		authed.DELETE("/speed-configs/:id", speedConfigsDeleteHandler)
 
+		// Fuel sensor (B5a, migrations 013/014) — riwayat BBM + konfigurasi
+		// threshold FUEL_DROP/REFUEL (worker-alert membaca fuel_configs ini).
+		authed.GET("/vehicles/:id/fuel/history", vehicleFuelHistoryHandler)
+		authed.GET("/fuel-configs", fuelConfigsListHandler)
+		authed.POST("/fuel-configs", fuelConfigsCreateHandler)
+		authed.PATCH("/fuel-configs/:id", fuelConfigsUpdateHandler)
+		authed.DELETE("/fuel-configs/:id", fuelConfigsDeleteHandler)
+
 		// Geofence ↔ vehicle links (migration 006).
 		authed.GET("/geofences/:id/vehicles", geofenceVehiclesListHandler)
 		authed.POST("/geofences/:id/vehicles", geofenceVehiclesAddHandler)

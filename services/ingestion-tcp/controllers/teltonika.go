@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"strconv"
 	"time"
 
 	"ajb_gps/ingestion-tcp/models"
@@ -135,6 +137,26 @@ func parseTeltonikaAVL(payload []byte) ([]models.TelemetryMessage, error) {
 	return out, nil
 }
 
+// Teltonika fuel IO IDs (B5a) — configurable via env with safe defaults.
+// Common FMB IO IDs: 86 = Fuel Level, 87 = Fuel Used, 84 = Fuel Temperature.
+var (
+	ioFuelLevel = envIOID("TELTONIKA_IO_FUEL_LEVEL", 86)
+	ioFuelUsed  = envIOID("TELTONIKA_IO_FUEL_USED", 87)
+	ioFuelTemp  = envIOID("TELTONIKA_IO_FUEL_TEMP", 84)
+)
+
+func envIOID(key string, def byte) byte {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > 255 {
+		return def
+	}
+	return byte(n)
+}
+
 func parseCodec8Record(b []byte) (models.TelemetryMessage, int, error) {
 	var t models.TelemetryMessage
 	if len(b) < 26 {
@@ -163,6 +185,19 @@ func parseCodec8Record(b []byte) (models.TelemetryMessage, int, error) {
 			t.Battery = byte(val)
 		case 66, 67: // movement / ignition 0-1
 			t.ACC = val == 1
+		default:
+			// B5a: fuel sensor IO elements (configurable via env).
+			switch id {
+			case ioFuelLevel:
+				f := float64(val)
+				t.FuelLevel = &f
+			case ioFuelUsed:
+				f := float64(val)
+				t.FuelVolume = &f
+			case ioFuelTemp:
+				f := float64(int16(val)) // signed temperature
+				t.FuelTempC = &f
+			}
 		}
 	}
 	return t, off, nil
