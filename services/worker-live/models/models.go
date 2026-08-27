@@ -15,6 +15,9 @@ type TelemetryMessage struct {
 	HDOP        float64 `json:"hdop,omitempty"`
 	Battery     uint8   `json:"battery_level,omitempty"`
 	Timestamp   int64   `json:"timestamp"`
+	// ACC ignition state dari position packet (GT06 status byte / Teltonika
+	// IO 239/240 → ingestion). Tidak pernah di-set oleh pesan fuel-only.
+	ACC bool `json:"acc,omitempty"`
 
 	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
@@ -37,6 +40,11 @@ type LiveState struct {
 	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
 	FuelLevel *float64 `json:"fuel_level,omitempty"`
 	FuelTempC *float64 `json:"fuel_temp_c,omitempty"`
+	// ACC is the last ignition state seen on a POSITION packet. Pointer:
+	// nil = unknown (device belum kirim position frame / state tulis ulang
+	// oleh pesan fuel-only). Dipakai worker-alert sebagai konteks/gate
+	// FUEL_DROP (FR-7.6) — jangan diisi dari pesan fuel-only.
+	ACC *bool `json:"acc,omitempty"`
 }
 
 // Batch / TTL tuning for the live state writer.

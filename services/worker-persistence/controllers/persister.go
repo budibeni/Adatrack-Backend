@@ -158,6 +158,12 @@ func handleMsg(msg *nats.Msg) error {
 		pendingFuel = append(pendingFuel, row)
 	} else {
 		pending = append(pending, row)
+		// B5a dual-write: frame berposisi YANG membawa fuel (mis. Teltonika
+		// AVL IO 86) juga masuk fuel_logs — telemetry_logs tidak punya kolom
+		// fuel, tanpa ini pembacaan BBM protokol ber-GPS hilang dari history.
+		if row.FuelLevel != nil {
+			pendingFuel = append(pendingFuel, row)
+		}
 	}
 	full := len(pending) >= models.MaxBatchSize || len(pendingFuel) >= models.MaxBatchSize
 	mu.Unlock()

@@ -1,10 +1,12 @@
 package controllers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 
+	"ajb_gps/internal/dialect"
 	"ajb_gps/internal/tenant"
 	"ajb_gps/worker-alert/models"
 )
@@ -78,17 +80,16 @@ func normalizeSeverity(s string) string {
 }
 
 // InsertAlert creates an alerts row (migration 008) and returns the new id.
+// Dialect-aware (PG-parity fix): pgx tidak mendukung res.LastInsertId() —
+// dulu INSERT berhasil tapi fungsi gagal sebelum publish/notifikasi
+// ("LastInsertId is not supported by this driver"). PG kini RETURNING id.
 func (s *companyStore) InsertAlert(a models.AlertRecord) (uint64, error) {
 	a.Severity = normalizeSeverity(a.Severity)
-	res, err := s.db.Exec(
+	id, err := dialect.InsertReturningID(dialect.Current(), context.Background(), s.db,
 		`INSERT INTO alerts (vehicle_id, alert_type, severity, description, status, vehicle_lat, vehicle_lon)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		a.VehicleID, a.AlertType, a.Severity, a.Description, a.Status, a.VehicleLat, a.VehicleLon,
 	)
-	if err != nil {
-		return 0, err
-	}
-	id, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
 	}

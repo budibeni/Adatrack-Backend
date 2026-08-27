@@ -18,12 +18,18 @@ type fuelReading struct {
 	Volume    float64 `json:"volume,omitempty"`
 }
 
-// checkFuel (B5a) detects FUEL_DROP (critical) and REFUEL (medium) by
+// checkFuel (B5a) detects FUEL_DROP (critical) and REFUEL (low severity) by
 // comparing the current reading against the last one stored in Redis
 // {prefix}{company}:fuel_state:{imei}. Thresholds come from fuel_configs
 // (vehicle-specific row wins over global default); a disabled / missing
-// config disables detection entirely. ACC ON is required for FUEL_DROP so
-// normal engine-off consumption never triggers it.
+// config disables detection entirely.
+//
+// ACC handling (FR-7.6): by DEFAULT FUEL_DROP fires regardless of ignition —
+// parked-vehicle siphoning must stay visible — and the last known ACC from the
+// live-state is appended to the alert description as context ("ACC off/on/
+// unknown/stale-*"). Setting FUEL_DROP_REQUIRE_ACC=true enables the strict
+// gate: suppress only when ACC is freshly known OFF; unknown/stale still fails
+// open (never hide theft on missing data). REFUEL is never gated.
 func (wa *WorkerAlert) checkFuel(s store, company string, tm models.TelemetryMessage, vehicleID uint64) {
 	if tm.FuelLevel == nil {
 		return
@@ -83,10 +89,22 @@ func (wa *WorkerAlert) checkFuel(s store, company string, tm models.TelemetryMes
 	delta := cur.Level - prev.Level
 	switch {
 	case delta <= -dropThreshold:
+		require := wa.cfg.GetFuelDropRequireACC()
+		acc, stale := wa.liveACC(company, tm.IMEI)
+		allowed, accCtx := fuelDropDecision(require, acc, stale)
+		if !allowed {
+			// Gate strict FR-7.6 aktif & ACC fresh OFF → suppress.
+			// Tetap tercatat: counter khusus + warn log (no silent drop).
+			wa.metrics.incFuelACCSuppressed(company)
+			slog.Warn("fuel drop suppressed by ACC gate",
+				"company", company, "imei", tm.IMEI,
+				"delta", delta, "window_s", now-prev.Timestamp)
+			break
+		}
 		wa.raiseFuelAlert(s, company, tm, vehicleID, models.AlertTypeFuelDrop,
 			"critical",
-			fmt.Sprintf("Fuel dropped %.1f in %ds (from %.1f to %.1f)",
-				-delta, now-prev.Timestamp, prev.Level, cur.Level))
+			fmt.Sprintf("Fuel dropped %.1f in %ds (from %.1f to %.1f), ACC %s",
+				-delta, now-prev.Timestamp, prev.Level, cur.Level, accCtx))
 	case delta >= refuelThreshold:
 		wa.raiseFuelAlert(s, company, tm, vehicleID, models.AlertTypeRefuel,
 			"low",
@@ -157,4 +175,58 @@ func volumeOf(tm models.TelemetryMessage) float64 {
 		return *tm.FuelVolume
 	}
 	return 0
+}
+
+// liveACC reads the last known ignition state from the vehicle live-state
+// ({prefix}{company}:vehicle:state:{imei}, maintained by worker-live from
+// POSITION packets only). Returns the ACC pointer and whether the value is
+// STALE (older than FUEL_ACC_STALE_SECONDS). nil acc = unknown (no state /
+// no position frame yet / unreadable).
+func (wa *WorkerAlert) liveACC(company, imei string) (acc *bool, stale bool) {
+	ctx, cancel := contextWithTimeout(2 * time.Second)
+	defer cancel()
+	raw, err := wa.redis.Client().Get(ctx, wa.redisStateKey(company, imei)).Result()
+	if err != nil || raw == "" {
+		if err != nil && ctx.Err() == nil {
+			slog.Debug("live-state unavailable for ACC context", "company", company, "imei", imei)
+		}
+		return nil, false
+	}
+	var st struct {
+		ACC      *bool `json:"acc"`
+		LastSeen int64 `json:"last_seen"`
+	}
+	if err := jsonUnmarshal([]byte(raw), &st); err != nil || st.ACC == nil {
+		return nil, false
+	}
+	if time.Now().Unix()-st.LastSeen > int64(wa.cfg.GetFuelACCStaleSeconds()) {
+		return st.ACC, true
+	}
+	return st.ACC, false
+}
+
+// fuelDropDecision is the pure ACC-gate policy for FUEL_DROP (FR-7.6):
+//   - require=false                    -> always allowed (default; parked theft visible)
+//   - require=true, ACC fresh known    -> allowed only when ON
+//   - require=true, ACC unknown/stale  -> fail-open (never hide theft on missing data)
+//
+// accCtx ∈ {"on","off","unknown","stale-on","stale-off"} untuk deskripsi alert.
+func fuelDropDecision(require bool, acc *bool, stale bool) (allowed bool, accCtx string) {
+	switch {
+	case acc == nil:
+		return true, "unknown"
+	case stale:
+		return true, "stale-" + boolWord(*acc)
+	case !*acc:
+		return !require, "off"
+	default:
+		return true, "on"
+	}
+}
+
+func boolWord(b bool) string {
+	if b {
+		return "on"
+	}
+	return "off"
 }

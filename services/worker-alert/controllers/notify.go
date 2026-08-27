@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"fmt"
 	"log/slog"
 
 	"ajb_gps/worker-alert/models"
@@ -66,10 +67,13 @@ func (wa *WorkerAlert) notifyAlert(s store, company string, tm models.TelemetryM
 	}
 
 	// Filter preferensi di bawah ambang severity user.
-	eligible := make(map[uint64]models.NotifPreference, len(prefs))
+	// Kunci = (user_id, channel): satu user boleh punya beberapa kanal untuk
+	// tipe alert yang sama (bug-fix B5a-verifikasi 2026-08-26 — sebelumnya
+	// dikunci user_id saja sehingga kanal terakhir menimpa sisanya).
+	eligible := make(map[string]models.NotifPreference, len(prefs))
 	for _, p := range prefs {
 		if severityRank(rec.Severity) >= severityRank(p.MinSeverity) {
-			eligible[p.UserID] = p
+			eligible[fmt.Sprintf("%d|%s", p.UserID, p.Channel)] = p
 		}
 	}
 	if len(eligible) == 0 {
@@ -94,11 +98,11 @@ func (wa *WorkerAlert) notifyAlert(s store, company string, tm models.TelemetryM
 		}
 	}
 
-	for userID, pref := range eligible {
-		if !allowed[userID] {
+	for _, pref := range eligible {
+		if !allowed[pref.UserID] {
 			continue // user tidak berhak atas vehicle ini (row-level)
 		}
-		wa.dispatch(s, company, userID, pref, rec, tm)
+		wa.dispatch(s, company, pref.UserID, pref, rec, tm)
 	}
 }
 

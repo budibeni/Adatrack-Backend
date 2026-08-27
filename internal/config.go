@@ -460,6 +460,22 @@ func (c *Config) GetFuelWindow() time.Duration {
 	return time.Duration(getEnvInt("FUEL_WINDOW_SECONDS", 300)) * time.Second
 }
 
+// GetFuelDropRequireACC reports whether FUEL_DROP must be strictly gated on
+// ACC ON (literal FR-7.6). Default FALSE: drops fire regardless of ignition
+// so parked-vehicle siphoning is never suppressed; the last known ACC is
+// instead attached to the alert description as context.
+func (c *Config) GetFuelDropRequireACC() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("FUEL_DROP_REQUIRE_ACC")))
+	return v == "true" || v == "1" || v == "yes"
+}
+
+// GetFuelACCStaleSeconds bounds how long a stored live-state ACC value stays
+// trustworthy for the FUEL_DROP gate (default 600s). Older values are treated
+// as unknown (fail-open).
+func (c *Config) GetFuelACCStaleSeconds() int {
+	return getEnvInt("FUEL_ACC_STALE_SECONDS", 600)
+}
+
 // Subject builds a fully-qualified NATS subject in the telemetry.* namespace:
 //
 //	<NATS_SUBJECT_PREFIX>.<part1>.<part2>…

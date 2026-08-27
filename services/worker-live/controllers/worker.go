@@ -138,6 +138,7 @@ func handleMsg(msg *nats.Msg) error {
 		Status:      CalculateStatus(t.Speed, t.Timestamp),
 		FuelLevel:   t.FuelLevel,
 		FuelTempC:   t.FuelTempC,
+		ACC:         &t.ACC, // FR-7.6 konteks/gate FUEL_DROP (position frames only)
 	}
 	data, err := json.Marshal(st)
 	if err != nil {
