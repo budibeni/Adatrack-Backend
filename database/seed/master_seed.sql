@@ -73,3 +73,20 @@ ON DUPLICATE KEY UPDATE
 
 -- Pastikan password admin def konsisten (hash FIXED untuk semua env).
 UPDATE users SET password_hash = '$2a$10$lhkXH5AoKpHwAQPiOzmpHupMKey.r0TIx85caonzT5pwlyisxeW/m' WHERE email = 'admin@def001.io';
+
+-- ============================================================================
+-- SEED B5b (appended) — company_media_config (master migration 013)
+-- Object-storage & HMAC ingest config per company (FR-8.1). Idempotent.
+-- Seed untuk DEV001 & DEF001 agar dev E2E media berjalan di kedua naming scheme.
+-- ============================================================================
+INSERT INTO company_media_config (company_code, bucket, retention_days, max_file_mb, hmac_secret) VALUES
+    ('DEV001', 'adatrack-media', 30, 100, 'dev001-hmac-secret-b5b'),
+    ('DEF001', 'adatrack-media', 30, 100, 'def001-hmac-secret-b5b')
+ON DUPLICATE KEY UPDATE
+    bucket         = VALUES(bucket),
+    retention_days = VALUES(retention_days),
+    max_file_mb    = VALUES(max_file_mb),
+    hmac_secret    = VALUES(hmac_secret);
+-- ============================================================================
+-- End of B5b media config seed
+-- ============================================================================

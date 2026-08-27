@@ -29,6 +29,7 @@ var (
 	metricsHTTP  http.Handler
 	appSub       *nats.Subscription
 	appNotifySub *nats.Subscription
+	appMediaSub  *nats.Subscription
 )
 
 // Setup wires package globals and starts the NATS→hub bridge, including the
@@ -67,6 +68,18 @@ func Setup(cfg *internal.Config, redis *internal.RedisClient, natsClient *intern
 	}
 	appNotifySub = notifySub
 
+	// Media event bridge (B5b, Module 8 FR-8.5): service-media publishes to
+	// media.event.<company>; we fan out as MEDIA_EVENT with RBAC/tenant filter.
+	mediaSub, err := appNATS.Subscribe(appNATS.SubjectPlain("media", "event", ">"), "websocket", mediaHandle)
+	if err != nil {
+		appNATS.Unsubscribe(appSub)
+		appSub = nil
+		appNATS.Unsubscribe(appNotifySub)
+		appNotifySub = nil
+		return nil, err
+	}
+	appMediaSub = mediaSub
+
 	unsubscribe := func() {
 		if appSub != nil {
 			appNATS.Unsubscribe(appSub)
@@ -75,6 +88,10 @@ func Setup(cfg *internal.Config, redis *internal.RedisClient, natsClient *intern
 		if appNotifySub != nil {
 			appNATS.Unsubscribe(appNotifySub)
 			appNotifySub = nil
+		}
+		if appMediaSub != nil {
+			appNATS.Unsubscribe(appMediaSub)
+			appMediaSub = nil
 		}
 	}
 	return unsubscribe, nil

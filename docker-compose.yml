@@ -1,10 +1,9 @@
 name: adatrack_gps_system
 
 # ============================================================================
-# SINGLE SOURCE OF TRUTH — docker-compose DEV (B0).
+# SINGLE SOURCE OF TRUTH — docker-compose.
 # Infrastruktur dev: MySQL 8.0 (multi-tenant), Redis 7, NATS JetStream.
 #
-# DATABASE PROVIDER FLEKSIBEL (PRD §7.1.1): provider DB persistent dipilih via
 # DATABASE_PROVIDER di backend/.env ("mysql" | "postgres"). Service `mysql` dan
 # `postgres` masing-masing diberi compose profile sesuai nama provider-nya,
 # sehingga HANYA database terpilih yang ikut up (Redis & NATS selalu up):
@@ -29,7 +28,6 @@ name: adatrack_gps_system
 services:
   # Provider "mysql" (alternatif) — hanya up bila COMPOSE_PROFILES mengandung
   # "mysql" (diturunkan dari DATABASE_PROVIDER oleh backend/scripts/compose-up.sh;
-  # lihat header file ini & PRD §7.1.1). Default proyek = postgres.
   mysql:
     image: mysql:8.0
     container_name: mysql
@@ -135,8 +133,32 @@ services:
       retries: 12
       start_period: 5s
 
+  # --- MinIO (B5b, PRD v1.3.0 Module 8) — object store dev S3-compatible utk
+  #     dashcam event media. Prod = AWS S3 / Aliyun OSS (service-media memakai
+  #     endpoint yang sama via internal/storage). Selalu up (tanpa profile).
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MEDIA_S3_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MEDIA_S3_PORT:-9000}:9000" # S3 API
+      - "9001:9001"                    # Web console (dev)
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "cat < /dev/null > /dev/tcp/127.0.0.1/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   mysql_data:
   redis_data:
   nats_data:
   postgres_data:
+  minio_data:
