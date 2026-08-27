@@ -120,4 +120,13 @@ type TelemetryMessage struct {
 	AlarmCode   uint8   `json:"alarm_code,omitempty"`
 	Fix         bool    `json:"fix,omitempty"`
 	Timestamp   int64   `json:"timestamp"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	// Pointer + omitempty: field yang tidak hadir (absen ≠ nol) tidak muncul di JSON.
+	// FuelLevel = liquid level measurement value (cm) dari sensor AIOIL.
+	// FuelVolume = fuel volume (L) — butuh kalibrasi tangki (fuel_configs / tank_profile).
+	// FuelTempC = fuel temperature (°C).
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }

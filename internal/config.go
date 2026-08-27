@@ -442,6 +442,40 @@ func (c *Config) GetSOSEscalationMax() int {
 	return c.SOS.EscalationMax
 }
 
+// GetFuelDropThreshold returns the FUEL_DROP delta threshold (B5a, env
+// FUEL_DROP_THRESHOLD; satuan mengikuti fuel_level sensor).
+func (c *Config) GetFuelDropThreshold() float64 {
+	return float64(getEnvInt("FUEL_DROP_THRESHOLD", 10))
+}
+
+// GetFuelRefuelThreshold returns the REFUEL delta threshold (B5a, env
+// FUEL_REFUEL_THRESHOLD).
+func (c *Config) GetFuelRefuelThreshold() float64 {
+	return float64(getEnvInt("FUEL_REFUEL_THRESHOLD", 10))
+}
+
+// GetFuelWindow returns the minimum interval between compared fuel readings
+// (B5a, env FUEL_WINDOW_SECONDS, default 300s).
+func (c *Config) GetFuelWindow() time.Duration {
+	return time.Duration(getEnvInt("FUEL_WINDOW_SECONDS", 300)) * time.Second
+}
+
+// GetFuelDropRequireACC reports whether FUEL_DROP must be strictly gated on
+// ACC ON (literal FR-7.6). Default FALSE: drops fire regardless of ignition
+// so parked-vehicle siphoning is never suppressed; the last known ACC is
+// instead attached to the alert description as context.
+func (c *Config) GetFuelDropRequireACC() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("FUEL_DROP_REQUIRE_ACC")))
+	return v == "true" || v == "1" || v == "yes"
+}
+
+// GetFuelACCStaleSeconds bounds how long a stored live-state ACC value stays
+// trustworthy for the FUEL_DROP gate (default 600s). Older values are treated
+// as unknown (fail-open).
+func (c *Config) GetFuelACCStaleSeconds() int {
+	return getEnvInt("FUEL_ACC_STALE_SECONDS", 600)
+}
+
 // Subject builds a fully-qualified NATS subject in the telemetry.* namespace:
 //
 //	<NATS_SUBJECT_PREFIX>.<part1>.<part2>…

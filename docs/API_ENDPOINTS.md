@@ -1243,6 +1243,96 @@ curl -s -X DELETE http://localhost:8081/api/v1/speed-configs/2 \
 
 ---
 
+### 5.3b Fuel Sensor (B5a — PRD v1.3.0 Module 7)
+
+Kanal bahan bakar end-to-end: parser GT06 `0x0D` (!AIOIL) + Teltonika AVL IO →
+`fuel_logs` (migration 013, partisi bulanan) → live state `fuel_level` → alert
+**FUEL_DROP** (critical) / **REFUEL** (medium) via threshold `fuel_configs`
+(migration 014; baris per-vehicle menang atas global `vehicle_id IS NULL`) →
+subject NATS `alert.fuel.<company>` + notifikasi tipe `fuel_drop`/`refuel`.
+
+#### 5.3b.1 Riwayat BBM — `GET /api/v1/vehicles/:id/fuel/history`
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/v1/vehicles/:id/fuel/history` | Semua role terautentikasi dengan akses vehicle (`user_vehicles`; admin company = semua) |
+
+**Query params:**
+
+| Param | Wajib | Default | Keterangan |
+|---|---|---|---|
+| `from` | tidak | now-24h | RFC3339, mis. `2026-08-01T00:00:00Z` |
+| `to` | tidak | now | RFC3339; window maksimum **30 hari** |
+| `limit` | tidak | 5000 | 1–10000 titik |
+
+```bash
+curl -s "http://localhost:8081/api/v1/vehicles/1/fuel/history?from=2026-08-20T00:00:00Z&to=2026-08-21T00:00:00Z" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Respons `200 OK`** (format GAP #1/GAP #3 — data array titik + sibling `total_records`):
+
+```json
+{
+  "status": "success",
+  "data": [
+    { "timestamp": "2026-08-20T10:05:00Z", "fuel_level": 27.14, "fuel_temp_c": 25.4 },
+    { "timestamp": "2026-08-20T09:55:00Z", "fuel_level": 38.2, "fuel_volume": 120.5 }
+  ],
+  "total_records": 2
+}
+```
+
+**Error umum:** `400 INVALID_PARAM`, `404 VEHICLE_NOT_FOUND`, `403 FORBIDDEN`.
+
+#### 5.3b.2 Daftar Konfigurasi — `GET /api/v1/fuel-configs`
+
+```bash
+curl -s http://localhost:8081/api/v1/fuel-configs -H "Authorization: Bearer $TOKEN"
+```
+
+**Respons:** array `{ id, vehicle_id (null=global), drop_threshold,
+refuel_threshold, window_seconds, enabled, created_at }`.
+
+#### 5.3b.3 Buat — `POST /api/v1/fuel-configs` (Admin/adatrack Manager)
+
+```bash
+# Global default company
+curl -s -X POST http://localhost:8081/api/v1/fuel-configs \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{ "drop_threshold": 15, "refuel_threshold": 20, "window_seconds": 300 }'
+
+# Per-vehicle (menimpa global)
+curl -s -X POST http://localhost:8081/api/v1/fuel-configs \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{ "vehicle_id": 1, "drop_threshold": 25 }'
+```
+
+**Error umum:** `400 INVALID_REQUEST`, `404 VEHICLE_NOT_FOUND`, `403 FORBIDDEN`.
+Respons `201 Created`: `{ "status": "success", "data": { "id": 3 } }`.
+
+#### 5.3b.4 Update — `PATCH /api/v1/fuel-configs/:id` (Admin/adatrack Manager)
+
+```bash
+curl -s -X PATCH http://localhost:8081/api/v1/fuel-configs/1 \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{ "drop_threshold": 18, "enabled": false }'
+```
+
+**Error umum:** `400 EMPTY_UPDATE` / `INVALID_REQUEST`, `404 FUEL_CONFIG_NOT_FOUND`, `403 FORBIDDEN`.
+
+#### 5.3b.5 Hapus — `DELETE /api/v1/fuel-configs/:id` (Admin/adatrack Manager)
+
+```bash
+curl -s -X DELETE http://localhost:8081/api/v1/fuel-configs/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Env terkait (fallback saat fuel_configs kosong):** `FUEL_DROP_THRESHOLD`,
+`FUEL_REFUEL_THRESHOLD`, `FUEL_WINDOW_SECONDS`, `TELTONIKA_IO_FUEL_LEVEL/USED/TEMP`.
+
+---
+
 ### 5.4 Geofence ↔ Vehicle Link
 
 Mengelola vehicle mana saja yang dipantau oleh sebuah geofence

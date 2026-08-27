@@ -109,6 +109,24 @@ func handleMsg(msg *nats.Msg) error {
 	if t.Timestamp <= 0 {
 		t.Timestamp = time.Now().Unix()
 	}
+	key := redisStateKey(t.CompanyCode, t.IMEI)
+
+	// B5a: fuel-only message (pembacaan bahan bakar tanpa fix GPS) — merge
+	// parsial: posisi/speed/status TIDAK tertimpa, hanya fuel + LastSeen.
+	if isFuelOnly(t) {
+		st := mergeFuelState(key, t)
+		data, err := json.Marshal(st)
+		if err != nil {
+			slog.Error("failed to marshal merged live state", "error", err, "imei", t.IMEI)
+			return nil
+		}
+		mu.Lock()
+		buffer[key] = string(data)
+		mu.Unlock()
+		vehicleStateUpdates.Inc()
+		return nil
+	}
+
 	st := models.LiveState{
 		IMEI:        t.IMEI,
 		CompanyCode: t.CompanyCode,
@@ -118,6 +136,9 @@ func handleMsg(msg *nats.Msg) error {
 		Heading:     t.Heading,
 		LastSeen:    time.Now().Unix(),
 		Status:      CalculateStatus(t.Speed, t.Timestamp),
+		FuelLevel:   t.FuelLevel,
+		FuelTempC:   t.FuelTempC,
+		ACC:         &t.ACC, // FR-7.6 konteks/gate FUEL_DROP (position frames only)
 	}
 	data, err := json.Marshal(st)
 	if err != nil {
@@ -125,7 +146,6 @@ func handleMsg(msg *nats.Msg) error {
 		return nil
 	}
 
-	key := redisStateKey(t.CompanyCode, t.IMEI)
 	mu.Lock()
 	buffer[key] = string(data)
 	full := len(buffer) >= models.MaxBuffer
@@ -136,6 +156,38 @@ func handleMsg(msg *nats.Msg) error {
 		poke()
 	}
 	return nil
+}
+
+// isFuelOnly (B5a) returns true untuk pesan parsial fuel sensor tanpa fix GPS.
+func isFuelOnly(t models.TelemetryMessage) bool {
+	return t.FuelLevel != nil && t.Lat == 0 && t.Lon == 0 && t.Speed == 0
+}
+
+// mergeFuelState (B5a) membaca live-state existing dari Redis (best-effort)
+// lalu menggabungkan HANYA field fuel + LastSeen; posisi, speed, heading dan
+// status yang sudah ada dipertahankan. Bila key belum ada / GET gagal,
+// LiveState baru berisi fuel saja dibuat (posisi 0) — tidak ada silent drop.
+func mergeFuelState(key string, t models.TelemetryMessage) models.LiveState {
+	var st models.LiveState
+	if raw, err := redCli.Get(ctx, key); err == nil && raw != "" {
+		if err := json.Unmarshal([]byte(raw), &st); err != nil {
+			slog.Warn("failed to unmarshal existing live state for fuel merge",
+				"key", key, "error", err)
+			st = models.LiveState{}
+		}
+	} else if err != nil {
+		slog.Warn("live-state read failed for fuel merge; writing fresh state",
+			"key", key, "error", err)
+	}
+	st.IMEI = t.IMEI
+	st.CompanyCode = t.CompanyCode
+	st.FuelLevel = t.FuelLevel
+	st.FuelTempC = t.FuelTempC
+	st.LastSeen = time.Now().Unix()
+	if st.Status == "" {
+		st.Status = CalculateStatus(0, st.LastSeen)
+	}
+	return st
 }
 
 // poke signals the flusher to run immediately (non-blocking).

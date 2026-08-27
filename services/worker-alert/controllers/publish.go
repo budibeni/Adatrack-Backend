@@ -47,6 +47,10 @@ func alertTypeSubject(t string) string {
 		return "offline"
 	case models.AlertTypeRouteDev:
 		return "route_deviation"
+	case models.AlertTypeFuelDrop, models.AlertTypeRefuel:
+		// B5a: FUEL_DROP & REFUEL share the alert.fuel.<company> subject
+		// (roadmap B5a konvensi subject).
+		return "fuel"
 	default:
 		return lowerCode(t)
 	}

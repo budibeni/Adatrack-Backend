@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"strconv"
 	"time"
 
 	"ajb_gps/ingestion-tcp/models"
@@ -32,15 +34,19 @@ const (
 
 // teltonikaCRC16 is CRC-16 (poly 0x1021, init 0x0000) used by Teltonika for
 // the AVL data integrity check; transmitted as two bytes little-endian.
+// teltonikaCRC16 — CRC-16/IBM (poly 0xA001 reflected, init 0xFFFF), sesuai
+// spesifikasi Teltonika Codec 8/8E. (Protokol fix 2026-08-26: sebelumnya
+// memakai CCITT-FALSE 0x1021 sehingga frame perangkat asli selalu ditolak
+// "crc mismatch".)
 func teltonikaCRC16(data []byte) uint16 {
-	var crc uint16
+	crc := uint16(0xFFFF)
 	for _, b := range data {
-		crc ^= uint16(b) << 8
+		crc ^= uint16(b)
 		for i := 0; i < 8; i++ {
-			if crc&0x8000 != 0 {
-				crc = (crc << 1) ^ 0x1021
+			if crc&1 != 0 {
+				crc = (crc >> 1) ^ 0xA001
 			} else {
-				crc <<= 1
+				crc >>= 1
 			}
 		}
 	}
@@ -53,11 +59,14 @@ func teltonikaCRC16(data []byte) uint16 {
 //
 // Returns the IMEI string (caller replies 0x01).
 func readTeltonikaIME(r *bufio.Reader) (string, error) {
-	var lenBuf [4]byte
+	// Protokol Teltonika: IMEI packet = 2-BYTE big-endian length + IMEI ASCII.
+	// (PG/protokol fix 2026-08-26: sebelumnya dibaca 4 byte sehingga handshake
+	// perangkat asli selalu gagal — n terbaca dari dua byte pertama IMEI.)
+	var lenBuf [2]byte
 	if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
 		return "", err
 	}
-	n := int(binary.BigEndian.Uint32(lenBuf[:]))
+	n := int(binary.BigEndian.Uint16(lenBuf[:]))
 	if n <= 0 || n > 64 {
 		return "", fmt.Errorf("invalid teltonika ime length %d", n)
 	}
@@ -135,6 +144,26 @@ func parseTeltonikaAVL(payload []byte) ([]models.TelemetryMessage, error) {
 	return out, nil
 }
 
+// Teltonika fuel IO IDs (B5a) — configurable via env with safe defaults.
+// Common FMB IO IDs: 86 = Fuel Level, 87 = Fuel Used, 84 = Fuel Temperature.
+var (
+	ioFuelLevel = envIOID("TELTONIKA_IO_FUEL_LEVEL", 86)
+	ioFuelUsed  = envIOID("TELTONIKA_IO_FUEL_USED", 87)
+	ioFuelTemp  = envIOID("TELTONIKA_IO_FUEL_TEMP", 84)
+)
+
+func envIOID(key string, def byte) byte {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > 255 {
+		return def
+	}
+	return byte(n)
+}
+
 func parseCodec8Record(b []byte) (models.TelemetryMessage, int, error) {
 	var t models.TelemetryMessage
 	if len(b) < 26 {
@@ -163,6 +192,19 @@ func parseCodec8Record(b []byte) (models.TelemetryMessage, int, error) {
 			t.Battery = byte(val)
 		case 66, 67: // movement / ignition 0-1
 			t.ACC = val == 1
+		default:
+			// B5a: fuel sensor IO elements (configurable via env).
+			switch id {
+			case ioFuelLevel:
+				f := float64(val)
+				t.FuelLevel = &f
+			case ioFuelUsed:
+				f := float64(val)
+				t.FuelVolume = &f
+			case ioFuelTemp:
+				f := float64(int16(val)) // signed temperature
+				t.FuelTempC = &f
+			}
 		}
 	}
 	return t, off, nil
@@ -217,6 +259,16 @@ func handleTeltonika(c net.Conn) {
 
 	for {
 		_ = c.SetReadDeadline(time.Now().Add(models.IdleTimeout))
+		// Protokol Codec 8 TCP: setiap AVL data diawali PREAMBLE 4 byte nol
+		// sebelum 4-byte data length. (Protokol fix 2026-08-26 — sebelumnya
+		// preamble dibaca sebagai length → selalu "invalid packet length 0".)
+		var pre [4]byte
+		if _, err := io.ReadFull(r, pre[:]); err != nil {
+			if err != io.EOF {
+				slog.Debug("teltonika: read preamble error", "imei", imei, "error", err)
+			}
+			return
+		}
 		var lenBuf [4]byte
 		if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
 			if err != io.EOF {
@@ -249,10 +301,9 @@ func handleTeltonika(c net.Conn) {
 				parsedTotal.WithLabelValues(protoName).Inc()
 			}
 		}
-		// Reply: 4-byte length + number of AVL records (codec 8 convention).
-		var reply [5]byte
-		binary.BigEndian.PutUint32(reply[0:4], 1)
-		reply[4] = byte(len(msgs))
+		// Reply standar Codec 8 TCP: 4-byte jumlah record yang diterima.
+		var reply [4]byte
+		binary.BigEndian.PutUint32(reply[:], uint32(len(msgs)))
 		if _, err := c.Write(reply[:]); err != nil {
 			return
 		}
