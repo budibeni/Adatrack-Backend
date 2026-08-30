@@ -223,6 +223,9 @@ services:
       context: .
       dockerfile: services/ingestion-tcp/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       TCP_PORT: ${TCP_PORT:-9000}
@@ -279,6 +282,9 @@ services:
       context: .
       dockerfile: services/worker-persistence/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       PERSISTENCE_METRICS_ADDR: :8091
@@ -302,6 +308,9 @@ services:
       context: .
       dockerfile: services/worker-alert/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       ALERT_METRICS_ADDR: :8093
@@ -377,6 +386,9 @@ services:
       context: .
       dockerfile: services/api-vehicle/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       API_VEHICLE_HTTP_ADDR: :8081
@@ -405,6 +417,9 @@ services:
       context: .
       dockerfile: services/service-media/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       SERVICE_MEDIA_HTTP_ADDR: :8095
