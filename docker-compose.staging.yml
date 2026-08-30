@@ -1,0 +1,429 @@
+# ============================================================================
+# docker-compose.staging.yml — Adatrack Backend, deployment STAGING (Coolify).
+#
+# Single file: SEKALI deploy => SELURUH stack jalan (infra + 7 service Go).
+#
+#   Infrastruktur:  postgres (default) | mysql (alternatif, via profile), redis,
+#                   nats (JetStream), minio (S3-compatible).
+#   Aplikasi:       ingestion-tcp, worker-live, worker-persistence, worker-alert,
+#                   service-websocket, api-vehicle, service-media.
+#
+# Kenapa satu file (bukan include docker-compose.yml dev)?
+#   - docker-compose.yml dev memakai `env_file: .env` (TIDAK di-git) — di
+#     Coolify tidak ada .env di container build, sehingga semua nilai di-
+#     interpolate lewat Environment Variables resource Coolify ($(VAR:-default)).
+#   - TANPA `container_name` agar tidak bentrok antar environment/deploy.
+#   - Build context SELALU root repo backend/ (monorepo: tiap Dockerfile
+#     memakai `replace ajb_gps/internal => ../../internal`).
+#
+# Cara pakai:
+#   Lokal  : cd backend && docker compose -f docker-compose.staging.yml up -d
+#   Coolify: tempel file ini pada resource "Docker Compose" > branch "staging",
+#            lalu isi env vars di bawah (ganti nilai "GANTI-...").
+#
+# VARIABEL WAJIB di Environment (jangan pakai default placeholder):
+#   JWT_SECRET, POSTGRES_PASSWORD, MEDIA_S3_ACCESS_KEY, MEDIA_S3_SECRET_KEY
+#
+# Provider database:
+#   - Default: postgres (selalu up) — TANPA perlu COMPOSE_PROFILES.
+#   - Alternatif (MySQL): set COMPOSE_PROFILES=mysql + DATABASE_PROVIDER=mysql.
+# ============================================================================
+name: adatrack_gps_staging
+
+# ---------------------------------------------------------------------------
+# Env umum 7 service aplikasi (YAML anchor: <<: *app-common-env)
+# ---------------------------------------------------------------------------
+x-app-common-env: &app-common-env
+  # --- runtime / logging ---
+  adatrack_ENV: staging
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  # --- provider & HA off ---
+  DATABASE_PROVIDER: ${DATABASE_PROVIDER:-postgres}
+  DB_REPLICA_ENABLED: ${DB_REPLICA_ENABLED:-false}
+
+  # --- NATS (hostname service = "nats") ---
+  NATS_URL: ${NATS_URL:-nats:4222}
+  NATS_SUBJECT_PREFIX: ${NATS_SUBJECT_PREFIX:-telemetry}
+  NATS_CLUSTER_ID: ${NATS_CLUSTER_ID:-}
+  NATS_CLIENT_ID: ${NATS_CLIENT_ID:-}
+
+  # --- PostgreSQL (default) ---
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:ADATRACK-POSTGRES-PASSWORD}
+  POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+  POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
+  POSTGRES_MASTER_SCHEMA: ${POSTGRES_MASTER_SCHEMA:-adatrack_gps_master}
+  POSTGRES_SCHEMA: ${POSTGRES_SCHEMA:-adatrack_gps}
+  POSTGRES_POOL_MIN: ${POSTGRES_POOL_MIN:-10}
+  POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-50}
+  # DATABASE_URL sengaja dikosongkan => dibentuk otomatis oleh kode dari
+  # POSTGRES_HOST/USER/PASSWORD/DB. Bila password berisi karakter khusus
+  # (@ : / #), set DATABASE_URL ter-URL-encode di Coolify (mis. user%40pass)
+  # karena precedence-nya paling tinggi.
+  DATABASE_URL: ${DATABASE_URL:-}
+
+  # --- MySQL (alternatif, baru dipakai bila DATABASE_PROVIDER=mysql) ---
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_USER: ${MYSQL_USER:-adatrack_gps_user}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:ADATRACK-MYSQL-PASSWORD}
+  MYSQL_DB: ${MYSQL_DB:-adatrack_gps_db}
+
+  # --- multi-tenant (master + pool company) ---
+  COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX:-adatrack_gps_}
+  # Template migrasi company postgres = folder company_pg/ (file *.sql), di-
+  # mount dari repo via volume ./database/migrations:/db/migrations:ro.
+  COMPANY_MIGRATIONS_DIR: ${COMPANY_MIGRATIONS_DIR:-/db/migrations/company_pg}
+  TENANT_CACHE_KEY_PREFIX: ${TENANT_CACHE_KEY_PREFIX:-adatrack_tenant:imei:}
+  TENANT_CACHE_TTL_SEC: ${TENANT_CACHE_TTL_SEC:-900}
+
+  # --- Redis (hostname service = "redis") ---
+  REDIS_ADDR: ${REDIS_ADDR:-redis:6379}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  REDIS_DB: ${REDIS_DB:-0}
+  REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-10}
+  REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-adatrack_gps:}
+
+  # --- JWT (WAJIB sama antara service-websocket & api-vehicle) ---
+  JWT_SECRET: ${JWT_SECRET:ADATRACK-JWT-SECRET-LONGGGG}
+  JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
+
+  # --- HTTP umum / CORS / TLS (TLS off — HTTPS di-terminate proxy) ---
+  HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-15}
+  HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-30}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+  TLS_ENABLED: ${TLS_ENABLED:-false}
+
+# ---------------------------------------------------------------------------
+# INFRASTRUKTUR
+# ---------------------------------------------------------------------------
+services:
+  # --- PostgreSQL (provider default / PRD §7.1.1) ---
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+      POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:ADATRACK-POSTGRES-PASSWORD}
+      POSTGRES_REPLICA_USER: ${POSTGRES_REPLICA_USER:-replicator}
+      POSTGRES_REPLICA_PASSWORD: ${POSTGRES_REPLICA_PASSWORD:ADATRACK-REPLICA-PASSWORD}
+      PGDATA: /var/lib/postgresql/data
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Auto-init saat volume pertama (schema master, company dev, master_setup)
+      # + seed wilayah. Butuh /db/migrations & /db/seed (1 folder).
+      - ./database/init-pg:/docker-entrypoint-initdb.d:ro
+      - ./database/migrations:/db/migrations:ro
+      - ./database/seed:/db/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "$${POSTGRES_USER}", "-d", "$${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    # Port DB TIDAK dipublish default (keamanan). Aktifkan bila perlu:
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
+
+  # --- MySQL (alternatif, HANYA aktif bila COMPOSE_PROFILES=mysql) ---
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    profiles: ["mysql"]
+    command:
+      - --server-id=1
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:ADATRACK-MYSQL-ROOT-PASSWORD}
+      MYSQL_USER: ${MYSQL_USER:-adatrack_gps_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:ADATRACK-MYSQL-PASSWORD}
+      MASTER_DB_NAME: ${MASTER_DB_NAME:-adatrack_gps_master}
+      COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX:-adatrack_gps_}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./database/migrations:/db/migrations:ro
+      - ./database/seed:/db/seed:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$${MYSQL_ROOT_PASSWORD}", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    # ports:
+    #   - "${MYSQL_PORT:-3306}:3306"
+# --- Redis (live-state, cache IMEI lookup) ---
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # --- NATS JetStream (message bus telemetri) ---
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats_data:/data
+    ports:
+      - "${NATS_CLIENT_PORT:-4222}:4222"
+      - "${NATS_HEALTHZ_PORT:-8222}:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  # --- MinIO (object store S3-compatible utk service-media B5b) ---
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MEDIA_S3_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MEDIA_S3_PORT:-9000}:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "bash", "-c", "cat < /dev/null > /dev/tcp/127.0.0.1/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+# ---------------------------------------------------------------------------
+# APLIKASI — 7 service Go (Dockerfile per service; build context = root repo)
+# ---------------------------------------------------------------------------
+  # --- ingestion-tcp (B1): TCP GT06 :9000, Teltonika :9001, TK103 :9002 ---
+  ingestion-tcp:
+    build:
+      context: .
+      dockerfile: services/ingestion-tcp/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-common-env
+      TCP_PORT: ${TCP_PORT:-9000}
+      TELTONIKA_TCP_PORT: ${TELTONIKA_TCP_PORT:-9001}
+      TK103_TCP_PORT: ${TK103_TCP_PORT:-9002}
+      TCP_MAX_CONNECTIONS: ${TCP_MAX_CONNECTIONS:-5000}
+      GT06_DATE_BCD: ${GT06_DATE_BCD:-false}
+      INGESTION_METRICS_ADDR: :8090
+    ports:
+      - "${TCP_PORT:-9000}:9000"
+      - "${TELTONIKA_TCP_PORT:-9001}:9001"
+      - "${TK103_TCP_PORT:-9002}:9002"
+      - "${INGESTION_METRICS_PORT:-8090}:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8090/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  # --- worker-live (B1): tulis live-state ke Redis ---
+  worker-live:
+    build:
+      context: .
+      dockerfile: services/worker-live/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-common-env
+      LIVE_METRICS_ADDR: :8092
+    ports:
+      - "${LIVE_METRICS_PORT:-8092}:8092"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8092/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  # --- worker-persistence (B1): batch insert telemetry_logs ke DB ---
+  worker-persistence:
+    build:
+      context: .
+      dockerfile: services/worker-persistence/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-common-env
+      PERSISTENCE_METRICS_ADDR: :8091
+    ports:
+      - "${PERSISTENCE_METRICS_PORT:-8091}:8091"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8091/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      nats:
+        condition: service_healthy
+
+  # --- worker-alert (B3): geofence / overspeed / baterai / offline / SOS ---
+  worker-alert:
+    build:
+      context: .
+      dockerfile: services/worker-alert/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-common-env
+      ALERT_METRICS_ADDR: :8093
+      SPEED_LIMIT: ${SPEED_LIMIT:-80}
+      SPEED_GRACE_MARGIN: ${SPEED_GRACE_MARGIN:-10}
+      SOS_ESCALATION_MINUTES: ${SOS_ESCALATION_MINUTES:-2}
+      SOS_ESCALATION_MAX: ${SOS_ESCALATION_MAX:-3}
+      FUEL_DROP_THRESHOLD: ${FUEL_DROP_THRESHOLD:-10}
+      FUEL_REFUEL_THRESHOLD: ${FUEL_REFUEL_THRESHOLD:-10}
+      FUEL_WINDOW_SECONDS: ${FUEL_WINDOW_SECONDS:-300}
+      FUEL_DROP_REQUIRE_ACC: ${FUEL_DROP_REQUIRE_ACC:-false}
+      FUEL_ACC_STALE_SECONDS: ${FUEL_ACC_STALE_SECONDS:-600}
+    ports:
+      - "${ALERT_METRICS_PORT:-8093}:8093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8093/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  # --- service-websocket (B2): REST + WebSocket + RBAC (multi-tenant) ---
+  service-websocket:
+    build:
+      context: .
+      dockerfile: services/service-websocket/Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (B2/B3).
+      - ./database/migrations:/db/migrations:ro
+    environment:
+      <<: *app-common-env
+      WEBSOCKET_HTTP_ADDR: :8080
+      WEBSOCKET_METRICS_ADDR: :9090
+      WS_READ_BUFFER: ${WS_READ_BUFFER:-4096}
+      WS_WRITE_BUFFER: ${WS_WRITE_BUFFER:-4096}
+      WS_PONG_WAIT: ${WS_PONG_WAIT:-30}
+      WS_WRITE_WAIT: ${WS_WRITE_WAIT:-10}
+      WS_MAX_MESSAGE_SIZE: ${WS_MAX_MESSAGE_SIZE:-262144}
+      WS_MAX_CONNECTIONS: ${WS_MAX_CONNECTIONS:-5000}
+      WS_MAX_QUEUE: ${WS_MAX_QUEUE:-1000}
+      WS_HEARTBEAT_SECONDS: ${WS_HEARTBEAT_SECONDS:-30}
+      RATE_LIMIT_LOGIN_ATTEMPTS: ${RATE_LIMIT_LOGIN_ATTEMPTS:-5}
+      RATE_LIMIT_LOGIN_WINDOW_MIN: ${RATE_LIMIT_LOGIN_WINDOW_MIN:-15}
+      RATE_LIMIT_API_PER_MIN: ${RATE_LIMIT_API_PER_MIN:-100}
+    ports:
+      - "${WEBSOCKET_HTTP_PORT:-8080}:8080"
+      - "${WEBSOCKET_METRICS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  # --- api-vehicle (B3): CRUD vehicle / speed-config / routes / assignment ---
+  api-vehicle:
+    build:
+      context: .
+      dockerfile: services/api-vehicle/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-common-env
+      API_VEHICLE_HTTP_ADDR: :8081
+      RATE_LIMIT_LOGIN_ATTEMPTS: ${RATE_LIMIT_LOGIN_ATTEMPTS:-5}
+      RATE_LIMIT_LOGIN_WINDOW_MIN: ${RATE_LIMIT_LOGIN_WINDOW_MIN:-15}
+      RATE_LIMIT_API_PER_MIN: ${RATE_LIMIT_API_PER_MIN:-100}
+    ports:
+      - "${API_VEHICLE_HTTP_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8081/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+
+  # --- service-media (B5b): dashcam event media via MinIO/S3 ---
+  service-media:
+    build:
+      context: .
+      dockerfile: services/service-media/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-common-env
+      SERVICE_MEDIA_HTTP_ADDR: :8095
+      METRICS_ADDR: :9091
+      MEDIA_S3_ENDPOINT: ${MEDIA_S3_ENDPOINT:-http://minio:9000}
+      MEDIA_S3_BUCKET: ${MEDIA_S3_BUCKET:-adatrack-media}
+      MEDIA_S3_ACCESS_KEY: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
+      MEDIA_S3_SECRET_KEY: ${MEDIA_S3_SECRET_KEY:-minioadmin}
+      MEDIA_S3_USE_SSL: ${MEDIA_S3_USE_SSL:-false}
+      MEDIA_S3_REGION: ${MEDIA_S3_REGION:-}
+      MEDIA_PRESIGN_TTL_SECONDS: ${MEDIA_PRESIGN_TTL_SECONDS:-600}
+      MEDIA_MAX_FILE_MB: ${MEDIA_MAX_FILE_MB:-100}
+      MEDIA_CLEANUP_CRON: ${MEDIA_CLEANUP_CRON:-0 3 * * *}
+      MEDIA_DEFAULT_HMAC_SECRET: ${MEDIA_DEFAULT_HMAC_SECRET:ADATRACK-MEDIA-HMAC}
+    ports:
+      - "${SERVICE_MEDIA_HTTP_PORT:-8095}:8095"
+      - "${SERVICE_MEDIA_METRICS_PORT:-9091}:9091"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8095/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+# ---------------------------------------------------------------------------
+# VOLUMES PERSISTEN (data aman saat redeploy / restart)
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+  mysql_data:
+  redis_data:
+  nats_data:
+  minio_data:
