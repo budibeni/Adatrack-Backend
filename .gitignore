@@ -3,6 +3,11 @@
 .env.*
 !.env.example
 
+# SSH keys / secret lokal (jangan commit)
+id_rsa*
+*.pem
+*.key
+
 # Log & artifact lokal
 *.log
 *.test
