@@ -71,6 +71,14 @@ x-app-common-env: &app-common-env
   MYSQL_USER: ${MYSQL_USER:-adatrack_gps_user}
   MYSQL_PASSWORD: ${MYSQL_PASSWORD:-GANTI-MYSQL-PASSWORD}
   MYSQL_DB: ${MYSQL_DB:-adatrack_gps_db}
+  # Tenant/company DB ala MySQL (kode memakai MASTER_DB_* saat provider=mysql):
+  MASTER_DB_HOST: mysql
+  MASTER_DB_PORT: "3306"
+  MASTER_DB_USER: ${MASTER_DB_USER:-root}
+  MASTER_DB_PASSWORD: ${MASTER_DB_PASSWORD:-GANTI-MYSQL-ROOT-PASSWORD}
+  MASTER_DB_NAME: ${MASTER_DB_NAME:-adatrack_gps_master}
+  MYSQL_POOL_MIN: ${MYSQL_POOL_MIN:-10}
+  MYSQL_POOL_MAX: ${MYSQL_POOL_MAX:-50}
 
   # --- multi-tenant (master + pool company) ---
   COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX:-adatrack_gps_}
@@ -239,6 +247,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # --- worker-live (B1): tulis live-state ke Redis ---
   worker-live:
@@ -283,6 +293,8 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # --- worker-alert (B3): geofence / overspeed / baterai / offline / SOS ---
   worker-alert:
@@ -314,6 +326,8 @@ services:
       redis:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   # --- service-websocket (B2): REST + WebSocket + RBAC (multi-tenant) ---
@@ -354,6 +368,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # --- api-vehicle (B3): CRUD vehicle / speed-config / routes / assignment ---
   api-vehicle:
@@ -379,6 +395,8 @@ services:
       redis:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   # --- service-media (B5b): dashcam event media via MinIO/S3 ---
@@ -416,6 +434,8 @@ services:
       nats:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
 # ---------------------------------------------------------------------------
