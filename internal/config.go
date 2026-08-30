@@ -178,6 +178,33 @@ type Config struct {
 		// rounds performed for a single alert.
 		EscalationMax int
 	}
+
+	// Media (B5b, service-media — PRD v1.3.0 Module 8). Object-storage &
+	// ingest configuration for the dashcam event-media pipeline.
+	Media struct {
+		// S3Endpoint is the MinIO / AWS S3 / OSS endpoint (MEDIA_S3_ENDPOINT).
+		S3Endpoint string
+		// S3Bucket is the default bucket (MEDIA_S3_BUCKET); per-company bucket
+		// from master company_media_config.bucket takes precedence.
+		S3Bucket string
+		// S3AccessKey / S3SecretKey (MEDIA_S3_ACCESS_KEY / MEDIA_S3_SECRET_KEY).
+		S3AccessKey string
+		S3SecretKey string
+		// S3UseSSL (MEDIA_S3_USE_SSL).
+		S3UseSSL bool
+		// S3Region (MEDIA_S3_REGION, optional; default empty = us-east-1 for S3).
+		S3Region string
+		// PresignTTL is the presigned URL lifetime (MEDIA_PRESIGN_TTL_SECONDS).
+		PresignTTL time.Duration
+		// MaxFileMB is the global fallback max file size (MEDIA_MAX_FILE_MB).
+		MaxFileMB int
+		// DefaultHMACSecret is a dev fallback when master company_media_config
+		// has no row for a company (documented convenience; per-company secret is
+		// the source of truth for FR-8.1).
+		DefaultHMACSecret string
+		// CleanupCron is the daily retention job spec (MEDIA_CLEANUP_CRON).
+		CleanupCron string
+	}
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -306,6 +333,18 @@ func LoadConfig() *Config {
 	// SOS escalation (B3: automatic escalation when un-acknowledged)
 	c.SOS.EscalationMinutes = time.Duration(getEnvInt("SOS_ESCALATION_MINUTES", 2)) * time.Minute
 	c.SOS.EscalationMax = getEnvInt("SOS_ESCALATION_MAX", 3)
+
+	// Media (B5b, service-media — PRD v1.3.0 Module 8).
+	c.Media.S3Endpoint = getEnv("MEDIA_S3_ENDPOINT", "http://localhost:9000")
+	c.Media.S3Bucket = getEnv("MEDIA_S3_BUCKET", "adatrack-media")
+	c.Media.S3AccessKey = getEnv("MEDIA_S3_ACCESS_KEY", "minioadmin")
+	c.Media.S3SecretKey = getEnv("MEDIA_S3_SECRET_KEY", "minioadmin")
+	c.Media.S3UseSSL = getEnvBool("MEDIA_S3_USE_SSL", false)
+	c.Media.S3Region = getEnv("MEDIA_S3_REGION", "")
+	c.Media.PresignTTL = time.Duration(getEnvInt("MEDIA_PRESIGN_TTL_SECONDS", 600)) * time.Second
+	c.Media.MaxFileMB = getEnvInt("MEDIA_MAX_FILE_MB", 100)
+	c.Media.DefaultHMACSecret = getEnv("MEDIA_DEFAULT_HMAC_SECRET", "")
+	c.Media.CleanupCron = getEnv("MEDIA_CLEANUP_CRON", "0 3 * * *")
 
 	return c
 }

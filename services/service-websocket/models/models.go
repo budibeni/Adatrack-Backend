@@ -41,24 +41,24 @@ type MasterUser struct {
 	PasswordHash string
 	FullName     string
 	// --- Enterprise-standard identity fields (migration 011) ---
-	Username            string       // nullable; COALESCE('') in query
-	FirstName           string       // nullable; COALESCE('') in query
-	LastName            string       // nullable; COALESCE('') in query
-	PhoneNumber         string       // nullable; E.164; COALESCE('') in query
-	EmailVerified       bool         // NOT NULL DEFAULT FALSE
-	PhoneVerified       bool         // NOT NULL DEFAULT FALSE
-	MFAEnabled          bool         // NOT NULL DEFAULT FALSE
-	Locale              string       // NOT NULL DEFAULT 'id'
-	AvatarURL           string       // nullable; COALESCE('') in query
-	FailedLoginAttempts int         // NOT NULL DEFAULT 0
-	PasswordChangedAt   *time.Time  // nullable
-	LockedUntil         *time.Time  // nullable — account lockout expiry
-	DeletedAt           *time.Time  // nullable — soft delete (NULL = active)
-	LastLogin           *time.Time  // nullable
-	CreatedBy           *uint64     // nullable FK → master.users.id (audit)
-	UpdatedBy           *uint64     // nullable FK → master.users.id (audit)
-	Role                string       // global role: Admin / Manager / Operator / Driver
-	Status              string       // active / inactive / suspended
+	Username            string     // nullable; COALESCE('') in query
+	FirstName           string     // nullable; COALESCE('') in query
+	LastName            string     // nullable; COALESCE('') in query
+	PhoneNumber         string     // nullable; E.164; COALESCE('') in query
+	EmailVerified       bool       // NOT NULL DEFAULT FALSE
+	PhoneVerified       bool       // NOT NULL DEFAULT FALSE
+	MFAEnabled          bool       // NOT NULL DEFAULT FALSE
+	Locale              string     // NOT NULL DEFAULT 'id'
+	AvatarURL           string     // nullable; COALESCE('') in query
+	FailedLoginAttempts int        // NOT NULL DEFAULT 0
+	PasswordChangedAt   *time.Time // nullable
+	LockedUntil         *time.Time // nullable — account lockout expiry
+	DeletedAt           *time.Time // nullable — soft delete (NULL = active)
+	LastLogin           *time.Time // nullable
+	CreatedBy           *uint64    // nullable FK → master.users.id (audit)
+	UpdatedBy           *uint64    // nullable FK → master.users.id (audit)
+	Role                string     // global role: Admin / Manager / Operator / Driver
+	Status              string     // active / inactive / suspended
 }
 
 // AuthUser is the authenticated caller stored in the gin context. The effective
@@ -78,7 +78,7 @@ type LoginResponse struct {
 	Token            string          `json:"token"`
 	TokenType        string          `json:"token_type"`
 	ExpiresIn        int64           `json:"expires_in"`
-	RefreshToken     string          `json:"refresh_token,omitempty"`     // B4 hardening
+	RefreshToken     string          `json:"refresh_token,omitempty"`      // B4 hardening
 	RefreshExpiresIn int64           `json:"refresh_expires_in,omitempty"` // detik; B4 hardening
 	User             AuthUserPayload `json:"user"`
 }
@@ -323,4 +323,29 @@ type AlertNotification struct {
 type AlertNotificationEvent struct {
 	Event string            `json:"event"` // "ALERT_NOTIFICATION"
 	Data  AlertNotification `json:"data"`
+}
+
+// ---------------------------------------------------------------------------
+// Media event notifications (B5b, Module 8 → WS MEDIA_EVENT, FR-8.5)
+// ---------------------------------------------------------------------------
+
+// MediaEventWS is the payload of a MEDIA_EVENT WS event; it mirrors the NATS
+// media.event.<company> message published by service-media.
+type MediaEventWS struct {
+	Event       string         `json:"event"` // "MEDIA_EVENT"
+	Data        MediaEventData `json:"data"`
+}
+
+// MediaEventData carries the media catalog fields fanned out via the hub.
+type MediaEventData struct {
+	MediaID     uint64 `json:"media_id"`
+	VehicleID   uint64 `json:"vehicle_id"`
+	IMEI        string `json:"imei"`
+	CompanyCode string `json:"company_code"`
+	MediaType   string `json:"media_type"`
+	TriggerType string `json:"trigger_type"`
+	Status      string `json:"status"`
+	SizeBytes   int64  `json:"size_bytes"`
+	TakenAt     int64  `json:"taken_at"`
+	PublishedAt int64  `json:"published_at"`
 }

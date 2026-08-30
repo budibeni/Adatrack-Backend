@@ -93,4 +93,61 @@ func (wa *WorkerAlert) publishAlert(company, imei string, rec models.AlertRecord
 		return
 	}
 	wa.metrics.incPublished(subject)
+
+	// B5b (FR-8.6): alert critical/SOS → publish media.capture.request.<company>
+	// supaya dashcam yang mendukung dapat melakukan capture event media.
+	if rec.Severity == "critical" {
+		wa.publishCaptureRequest(company, imei, rec, tm)
+	}
+}
+
+// captureRequest is the media.capture.request.<company> payload (FR-8.6).
+type captureRequest struct {
+	AlertID     uint64  `json:"alert_id"`
+	VehicleID   uint64  `json:"vehicle_id"`
+	IMEI        string  `json:"imei"`
+	CompanyCode string  `json:"company_code"`
+	AlertType   string  `json:"alert_type"`
+	Severity    string  `json:"severity"`
+	Lat         float64 `json:"lat,omitempty"`
+	Lon         float64 `json:"lon,omitempty"`
+	TriggeredAt int64   `json:"triggered_at"`
+	PublishedAt int64   `json:"published_at"`
+}
+
+// publishCaptureRequest emits media.capture.request.<company> for critical
+// alerts so a firmware-capable dashcam can capture/attach event media (FR-8.6).
+// Pasif fallback = dashcam push otomatis saat alarm lokalnya (didokumentasikan).
+func (wa *WorkerAlert) publishCaptureRequest(company, imei string, rec models.AlertRecord, tm models.TelemetryMessage) {
+	if wa.nac == nil {
+		return
+	}
+	req := captureRequest{
+		CompanyCode: lowerCode(company),
+		IMEI:        imei,
+		VehicleID:   rec.VehicleID,
+		AlertType:   rec.AlertType,
+		Severity:    rec.Severity,
+		TriggeredAt: tm.Timestamp,
+		PublishedAt: time.Now().Unix(),
+	}
+	if rec.ID > 0 {
+		req.AlertID = rec.ID
+	}
+	if rec.VehicleLat != nil {
+		req.Lat = *rec.VehicleLat
+	}
+	if rec.VehicleLon != nil {
+		req.Lon = *rec.VehicleLon
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		return
+	}
+	subject := wa.cfg.SubjectPlain("media", "capture", "request", lowerCode(company))
+	if err := wa.nac.Publish(subject, data); err != nil {
+		wa.metrics.incError(company, "capture_publish")
+		return
+	}
+	wa.metrics.incPublished(subject)
 }

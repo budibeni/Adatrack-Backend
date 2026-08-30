@@ -21,13 +21,14 @@
 
 ## 1. Ringkasan Layanan & Base URL
 
-Sistem backend memiliki **dua layanan HTTP** yang dipakai frontend. Keduanya berbagi
-JWT secret yang sama sehingga **satu token login berlaku untuk keduanya** (interop).
+Sistem backend menyediakan beberapa layanan HTTP yang dipakai frontend. Service REST
+berbagi JWT secret yang sama sehingga **satu token login berlaku untuk semua** (interop).
 
 | Layanan | Base URL (dev lokal) | Port Default | Fungsi |
 |---|---|---|---|
 | `service-websocket` | `http://localhost:8080` | `8080` (`WEBSOCKET_HTTP_ADDR`) | REST utama dashboard (vehicles baca, geofences, alerts, routes) **+ WebSocket real-time** |
 | `api-vehicle` | `http://localhost:8081` | `8081` (`API_VEHICLE_HTTP_ADDR`) | REST manajemen (vehicle CRUD, speed config, geofence-vehicle link, route assignment) |
+| `service-media` | `http://localhost:8095` | `8095` (`SERVICE_MEDIA_HTTP_ADDR`) | Dashcam event media (ingest HMAC, katalog, presigned URL, retensi) — B5b |
 
 Cara cepat memeriksa konektivitas:
 
@@ -39,6 +40,10 @@ curl -s http://localhost:8080/healthz
 # api-vehicle
 curl -s http://localhost:8081/healthz
 # => ok mysql:ok,redis:ok
+
+# service-media (termasuk ping object store)
+curl -s http://localhost:8095/healthz
+# => ok mysql:ok,redis:ok,s3:ok,nats:ok
 ```
 
 > **Catatan produksi:** bila dideploy di balik reverse-proxy / ingress, ganti `localhost`
@@ -1511,6 +1516,130 @@ curl -s -X DELETE http://localhost:8081/api/v1/routes/3/assignments/8 \
 
 ---
 
+### 5.6 Dashcam Event Media (B5b — PRD v1.3.0 Module 8, service-media)
+
+Service baru **`service-media`** (port **8095**, `SERVICE_MEDIA_HTTP_ADDR`) menangani
+pipeline media peristiwa dashcam (Scope A: foto/clip saat sos/alarm/geofence/overspeed/
+manual/scheduled/power). Kontrak:
+
+- **Ingest** `POST /api/v1/media/events` — autentikasi **HMAC-SHA256 per-company**
+  (header `X-Signature`; secret dari master `company_media_config.hmac_secret`). Dua alur:
+  `multipart/form-data` (unggah langsung) ATAU `application/json` (reserve katalog +
+  kembalikan **presigned PUT URL** untuk di-upload device/gateway sendiri).
+- Object disimpan di S3-compatible (MinIO dev / AWS S3/OSS prod) dengan key
+  `{company}/{vehicle}/{yyyyMM}/{uuid}` (FR-8.2), allowlist `image/jpeg` & `video/mp4`.
+- **REST ber-RBAC** di bawah (validasi JWT interop B2/B3; filter `user_vehicles`
+  row-level; Admin company = semua).
+- Setiap ingest sukses mem-publish NATS `media.event.<company_code>` (FR-8.5) yang
+  di-fan-out `service-websocket` sebagai event WS **`MEDIA_EVENT`**.
+- Job retensi harian (`MEDIA_CLEANUP_CRON`, default `0 3 * * *`) menghapus objek
+  lebih tua dari `retention_days` per company dan menandai `status='expired'` (FR-8.7).
+
+#### 5.6.1 Ingest — `POST /api/v1/media/events` (HMAC, tanpa JWT)
+
+Header wajib:
+
+| Header | Keterangan |
+|---|---|
+| `X-Company-Code` | Company code tenant (mis. `DEV001`) |
+| `X-Signature` | `hex(HMAC-SHA256(secret, rawBody))` — secret dari `company_media_config.hmac_secret` |
+
+**Alur A — multipart/form-data (unggah langsung):**
+
+```bash
+SIG=$(printf '%s' '@body-bytes-go-here' | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex)
+curl -s -X POST http://localhost:8095/api/v1/media/events \
+  -H "X-Company-Code: DEV001" -H "X-Signature: $SIG" \
+  -F "vehicle_id=1" -F "media_type=photo" -F "trigger_type=alarm" \
+  -F "taken_at=2026-08-27T10:00:00Z" \
+  -F "file=@/path/snapshot.jpg;type=image/jpeg"
+```
+
+**Alur B — application/json (presigned PUT):**
+
+```bash
+SIG=$(printf '%s' '{"vehicle_id":1,"media_type":"photo","trigger_type":"alarm","mime_type":"image/jpeg"}' \
+  | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex)
+curl -s -X POST http://localhost:8095/api/v1/media/events \
+  -H "X-Company-Code: DEV001" -H "X-Signature: $SIG" -H 'Content-Type: application/json' \
+  -d '{"vehicle_id":1,"media_type":"photo","trigger_type":"alarm","mime_type":"image/jpeg"}'
+```
+
+**Respons `201 Created` (Alur A):** `{ "status":"success", "data": { "media_id": 12,
+"object_key":"DEV001/1/202608/<uuid>","status":"available" } }`
+
+**Respons `201 Created` (Alur B):** `{ "status":"success", "data": { "media_id": 12,
+"object_key":"DEV001/1/202608/<uuid>","status":"uploaded","upload_url":"<presigned PUT>" } }`
+
+> ⚠️ HMAC dihitung atas **byte mentah body**. Untuk multipart, signature harus
+> dibuat dari seluruh multipart body persis seperti yang dikirim (device/gateway
+> menyusunnya sendiri). Gunakan SDK/format yang konsisten antara penyusun &
+> service. **Error umum:** `401 UNAUTHORIZED` (HMAC salah), `400 INVALID_REQUEST`
+> (content-type ilegal / field kurang), `400 FILE_TOO_LARGE`, `404 VEHICLE_NOT_FOUND`.
+
+**Alur B lanjutan — Finalisasi upload JSON:** `POST /api/v1/media/events/:id/complete` (HMAC)
+
+Setelah device meng-upload objek ke presigned PUT URL, panggil endpoint ini untuk
+menyelesaikan siklus hidup **`uploaded → available`** (FR-8.3): service melakukan
+`Stat` objek di object store, mengisi `size_bytes`, dan mem-publish `media.event.<company>`
+sehingga WS `MEDIA_EVENT` diterima klien berhak.
+
+```bash
+SIG=$(printf '%s' '{}' | openssl dgst -sha256 -hmac "$HMAC_SECRET" -hex)
+curl -s -X POST http://localhost:8095/api/v1/media/events/12/complete \
+  -H "X-Company-Code: DEV001" -H "X-Signature: $SIG" -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+**Respons `200 OK`:** `{ "status":"success", "data": { "media_id": 12, "status": "available",
+"size_bytes": 245760, "object_key":"DEV001/1/202608/<uuid>", "complete_at":"..." } }`
+
+**Error umum:** `401 UNAUTHORIZED` (HMAC), `404 MEDIA_NOT_FOUND` / `OBJECT_NOT_FOUND`
+(objek belum di-upload), `409 ALREADY_AVAILABLE`, `410 MEDIA_EXPIRED`.
+
+#### 5.6.2 Daftar Media — `GET /api/v1/media` (JWT, RBAC)
+
+```bash
+curl -s "http://localhost:8095/api/v1/media?trigger_type=alarm&status=available&page=1&limit=50" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Respons:** `{ status, data: [ { id, vehicle_id, imei, company_code, media_type,
+trigger_type, object_key, bucket, size_bytes, duration_seconds?, mime_type,
+sha256?, status, taken_at, meta? } ], pagination: { page, limit, total } }`
+
+#### 5.6.3 Detail — `GET /api/v1/media/:id` (JWT, RBAC)
+
+```bash
+curl -s http://localhost:8095/api/v1/media/12 -H "Authorization: Bearer $TOKEN"
+```
+
+#### 5.6.4 Ambil Presigned URL — `GET /api/v1/media/:id/url` (JWT, RBAC + audit)
+
+```bash
+curl -s http://localhost:8095/api/v1/media/12/url -H "Authorization: Bearer $TOKEN"
+```
+
+**Respons `200 OK`:** `{ "status":"success", "data": { "url": "<presigned GET>",
+"expires_in": 600 } }`. Akses ini dicatat ke audit (event `MEDIA_URL_ACCESS`).
+
+> `410 GONE` bila status `expired`/`failed`; `403 FORBIDDEN` bila user tidak punya
+> akses ke vehicle terkait.
+
+#### 5.6.5 Hapus (soft-delete) — `DELETE /api/v1/media/:id` (Admin only)
+
+```bash
+curl -s -X DELETE http://localhost:8095/api/v1/media/12 -H "Authorization: Bearer $TOKEN"
+```
+
+**Respons `200 OK`:** `{ "status":"success", "data": { "id": 12, "status": "deleted" } }`
+
+**Env terkait:** `SERVICE_MEDIA_HTTP_ADDR`, `MEDIA_S3_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY/
+USE_SSL/REGION/PORT`, `MEDIA_PRESIGN_TTL_SECONDS`, `MEDIA_MAX_FILE_MB`, `MEDIA_CLEANUP_CRON`,
+`MEDIA_DEFAULT_HMAC_SECRET` (fallback dev saat `company_media_config` kosong).
+
+---
+
 ## 6. WebSocket Real-Time
 
 Koneksi real-time untuk update posisi & notifikasi alert, dibuka di
@@ -1622,6 +1751,29 @@ Kode error WS lain: `SERVER_FULL` (maks koneksi tercapai), `INTERNAL_ERROR`.
 
 Notifikasi hanya dikirim ke user yang memenuhi `notification_preferences`
 (channel websocket aktif + severity memenuhi ambang) dan berhak atas vehicle tsb.
+
+#### `MEDIA_EVENT` — push media dashcam real-time (service-media → WS, B5b)
+
+Diterbitkan saat media dashcam berhasil di-ingest ke object store (`media.event.<company>`
+→ `MEDIA_EVENT`). Hanya dikirim ke klien company sama yang berhak atas vehicle tsb:
+
+```jsonc
+{
+  "event": "MEDIA_EVENT",
+  "data": {
+    "media_id": 12,
+    "vehicle_id": 1,
+    "imei": "864201040512345",
+    "company_code": "DEV001",
+    "media_type": "photo",             // photo | video_clip
+    "trigger_type": "alarm",           // sos|alarm|geofence|overspeed|manual|scheduled|power
+    "status": "available",
+    "size_bytes": 245760,
+    "taken_at": 1770030000,            // unix epoch detik
+    "published_at": 1770030005
+  }
+}
+```
 
 ### 6.3 Contoh Uji Cepat dengan `websocat`
 
