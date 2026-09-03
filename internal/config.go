@@ -47,6 +47,12 @@ type Config struct {
 		// remain unprefixed to preserve the documented convention
 		// (alert.geofence.*, alert.sos.*, notify.alert.<vehicle_id>).
 		SubjectPrefix string
+		// JetStream retention (B4 audit 2026-08-31): stream dibuat via
+		// initializeStreams dengan LimitsPolicy + batas ini. Sebelumnya TANPA
+		// limit → telemetry-raw tumbuh ±8 GB/hari @400 msg/s. Default 48 jam
+		// & 4 GiB dengan DiscardOld; 0/negatif memakai default tersebut.
+		JetStreamMaxAgeHours int
+		JetStreamMaxBytes    int
 	}
 
 	// DatabaseProvider selects the persistent DB engine (PRD §7.1.1):
@@ -236,6 +242,10 @@ func LoadConfig() *Config {
 	c.NATS.ClientID = getEnv("NATS_CLIENT_ID", "")
 	// NATS_SUBJECT_PREFIX default "telemetry" (PRD §7) — applied to telemetry.*.
 	c.NATS.SubjectPrefix = getEnv("NATS_SUBJECT_PREFIX", "telemetry")
+	// JetStream retention (B4 audit 2026-08-31): batasi pertumbuhan stream.
+	// 48 jam & 4 GiB cukup utk replay/debug tanpa mengisi disk produksi.
+	c.NATS.JetStreamMaxAgeHours = getEnvInt("JETSTREAM_MAX_AGE_HOURS", 48)
+	c.NATS.JetStreamMaxBytes = getEnvInt("JETSTREAM_MAX_BYTES", 4*1024*1024*1024)
 
 	// Database provider (PRD §7.1.1: DATABASE_PROVIDER=postgres|mysql).
 	// Default PROYEK = "postgres" (keputusan 2026-08-25); backend/.env selalu

@@ -71,6 +71,27 @@ func NewNATSClient(config *Config, published, consumed *prometheus.CounterVec, p
 	return c, nil
 }
 
+// applyJetStreamRetention sets MaxAge/MaxBytes retention on a stream config
+// from Config (env JETSTREAM_MAX_AGE_HOURS / JETSTREAM_MAX_BYTES), with safe
+// defaults (48 hours, 4 GiB) when unset/invalid. Pure — unit-tested.
+func applyJetStreamRetention(cfg *nats.StreamConfig, config *Config) {
+	const (
+		defHours = 48
+		defBytes = 4 * 1024 * 1024 * 1024 // 4 GiB
+	)
+	hours, bytes := defHours, defBytes
+	if config != nil {
+		if config.NATS.JetStreamMaxAgeHours > 0 {
+			hours = config.NATS.JetStreamMaxAgeHours
+		}
+		if config.NATS.JetStreamMaxBytes > 0 {
+			bytes = config.NATS.JetStreamMaxBytes
+		}
+	}
+	cfg.MaxAge = time.Duration(hours) * time.Hour
+	cfg.MaxBytes = int64(bytes)
+}
+
 // initializeStreams creates the default JetStream streams and consumers
 // for the adatrack management system. Subject patterns are derived from the
 // configured NATS_SUBJECT_PREFIX (telemetry.* family) so streams always match
@@ -98,14 +119,30 @@ func (c *NATSClient) initializeStreams() error {
 		} else {
 			subj = c.SubjectPlain(s.parts...)
 		}
-		_, err := c.js.AddStream(&nats.StreamConfig{
+		cfg := &nats.StreamConfig{
 			Name:        s.name,
 			Subjects:    []string{subj},
 			Description: fmt.Sprintf("adatrack GPS %s stream", s.name),
 			Retention:   nats.LimitsPolicy,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to add stream %s: %w", s.name, err)
+			Discard:     nats.DiscardOld,
+		}
+		applyJetStreamRetention(cfg, c.config)
+		// MaxWait diperbesar: UpdateStream pada stream besar memicu purge
+		// server-side (pesan > MaxAge dihapus) yang bisa melebihi timeout
+		// default 5 dtk → "context deadline exceeded" (kasus nyata 2026-08-31:
+		// purge 1,77 GB). Satu stream gagal TIDAK menggagalkan stream lain.
+		if _, err := c.js.AddStream(cfg, nats.MaxWait(30*time.Second)); err != nil {
+			// Stream sudah ada (dibuat sesi/boot sebelumnya TANPA retensi):
+			// terapkan konfigurasi baru via UpdateStream agar limit selalu
+			// menyusul — tanpa ini stream lama tetap unbounded.
+			if !strings.Contains(err.Error(), "already in use") {
+				slog.Warn("jetstream: failed to add stream", "stream", s.name, "error", err)
+				continue
+			}
+			if _, uerr := c.js.UpdateStream(cfg, nats.MaxWait(60*time.Second)); uerr != nil {
+				slog.Warn("jetstream: failed to update stream retention", "stream", s.name, "error", uerr)
+				continue
+			}
 		}
 	}
 
