@@ -113,9 +113,21 @@ func parseTeltonikaAVL(payload []byte) ([]models.TelemetryMessage, error) {
 	switch codec {
 	case teltonikaCodec8, teltonikaCodec8E:
 		for i := 0; i < count; i++ {
-			t, n, err := parseCodec8Record(payload[off:])
-			if err != nil {
-				return nil, fmt.Errorf("teltonika codec 8 record %d: %w", i, err)
+			var (
+				t   models.TelemetryMessage
+				n   int
+				err error
+			)
+			if codec == teltonikaCodec8E {
+				t, n, err = parseCodec8ERecord(payload[off:])
+				if err != nil {
+					return nil, fmt.Errorf("teltonika codec 8 extended record %d: %w", i, err)
+				}
+			} else {
+				t, n, err = parseCodec8Record(payload[off:])
+				if err != nil {
+					return nil, fmt.Errorf("teltonika codec 8 record %d: %w", i, err)
+				}
 			}
 			off += n
 			out = append(out, t)
@@ -187,25 +199,8 @@ func parseCodec8Record(b []byte) (models.TelemetryMessage, int, error) {
 			val = val<<8 | uint64(b[off])
 			off++
 		}
-		switch id {
-		case 72: // battery voltage (V*100)
-			t.Battery = byte(val)
-		case 66, 67: // movement / ignition 0-1
-			t.ACC = val == 1
-		default:
-			// B5a: fuel sensor IO elements (configurable via env).
-			switch id {
-			case ioFuelLevel:
-				f := float64(val)
-				t.FuelLevel = &f
-			case ioFuelUsed:
-				f := float64(val)
-				t.FuelVolume = &f
-			case ioFuelTemp:
-				f := float64(int16(val)) // signed temperature
-				t.FuelTempC = &f
-			}
-		}
+		// Pemetaan IO dipusatkan di applyTeltonikaIO (dipakai bersama Codec 8E).
+		applyTeltonikaIO(&t, uint16(id), val)
 	}
 	return t, off, nil
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"ajb_gps/internal"
+	"ajb_gps/internal/dialect"
 	"ajb_gps/internal/tenant"
 
 	"github.com/gin-gonic/gin"
@@ -154,13 +155,15 @@ func userCreateHandler(c *gin.Context) {
 		return
 	}
 
-	res, err := master.ExecContext(c.Request.Context(),
+	id64, err := dialect.InsertReturningID(dialect.Current(), c.Request.Context(), master,
 		`INSERT INTO users (company_id, company_code, email, password_hash, full_name,
 		                    email_verified, locale, role, status)
 		 VALUES (?, ?, ?, ?, ?, TRUE, 'id', ?, 'active')`,
 		companyID, req.CompanyCode, req.Email, string(hash), req.FullName, role)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate entry") {
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "duplicate entry") || strings.Contains(msg, "23505") ||
+			strings.Contains(msg, "duplicate key") {
 			writeError(c, http.StatusConflict, "USER_EXISTS", "a user with this email already exists")
 			return
 		}
@@ -168,7 +171,7 @@ func userCreateHandler(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
 	}
-	userID, _ := res.LastInsertId()
+	userID := int64(id64)
 
 	// 4) Registry akses di company DB (WAJIB agar login tenant lolos RBAC).
 	targetDB, err := appTenant.DB(req.CompanyCode)
@@ -190,10 +193,13 @@ func userCreateHandler(c *gin.Context) {
 	defer func() { _ = tx.Rollback() }() // no-op setelah Commit
 
 	// role_override NULL → selalu mengikuti role global di master.users.
+	// Dialect-aware upsert (PG-parity fix): ON DUPLICATE KEY UPDATE adalah
+	// MySQL-only (SQLSTATE 42601 di Postgres).
+	d := dialect.Current()
+	upsertClause := d.Upsert([]string{"user_id"}, []string{"is_active = TRUE"})
 	if _, err = tx.ExecContext(ctx,
 		`INSERT INTO user_company_access (user_id, role_override, is_active)
-		 VALUES (?, NULL, TRUE)
-		 ON DUPLICATE KEY UPDATE is_active = TRUE`, userID); err != nil {
+		 VALUES (?, NULL, TRUE)`+upsertClause, userID); err != nil {
 		slog.Error("user.create: upsert user_company_access failed", "error", err, "user_id", userID)
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to grant company access")
 		return

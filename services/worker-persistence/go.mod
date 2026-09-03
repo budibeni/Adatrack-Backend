@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	ajb_gps/internal v0.0.0
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/nats-io/nats.go v1.53.1
 	github.com/prometheus/client_golang v1.20.0
 )

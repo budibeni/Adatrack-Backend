@@ -172,15 +172,16 @@ func auditLogin(userID uint64, email, ip, userAgent string, success bool) {
 		eventType = "LOGIN_SUCCESS"
 	}
 	internal.LogAudit(auditDB(), internal.AuditEntry{
-		UserID:      userID,
-		EventType:   eventType,
-		Action:      "login",
-		Entity:      "user",
-		EntityID:    email,
-		IP:          ip,
-		UserAgent:   userAgent,
+		UserID:    userID,
+		EventType: eventType,
+		Action:    "login",
+		Entity:    "user",
+		EntityID:  email,
+		IP:        ip,
+		UserAgent: userAgent,
 	})
 }
+
 // recordFailedLogin increments master.users.failed_login_attempts and, when
 // the threshold is reached, locks the account via locked_until (enterprise
 // security — GAP #12 account lockout). Errors are logged but never block the

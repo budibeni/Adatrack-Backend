@@ -38,9 +38,11 @@ func buildCodec8Packet(ts time.Time, lat, lon float64, speed float64) []byte {
 }
 
 func TestTeltonikaCRC16(t *testing.T) {
-	// CRC-16 (poly 0x1021 init 0) "123456789" -> 0x31C3 (XMODEM gives 0x31C3).
-	if got := teltonikaCRC16([]byte("123456789")); got != 0x31C3 {
-		t.Errorf("teltonikaCRC16 = 0x%04x, want 0x31C3", got)
+	// CRC-16/IBM (poly 0xA001 reflected, init 0xFFFF) — spek Teltonika.
+	// "123456789" -> 0x4B37. (Diperbarui dari CCITT 0x31C3 setelah bug
+	// protokol ditemukan via verifikasi live B5a 2026-08-26.)
+	if got := teltonikaCRC16([]byte("123456789")); got != 0x4B37 {
+		t.Errorf("teltonikaCRC16 = 0x%04x, want 0x4B37", got)
 	}
 }
 
@@ -85,9 +87,10 @@ func TestParseTeltonikaCRCmismatch(t *testing.T) {
 }
 
 func TestReadTeltonikaIME(t *testing.T) {
-	// IMEI as ASCII digits (15 bytes), length prefix 0x0F.
+	// IMEI as ASCII digits (15 bytes), length prefix 2-byte BE = 0x000F.
+	// (Spek Teltonika: IME packet memakai 2-byte length, bukan 4.)
 	imei := "359070061389042"
-	body := append([]byte{0, 0, 0, 15}, []byte(imei)...)
+	body := append([]byte{0x00, 0x0F}, []byte(imei)...)
 	got, err := readTeltonikaIME(bufio.NewReader(bytes.NewReader(body)))
 	if err != nil {
 		t.Fatalf("read ime error: %v", err)

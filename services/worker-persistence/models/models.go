@@ -14,6 +14,7 @@ type TelemetryMessage struct {
 	Satellites  uint8   `json:"satellites,omitempty"`
 	HDOP        float64 `json:"hdop,omitempty"`
 	Battery     uint8   `json:"battery_level,omitempty"`
+	ACC         bool    `json:"acc,omitempty"`
 	// Timestamp is the device event time (unix seconds).
 	Timestamp int64 `json:"timestamp"`
 

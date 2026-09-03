@@ -52,7 +52,7 @@ x-app-common-env: &app-common-env
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:ADATRACK-POSTGRES-PASSWORD}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-GANTI-POSTGRES-PASSWORD}
   POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
   POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
   POSTGRES_MASTER_SCHEMA: ${POSTGRES_MASTER_SCHEMA:-adatrack_gps_master}
@@ -69,8 +69,16 @@ x-app-common-env: &app-common-env
   MYSQL_HOST: mysql
   MYSQL_PORT: "3306"
   MYSQL_USER: ${MYSQL_USER:-adatrack_gps_user}
-  MYSQL_PASSWORD: ${MYSQL_PASSWORD:ADATRACK-MYSQL-PASSWORD}
+  MYSQL_PASSWORD: ${MYSQL_PASSWORD:-GANTI-MYSQL-PASSWORD}
   MYSQL_DB: ${MYSQL_DB:-adatrack_gps_db}
+  # Tenant/company DB ala MySQL (kode memakai MASTER_DB_* saat provider=mysql):
+  MASTER_DB_HOST: mysql
+  MASTER_DB_PORT: "3306"
+  MASTER_DB_USER: ${MASTER_DB_USER:-root}
+  MASTER_DB_PASSWORD: ${MASTER_DB_PASSWORD:-GANTI-MYSQL-ROOT-PASSWORD}
+  MASTER_DB_NAME: ${MASTER_DB_NAME:-adatrack_gps_master}
+  MYSQL_POOL_MIN: ${MYSQL_POOL_MIN:-10}
+  MYSQL_POOL_MAX: ${MYSQL_POOL_MAX:-50}
 
   # --- multi-tenant (master + pool company) ---
   COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX:-adatrack_gps_}
@@ -88,7 +96,7 @@ x-app-common-env: &app-common-env
   REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-adatrack_gps:}
 
   # --- JWT (WAJIB sama antara service-websocket & api-vehicle) ---
-  JWT_SECRET: ${JWT_SECRET:ADATRACK-JWT-SECRET-LONGGGG}
+  JWT_SECRET: ${JWT_SECRET:-GANTI-JWT-SECRET-LONGGGG}
   JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
 
   # --- HTTP umum / CORS / TLS (TLS off — HTTPS di-terminate proxy) ---
@@ -108,9 +116,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
       POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:ADATRACK-POSTGRES-PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-GANTI-POSTGRES-PASSWORD}
       POSTGRES_REPLICA_USER: ${POSTGRES_REPLICA_USER:-replicator}
-      POSTGRES_REPLICA_PASSWORD: ${POSTGRES_REPLICA_PASSWORD:ADATRACK-REPLICA-PASSWORD}
+      POSTGRES_REPLICA_PASSWORD: ${POSTGRES_REPLICA_PASSWORD:-GANTI-REPLICA-PASSWORD}
       PGDATA: /var/lib/postgresql/data
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -139,9 +147,9 @@ services:
       - --gtid-mode=ON
       - --enforce-gtid-consistency=ON
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:ADATRACK-MYSQL-ROOT-PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-GANTI-MYSQL-ROOT-PASSWORD}
       MYSQL_USER: ${MYSQL_USER:-adatrack_gps_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:ADATRACK-MYSQL-PASSWORD}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-GANTI-MYSQL-PASSWORD}
       MASTER_DB_NAME: ${MASTER_DB_NAME:-adatrack_gps_master}
       COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX:-adatrack_gps_}
     volumes:
@@ -215,6 +223,9 @@ services:
       context: .
       dockerfile: services/ingestion-tcp/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       TCP_PORT: ${TCP_PORT:-9000}
@@ -238,6 +249,8 @@ services:
       redis:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   # --- worker-live (B1): tulis live-state ke Redis ---
@@ -269,6 +282,9 @@ services:
       context: .
       dockerfile: services/worker-persistence/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       PERSISTENCE_METRICS_ADDR: :8091
@@ -283,6 +299,8 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # --- worker-alert (B3): geofence / overspeed / baterai / offline / SOS ---
   worker-alert:
@@ -290,6 +308,9 @@ services:
       context: .
       dockerfile: services/worker-alert/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       ALERT_METRICS_ADDR: :8093
@@ -314,6 +335,8 @@ services:
       redis:
         condition: service_healthy
       nats:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
   # --- service-websocket (B2): REST + WebSocket + RBAC (multi-tenant) ---
@@ -354,6 +377,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # --- api-vehicle (B3): CRUD vehicle / speed-config / routes / assignment ---
   api-vehicle:
@@ -361,6 +386,9 @@ services:
       context: .
       dockerfile: services/api-vehicle/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       API_VEHICLE_HTTP_ADDR: :8081
@@ -380,6 +408,8 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # --- service-media (B5b): dashcam event media via MinIO/S3 ---
   service-media:
@@ -387,6 +417,9 @@ services:
       context: .
       dockerfile: services/service-media/Dockerfile
     restart: unless-stopped
+    volumes:
+      # Template migrasi company utk auto-provision tenant (PRD §6.1).
+      - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
       SERVICE_MEDIA_HTTP_ADDR: :8095
@@ -400,7 +433,7 @@ services:
       MEDIA_PRESIGN_TTL_SECONDS: ${MEDIA_PRESIGN_TTL_SECONDS:-600}
       MEDIA_MAX_FILE_MB: ${MEDIA_MAX_FILE_MB:-100}
       MEDIA_CLEANUP_CRON: ${MEDIA_CLEANUP_CRON:-0 3 * * *}
-      MEDIA_DEFAULT_HMAC_SECRET: ${MEDIA_DEFAULT_HMAC_SECRET:ADATRACK-MEDIA-HMAC}
+      MEDIA_DEFAULT_HMAC_SECRET: ${MEDIA_DEFAULT_HMAC_SECRET:-GANTI-MEDIA-HMAC}
     ports:
       - "${SERVICE_MEDIA_HTTP_PORT:-8095}:8095"
       - "${SERVICE_MEDIA_METRICS_PORT:-9091}:9091"
@@ -416,6 +449,8 @@ services:
       nats:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
 
 # ---------------------------------------------------------------------------

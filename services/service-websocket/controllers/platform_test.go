@@ -83,4 +83,3 @@ func TestCompanyCreate_DefaultContextNonSuperAdmin(t *testing.T) {
 		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
-

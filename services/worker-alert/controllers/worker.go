@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"time"
 
@@ -15,6 +16,28 @@ import (
 
 // natsMsg aliases the NATS message type used by subscription callbacks.
 type natsMsg = nats.Msg
+
+// Test seams (B4 coverage): indirection satu-baris mengikuti pola
+// `companyDBFn` di worker-persistence — memungkinkan unit test menyuntik
+// fake store / snapshot company / master pool tanpa infra nyata.
+// Default-nya mendelegasikan ke implementasi produksi.
+var (
+	newStoreFn = func(wa *WorkerAlert, code string) (store, error) {
+		return wa.newStore(code)
+	}
+	companiesFn = func(m *tenant.Manager) []tenant.Company {
+		if m == nil {
+			return nil
+		}
+		return m.Companies()
+	}
+	masterFn = func(m *tenant.Manager) *sql.DB {
+		if m == nil {
+			return nil
+		}
+		return m.Master()
+	}
+)
 
 // WorkerAlert implements multi-tenant alert detection (geofence, speed,
 // battery, offline, SOS, route deviation) by consuming telemetry.raw.>

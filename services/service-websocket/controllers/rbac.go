@@ -285,12 +285,12 @@ func auditLogin(userID uint64, email, ip, userAgent string, success bool) {
 		eventType = "LOGIN_SUCCESS"
 	}
 	internal.LogAudit(auditDB(), internal.AuditEntry{
-		UserID:      userID,
-		EventType:   eventType,
-		Action:      "login",
-		Entity:      "user",
-		EntityID:    email,
-		IP:          ip,
-		UserAgent:   userAgent,
+		UserID:    userID,
+		EventType: eventType,
+		Action:    "login",
+		Entity:    "user",
+		EntityID:  email,
+		IP:        ip,
+		UserAgent: userAgent,
 	})
 }

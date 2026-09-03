@@ -22,5 +22,12 @@ services/service-websocket/service-websocket
 services/worker-alert/worker-alert
 services/api-vehicle/api-vehicle
 services/worker-live/worker-live
+services/service-media/service-media
 cmd/migrate-tenant/migrate-tenant
+cmd/db-replica-probe/db-replica-probe
+cmd/querybench/querybench
+cmd/partition-maintain/partition-maintain
+database/tools/genhash/genhash
+database/tools/genregions/genregions
+tools/e2e-pub/e2e-pub
 loadtest/loadtest

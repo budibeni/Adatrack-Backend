@@ -34,6 +34,9 @@ var (
 	// publishErrFn is the indirection used by handlers so unit tests can
 	// capture telemetry.error publications without a live NATS connection.
 	publishErrFn = publishError
+	// companyDBFn is the indirection used by insert paths so unit tests can
+	// stub the per-company DB pool (sqlmock) without a live tenant manager.
+	companyDBFn = resolveCompanyDB
 )
 
 // --- Metrics (PRD §8.1 worker-persistence) ---
@@ -139,6 +142,7 @@ func handleMsg(msg *nats.Msg) error {
 		Satellites:  t.Satellites,
 		HDOP:        t.HDOP,
 		Battery:     t.Battery,
+		ACC:         t.ACC,
 		FuelLevel:   t.FuelLevel,
 		FuelVolume:  t.FuelVolume,
 		FuelTempC:   t.FuelTempC,
@@ -235,6 +239,13 @@ func insertBatch(rows []models.TelemetryRow) {
 	}()
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // insertFuelBatch (B5a) persists fuel-only rows into company fuel_logs with
 // retry + error publishing — same tenant routing pattern as insertBatch.
 func insertFuelBatch(rows []models.TelemetryRow) {
@@ -257,7 +268,7 @@ func insertFuelBatch(rows []models.TelemetryRow) {
 // fuel_rows_positionless_total counter keeps the path observable (no silent drop).
 func insertFuelCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 	start := time.Now()
-	db, err := resolveCompanyDB(companyCode)
+	db, err := companyDBFn(companyCode)
 	tenantRoutingDuration.Observe(float64(time.Since(start).Microseconds()) / 1000.0)
 	if err != nil {
 		batchInsertErrors.WithLabelValues(companyCode).Inc()
@@ -312,7 +323,7 @@ func insertFuelCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 		"rows", len(rows), "error", lastErr)
 	payload := []byte("batch:fail:fuel")
 	for _, r := range rows {
-		publishError(r.IMEI, payload)
+		publishErrFn(r.IMEI, payload)
 	}
 }
 
@@ -335,7 +346,7 @@ func GroupByCompany(rows []models.TelemetryRow) map[string][]models.TelemetryRow
 // is published to telemetry.error.<IMEI>.
 func insertCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 	start := time.Now()
-	db, err := resolveCompanyDB(companyCode)
+	db, err := companyDBFn(companyCode)
 	tenantRoutingDuration.Observe(float64(time.Since(start).Microseconds()) / 1000.0)
 	if err != nil {
 		batchInsertErrors.WithLabelValues(companyCode).Inc()
@@ -361,7 +372,7 @@ func insertCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 			r.Speed,
 			r.Heading,
 			0, // altitude (tidak diparse di protokol awal)
-			0, // acc_status
+			boolToInt(r.ACC), // acc_status
 			r.Battery,
 			r.EventTS, // DATETIME (parseTime=true)
 		}
@@ -394,7 +405,7 @@ func insertCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 		"rows", len(rows), "error", lastErr)
 	payload := []byte("batch:fail")
 	for _, r := range rows {
-		publishError(r.IMEI, payload)
+		publishErrFn(r.IMEI, payload)
 	}
 }
 
