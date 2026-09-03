@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	ajb_gps/internal v0.0.0
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/nats-io/nats.go v1.53.1
 	github.com/prometheus/client_golang v1.20.0
 )
@@ -25,6 +26,7 @@ require (
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/redis/go-redis/v9 v9.22.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

@@ -97,4 +97,3 @@ func main() {
 	wa.Stop()
 	slog.Info("worker-alert stopped")
 }
-

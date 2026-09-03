@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"ajb_gps/internal/dialect"
 	"ajb_gps/worker-alert/models"
 )
 
@@ -15,8 +16,14 @@ import (
 // geofence_vehicles.
 func (s *companyStore) ActiveGeofences(vehicleID uint64) ([]models.GeofenceDef, error) {
 	// READ path (replica): konfigurasi geofence jarang berubah.
+	// PG-parity fix (audit 2026-08-31): JSON_ARRAY() menghasilkan tipe json
+	// di PG sedangkan kolom boundary_points adalah jsonb → SQLSTATE 42846
+	// ("COALESCE could not convert type json to jsonb") yang membuat lookup
+	// geofence gagal TOTAL di provider postgres. Pakai helper dialect
+	// (persis pola deliveryDefaultExpr di store_notify_sos.go):
+	//   mysql: JSON_ARRAY()   |   pg: '[]'::jsonb
 	rows, err := s.ro.Query(
-		`SELECT g.id, g.name, g.area_type, g.coordinates, COALESCE(g.radius_meters,0), COALESCE(g.boundary_points, JSON_ARRAY())
+		`SELECT g.id, g.name, g.area_type, g.coordinates, COALESCE(g.radius_meters,0), COALESCE(g.boundary_points, `+dialect.Current().JSONArrayEmpty()+`)
 		 FROM geofences g
 		 JOIN geofence_vehicles gv ON gv.geofence_id = g.id AND gv.is_enabled = TRUE
 		 WHERE g.is_active = TRUE AND gv.vehicle_id = ?`,

@@ -36,11 +36,11 @@ func (wa *WorkerAlert) refreshRoutes() {
 // reloadRoutes rebuilds the tracking map from every active tenant.
 func (wa *WorkerAlert) reloadRoutes() {
 	next := make(map[string]*models.RouteAssignment)
-	for _, c := range wa.tm.Companies() {
+	for _, c := range companiesFn(wa.tm) {
 		if !c.IsActive {
 			continue
 		}
-		st, err := wa.newStore(c.Code)
+		st, err := newStoreFn(wa, c.Code)
 		if err != nil {
 			continue
 		}

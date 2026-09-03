@@ -109,7 +109,7 @@ func (wa *WorkerAlert) notifyAlert(s store, company string, tm models.TelemetryM
 // adminUserIDs resolves master users with role Admin for the company via the
 // master pool (auth authority — Admin melihat semua vehicle company-nya).
 func (wa *WorkerAlert) adminUserIDs(companyCode string) ([]uint64, error) {
-	master := wa.tm.Master()
+	master := masterFn(wa.tm)
 	if master == nil {
 		return nil, errMasterPool
 	}
