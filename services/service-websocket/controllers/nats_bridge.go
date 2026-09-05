@@ -55,10 +55,19 @@ func bridgeHandle(msg *nats.Msg) error {
 			Lon:         tm.Lon,
 			Speed:       tm.Speed,
 			Heading:     tm.Heading,
-			Acc:         tm.Speed > 0,
-			Status:      status,
-			Battery:     tm.Battery,
-			Timestamp:   ts,
+			// Hotfix ACC: pakai nilai ACC riil dari tracker (GT06 status byte /
+			// Teltonika IO 239/240) yang dipublish ingestion — BUKAN inferensi
+			// Speed > 0. Dengan ini kendaraan parkir mesin menyala (idling,
+			// Speed == 0) tetap acc:true.
+			Acc:        tm.ACC,
+			Status:     status,
+			Battery:    tm.Battery,
+			Satellites: tm.Satellites,
+			GsmSignal:  tm.GsmSignal,
+			FuelLevel:  tm.FuelLevel,
+			FuelVolume: tm.FuelVolume,
+			FuelTempC:  tm.FuelTempC,
+			Timestamp:  ts,
 		},
 	}
 	payload, err := json.Marshal(event)

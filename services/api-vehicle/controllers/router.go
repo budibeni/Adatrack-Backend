@@ -75,6 +75,18 @@ func setupRouter() http.Handler {
 		authed.POST("/routes/:id/assignments", routeAssignHandler)
 		authed.PATCH("/routes/:id/assignments/:assignmentId", routeAssignmentStatusHandler)
 		authed.DELETE("/routes/:id/assignments/:assignmentId", routeUnassignHandler)
+
+		// Reference data (master countries/provinces/cities/districts/subdistricts).
+		authed.GET("/reference/countries", referenceCountriesHandler)
+		authed.GET("/reference/countries/:id", referenceCountryDetailHandler)
+		authed.GET("/reference/provinces", referenceProvincesHandler)
+		authed.GET("/reference/provinces/:id", referenceProvinceDetailHandler)
+		authed.GET("/reference/cities", referenceCitiesHandler)
+		authed.GET("/reference/cities/:id", referenceCityDetailHandler)
+		authed.GET("/reference/districts", referenceDistrictsHandler)
+		authed.GET("/reference/districts/:id", referenceDistrictDetailHandler)
+		authed.GET("/reference/subdistricts", referenceSubdistrictsHandler)
+		authed.GET("/reference/subdistricts/:id", referenceSubdistrictDetailHandler)
 	}
 
 	return r

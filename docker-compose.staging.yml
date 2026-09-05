@@ -204,7 +204,9 @@ services:
     command: server /data --console-address ":9001"
     ports:
       - "${MEDIA_S3_PORT:-9000}:9000"
-      - "9001:9001"
+      # Console port bisa di-override agar stack staging bisa coexist dengan
+      # stack dev di mesin yang sama (default tetap 9001 = perilaku lama).
+      - "${MEDIA_S3_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -228,16 +230,21 @@ services:
       - ./database/migrations:/db/migrations:ro
     environment:
       <<: *app-common-env
-      TCP_PORT: ${TCP_PORT:-9000}
-      TELTONIKA_TCP_PORT: ${TELTONIKA_TCP_PORT:-9001}
-      TK103_TCP_PORT: ${TK103_TCP_PORT:-9002}
+      # Port di dalam container DIPIN ke nilai kanonik protokol (GT06 9000 /
+      # Teltonika 9001 / TK103 9002). Host-side di-override lewat var
+      # *_HOST_PORT — memisahkan keduanya mencegah mismatch "app listen di X
+      # tapi mapping mengarah ke container 9000" ketika TCP_PORT dioverride
+      # (mis. coexist dgn stack dev yang MinIO-nya memakai 9000-9001).
+      TCP_PORT: "9000"
+      TELTONIKA_TCP_PORT: "9001"
+      TK103_TCP_PORT: "9002"
       TCP_MAX_CONNECTIONS: ${TCP_MAX_CONNECTIONS:-5000}
       GT06_DATE_BCD: ${GT06_DATE_BCD:-false}
       INGESTION_METRICS_ADDR: :8090
     ports:
-      - "${TCP_PORT:-9000}:9000"
-      - "${TELTONIKA_TCP_PORT:-9001}:9001"
-      - "${TK103_TCP_PORT:-9002}:9002"
+      - "${TCP_HOST_PORT:-9000}:9000"
+      - "${TELTONIKA_HOST_PORT:-9001}:9001"
+      - "${TK103_HOST_PORT:-9002}:9002"
       - "${INGESTION_METRICS_PORT:-8090}:8090"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8090/healthz"]

@@ -8,7 +8,9 @@ WORKDIR /repo
 COPY . .
 WORKDIR /repo/services/worker-persistence
 ENV CGO_ENABLED=0
-RUN go build -o /out/worker-persistence .
+# Cache mount: modul Go & build cache persisten lintas retry (tahan network
+# flaky — retry melanjutkan download dari titik terakhir, tidak dari nol).
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go build -o /out/worker-persistence .
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata

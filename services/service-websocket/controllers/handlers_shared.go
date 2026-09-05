@@ -135,15 +135,17 @@ func enrichVehicles(c *gin.Context, vehicles []vehicleModel) []models.VehicleLis
 	defer cancel()
 
 	var live map[string]models.RedisState
-	if res := appRedis.Client().MGet(ctx, keys...); res.Err() == nil {
-		vals := res.Val()
-		live = make(map[string]models.RedisState, len(vehicles))
-		for i, v := range vehicles {
-			if i < len(vals) {
-				if s, ok := vals[i].(string); ok && s != "" {
-					var st models.RedisState
-					if err := json.Unmarshal([]byte(s), &st); err == nil {
-						live[v.IMEI] = st
+	if appRedis != nil {
+		if res := appRedis.Client().MGet(ctx, keys...); res.Err() == nil {
+			vals := res.Val()
+			live = make(map[string]models.RedisState, len(vehicles))
+			for i, v := range vehicles {
+				if i < len(vals) {
+					if s, ok := vals[i].(string); ok && s != "" {
+						var st models.RedisState
+						if err := json.Unmarshal([]byte(s), &st); err == nil {
+							live[v.IMEI] = st
+						}
 					}
 				}
 			}
@@ -166,6 +168,8 @@ func enrichVehicles(c *gin.Context, vehicles []vehicleModel) []models.VehicleLis
 			pos.Lat = st.Lat
 			pos.Lon = st.Lon
 			pos.Speed = st.Speed
+			pos.FuelLevel = st.FuelLevel
+			pos.Acc = st.Acc
 			if st.LastSeen > 0 {
 				ts := time.Unix(st.LastSeen, 0)
 				pos.Timestamp = &ts

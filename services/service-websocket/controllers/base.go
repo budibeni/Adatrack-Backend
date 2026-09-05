@@ -160,6 +160,16 @@ func masterDB() *sql.DB {
 	return appTenant.Master()
 }
 
+// masterDBFn / companyDBByCodeFn — indirection untuk unit test (pola
+// companyDBFn di worker-persistence): handler ber-master-DB (reference,
+// auth login, company/user provisioning) dapat dites dengan sqlmock tanpa
+// infra nyata. Default menunjuk implementasi asli; produksi tidak berubah.
+var (
+	masterDBFn          = masterDB
+	companyDBByCodeFn   = companyDBByCode
+	companyReadByCodeFn = companyReadByCode
+)
+
 // auditDB returns the master pool for audit writes, or nil bila tenant manager
 // belum siap (mis. unit test tanpa infra) — LogAudit aman utk nil db.
 func auditDB() *sql.DB {
