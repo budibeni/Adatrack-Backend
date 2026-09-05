@@ -102,10 +102,13 @@ type VehicleListItem struct {
 }
 
 // LastPos is the last known position (from live Redis state, fallback MySQL).
+// FuelLevel & Acc are surfaced from the live state (worker-live) when present.
 type LastPos struct {
 	Lat       float64    `json:"lat"`
 	Lon       float64    `json:"lon"`
 	Speed     float64    `json:"speed"`
+	FuelLevel *float64   `json:"fuel_level,omitempty"`
+	Acc       *bool      `json:"acc,omitempty"`
 	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
@@ -217,8 +220,11 @@ type RouteCreateRequest struct {
 // ---------------------------------------------------------------------------
 
 // TelemetryMessage mirrors the payload published by ingestion-tcp
-// (subject telemetry.raw.<IMEI>). CompanyCode & VehicleID are resolved from
-// master.vehicle_imei_map by the ingestion layer (tenant resolution).
+// (subject telemetry.raw.<IMEI>) 1:1 — including ACC (ignition), fuel sensor
+// (B5a), GSM signal, mileage, alarm code and fix flag. CompanyCode & VehicleID
+// are resolved from master.vehicle_imei_map by the ingestion layer (tenant
+// resolution). Field set must stay aligned with
+// backend/services/ingestion-tcp/models/models.go.
 type TelemetryMessage struct {
 	IMEI        string  `json:"imei"`
 	CompanyCode string  `json:"company_code,omitempty"`
@@ -230,7 +236,18 @@ type TelemetryMessage struct {
 	Satellites  uint8   `json:"satellites"`
 	HDOP        float64 `json:"hdop,omitempty"`
 	Battery     uint8   `json:"battery_level,omitempty"`
+	GsmSignal   uint8   `json:"gsm_signal,omitempty"`
+	ACC         bool    `json:"acc,omitempty"`
+	Mileage     uint32  `json:"mileage,omitempty"`
+	AlarmCode   uint8   `json:"alarm_code,omitempty"`
+	Fix         bool    `json:"fix,omitempty"`
 	Timestamp   int64   `json:"timestamp"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	// Pointer + omitempty: field yang tidak hadir (absen ≠ nol) tidak muncul di JSON.
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 // VehicleUpdateEvent is the FR-5.2 VEHICLE_UPDATE payload pushed to clients.
@@ -240,24 +257,35 @@ type VehicleUpdateEvent struct {
 }
 
 // VehicleUpdateData is the payload body of a VEHICLE_UPDATE event.
+// Acc reflects the REAL ignition state sent by the tracker (GT06 status byte /
+// Teltonika IO 239/240) — NOT inferred from Speed (hotfix ACC status WebSocket).
+// FuelLevel/FuelVolume/FuelTempC (B5a) and Satellites/GsmSignal enrich the
+// real-time contract so the dashboard can monitor fuel & signal quality live.
 type VehicleUpdateData struct {
-	VehicleID   uint64  `json:"vehicle_id"`
-	IMEI        string  `json:"imei"`
-	CompanyCode string  `json:"company_code"`
-	PlateNumber string  `json:"plate_number"`
-	DeviceModel string  `json:"device_model,omitempty"`
-	Lat         float64 `json:"lat"`
-	Lon         float64 `json:"lon"`
-	Speed       float64 `json:"speed"`
-	Heading     int16   `json:"heading"`
-	Acc         bool    `json:"acc"`
-	Status      string  `json:"status"`
-	Battery     uint8   `json:"battery,omitempty"`
-	Timestamp   string  `json:"timestamp"`
+	VehicleID   uint64   `json:"vehicle_id"`
+	IMEI        string   `json:"imei"`
+	CompanyCode string   `json:"company_code"`
+	PlateNumber string   `json:"plate_number"`
+	DeviceModel string   `json:"device_model,omitempty"`
+	Lat         float64  `json:"lat"`
+	Lon         float64  `json:"lon"`
+	Speed       float64  `json:"speed"`
+	Heading     int16    `json:"heading"`
+	Acc         bool     `json:"acc"`
+	Status      string   `json:"status"`
+	Battery     uint8    `json:"battery,omitempty"`
+	Satellites  uint8    `json:"satellites,omitempty"`
+	GsmSignal   uint8    `json:"gsm_signal,omitempty"`
+	FuelLevel   *float64 `json:"fuel_level,omitempty"`
+	FuelVolume  *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC   *float64 `json:"fuel_temp_c,omitempty"`
+	Timestamp   string   `json:"timestamp"`
 }
 
 // RedisState mirrors the JSON stored under Redis key
 // adatrack_gps:{company_code}:vehicle:state:<IMEI> by worker-live.
+// FuelLevel/FuelTempC/Acc (B5a + hotfix ACC) are persisted by worker-live and
+// surfaced by the REST vehicle list (enrichVehicles).
 type RedisState struct {
 	IMEI        string  `json:"imei"`
 	CompanyCode string  `json:"company_code"`
@@ -267,6 +295,11 @@ type RedisState struct {
 	Heading     int16   `json:"heading"`
 	Status      string  `json:"status"` // ONLINE / IDLE / OFFLINE
 	LastSeen    int64   `json:"last_seen"`
+
+	// --- B5a + hotfix ACC ---
+	FuelLevel *float64 `json:"fuel_level,omitempty"`
+	FuelTempC *float64 `json:"fuel_temp_c,omitempty"`
+	Acc       *bool    `json:"acc,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +365,8 @@ type AlertNotificationEvent struct {
 // MediaEventWS is the payload of a MEDIA_EVENT WS event; it mirrors the NATS
 // media.event.<company> message published by service-media.
 type MediaEventWS struct {
-	Event       string         `json:"event"` // "MEDIA_EVENT"
-	Data        MediaEventData `json:"data"`
+	Event string         `json:"event"` // "MEDIA_EVENT"
+	Data  MediaEventData `json:"data"`
 }
 
 // MediaEventData carries the media catalog fields fanned out via the hub.
