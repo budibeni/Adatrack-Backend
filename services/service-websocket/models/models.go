@@ -235,13 +235,16 @@ type TelemetryMessage struct {
 	Heading     int16   `json:"heading"`
 	Satellites  uint8   `json:"satellites"`
 	HDOP        float64 `json:"hdop,omitempty"`
-	Battery     uint8   `json:"battery_level,omitempty"`
-	GsmSignal   uint8   `json:"gsm_signal,omitempty"`
-	ACC         bool    `json:"acc,omitempty"`
-	Mileage     uint32  `json:"mileage,omitempty"`
-	AlarmCode   uint8   `json:"alarm_code,omitempty"`
-	Fix         bool    `json:"fix,omitempty"`
-	Timestamp   int64   `json:"timestamp"`
+	// Altitude (meter, signed) — GPS element Teltonika (hotfix WS DTO);
+	// GT06 tidak menyediakan → 0/omit.
+	Altitude  int16   `json:"altitude,omitempty"`
+	Battery   uint8   `json:"battery_level,omitempty"`
+	GsmSignal uint8   `json:"gsm_signal,omitempty"`
+	ACC       bool    `json:"acc,omitempty"`
+	Mileage   uint32  `json:"mileage,omitempty"`
+	AlarmCode uint8   `json:"alarm_code,omitempty"`
+	Fix       bool    `json:"fix,omitempty"`
+	Timestamp int64   `json:"timestamp"`
 
 	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
 	// Pointer + omitempty: field yang tidak hadir (absen ≠ nol) tidak muncul di JSON.
@@ -259,8 +262,10 @@ type VehicleUpdateEvent struct {
 // VehicleUpdateData is the payload body of a VEHICLE_UPDATE event.
 // Acc reflects the REAL ignition state sent by the tracker (GT06 status byte /
 // Teltonika IO 239/240) — NOT inferred from Speed (hotfix ACC status WebSocket).
-// FuelLevel/FuelVolume/FuelTempC (B5a) and Satellites/GsmSignal enrich the
-// real-time contract so the dashboard can monitor fuel & signal quality live.
+// FuelLevel/FuelVolume/FuelTempC (B5a), Satellites/GsmSignal, dan Altitude
+// (hotfix WS DTO — altitude dari GPS element Teltonika, di-decode ingestion)
+// enrich the real-time contract so the dashboard can monitor fuel, signal
+// quality & elevation live. Altitude 0 (GT06) di-omit via omitempty.
 type VehicleUpdateData struct {
 	VehicleID   uint64   `json:"vehicle_id"`
 	IMEI        string   `json:"imei"`
@@ -275,6 +280,7 @@ type VehicleUpdateData struct {
 	Status      string   `json:"status"`
 	Battery     uint8    `json:"battery,omitempty"`
 	Satellites  uint8    `json:"satellites,omitempty"`
+	Altitude    int16    `json:"altitude,omitempty"`
 	GsmSignal   uint8    `json:"gsm_signal,omitempty"`
 	FuelLevel   *float64 `json:"fuel_level,omitempty"`
 	FuelVolume  *float64 `json:"fuel_volume,omitempty"`

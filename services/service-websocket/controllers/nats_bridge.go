@@ -63,6 +63,9 @@ func bridgeHandle(msg *nats.Msg) error {
 			Status:     status,
 			Battery:    tm.Battery,
 			Satellites: tm.Satellites,
+			// Hotfix WS DTO: altitude (meter) dari GPS element Teltonika
+			// diteruskan apa adanya (GT06 tidak menyediakan → 0/omit).
+			Altitude:   tm.Altitude,
 			GsmSignal:  tm.GsmSignal,
 			FuelLevel:  tm.FuelLevel,
 			FuelVolume: tm.FuelVolume,

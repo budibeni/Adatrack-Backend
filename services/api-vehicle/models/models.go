@@ -237,3 +237,61 @@ type CreateAssignmentRequest struct {
 type UpdateAssignmentStatusRequest struct {
 	Status string `json:"status" binding:"required,oneof=not_started in_progress completed delayed"`
 }
+
+// ---------------------------------------------------------------------------
+// Reference data (master countries/provinces/cities/districts/subdistricts)
+// ---------------------------------------------------------------------------
+
+// CountryItem is the API representation of a master countries row.
+type CountryItem struct {
+	ID           int    `json:"id"`
+	IsoCode      string `json:"iso_code"`
+	IsoCode3     string `json:"iso_code_3"`
+	Name         string `json:"name"`
+	PhoneCode    string `json:"phone_code"`
+	CurrencyCode string `json:"currency_code"`
+	IsActive     bool   `json:"is_active"`
+}
+
+// ProvinceItem is the API representation of a master provinces row.
+type ProvinceItem struct {
+	ID        int     `json:"id"`
+	CountryID int     `json:"country_id"`
+	Code      string  `json:"code"`
+	Name      string  `json:"name"`
+	Latitude  *string `json:"latitude,omitempty"`
+	Longitude *string `json:"longitude,omitempty"`
+}
+
+// CityItem is the API representation of a master cities row.
+type CityItem struct {
+	ID         int     `json:"id"`
+	CountryID  int     `json:"country_id"`
+	ProvinceID *int    `json:"province_id,omitempty"`
+	Code       string  `json:"code"`
+	Name       string  `json:"name"`
+	Latitude   *string `json:"latitude,omitempty"`
+	Longitude  *string `json:"longitude,omitempty"`
+}
+
+// DistrictItem is the API representation of a master districts row.
+type DistrictItem struct {
+	ID        int     `json:"id"`
+	CityID    int     `json:"city_id"`
+	Code      string  `json:"code"`
+	Name      string  `json:"name"`
+	PostalCode *string `json:"postal_code,omitempty"`
+	Latitude  *string `json:"latitude,omitempty"`
+	Longitude *string `json:"longitude,omitempty"`
+}
+
+// SubdistrictItem is the API representation of a master subdistricts row.
+type SubdistrictItem struct {
+	ID         int     `json:"id"`
+	DistrictID int     `json:"district_id"`
+	Code       string  `json:"code"`
+	Name       string  `json:"name"`
+	PostalCode *string `json:"postal_code,omitempty"`
+	Latitude   *string `json:"latitude,omitempty"`
+	Longitude  *string `json:"longitude,omitempty"`
+}

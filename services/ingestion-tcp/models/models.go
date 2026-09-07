@@ -113,6 +113,10 @@ type TelemetryMessage struct {
 	Heading     int16   `json:"heading,omitempty"`
 	Satellites  uint8   `json:"satellites,omitempty"`
 	HDOP        float64 `json:"hdop,omitempty"`
+	// Altitude (meter, signed) dari GPS element Teltonika AVL (2-byte, offset
+	// 17:19 pada Codec 8/8E; 16:18 pada Codec 7). GT06 tidak menyediakan
+	// altitude → selalu 0 (omit dari JSON via omitempty).
+	Altitude    int16   `json:"altitude,omitempty"`
 	Battery     uint8   `json:"battery_level,omitempty"`
 	GsmSignal   uint8   `json:"gsm_signal,omitempty"`
 	ACC         bool    `json:"acc,omitempty"`
