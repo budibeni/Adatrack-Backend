@@ -73,6 +73,9 @@ func TestParseTeltonikaCodec8E(t *testing.T) {
 	if m.Heading != 180 {
 		t.Errorf("heading = %d, want 180", m.Heading)
 	}
+	if m.Altitude != 125 {
+		t.Errorf("altitude = %d, want 125", m.Altitude)
+	}
 	if m.Battery != 0xD2 {
 		t.Errorf("battery = %d, want 0xD2", m.Battery)
 	}

@@ -55,6 +55,7 @@ func parseCodec8ERecord(b []byte) (models.TelemetryMessage, int, error) {
 	ms := int64(binary.BigEndian.Uint64(b[0:8]))
 	t.Lon = float64(int32(binary.BigEndian.Uint32(b[9:13]))) / 1e7
 	t.Lat = float64(int32(binary.BigEndian.Uint32(b[13:17]))) / 1e7
+	t.Altitude = int16(binary.BigEndian.Uint16(b[17:19]))
 	t.Timestamp = ms / 1000
 	t.Heading = int16(binary.BigEndian.Uint16(b[19:21]))
 	t.Satellites = b[21]

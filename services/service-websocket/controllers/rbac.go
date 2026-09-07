@@ -58,7 +58,7 @@ func authorize(claims *tokenClaims) (allowed map[uint64]struct{}, db *sql.DB,
 		return make(map[uint64]struct{}), nil, 0, claims.Role, false, nil
 	}
 
-	db, err = companyDBByCode(claims.CompanyCode)
+	db, err = companyDBByCodeFn(claims.CompanyCode)
 	if err != nil {
 		return nil, nil, 0, "", false, err
 	}

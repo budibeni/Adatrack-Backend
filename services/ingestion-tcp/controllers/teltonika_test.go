@@ -72,6 +72,9 @@ func TestParseTeltonikaCodec8(t *testing.T) {
 	if m.Satellites != 10 {
 		t.Errorf("satellites = %d, want 10", m.Satellites)
 	}
+	if m.Altitude != 125 {
+		t.Errorf("altitude = %d, want 125", m.Altitude)
+	}
 	if m.Battery != 0xD2 { // low byte of 0x04D2 (12.50 V)
 		t.Errorf("battery = %d, want 0xD2", m.Battery)
 	}

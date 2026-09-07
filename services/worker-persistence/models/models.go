@@ -13,8 +13,10 @@ type TelemetryMessage struct {
 	Heading     int16   `json:"heading,omitempty"`
 	Satellites  uint8   `json:"satellites,omitempty"`
 	HDOP        float64 `json:"hdop,omitempty"`
-	Battery     uint8   `json:"battery_level,omitempty"`
-	ACC         bool    `json:"acc,omitempty"`
+	// Altitude (meter, signed) — GPS element Teltonika; GT06 tidak menyediakan.
+	Altitude int16 `json:"altitude,omitempty"`
+	Battery  uint8 `json:"battery_level,omitempty"`
+	ACC      bool  `json:"acc,omitempty"`
 	// Timestamp is the device event time (unix seconds).
 	Timestamp int64 `json:"timestamp"`
 
@@ -39,6 +41,7 @@ type TelemetryRow struct {
 	Heading     int16
 	Satellites  uint8
 	HDOP        float64
+	Altitude    int16
 	Battery     uint8
 	ACC         bool
 	// --- B5a: Fuel sensor fields ---

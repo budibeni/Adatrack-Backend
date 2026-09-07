@@ -240,7 +240,7 @@ func TestBridgeHandle_FanoutAndGuards(t *testing.T) {
 
 	// Valid: admin DEV001 menerima VEHICLE_UPDATE vehicle 7.
 	bridgeHandle(&nats.Msg{Subject: "telemetry.raw.1", Data: []byte(
-		`{"imei":"1","company_code":"DEV001","speed":40,"lat":-6.2,"lon":106.8,"battery":88,"timestamp":1750000000}`)})
+		`{"imei":"1","company_code":"DEV001","speed":40,"lat":-6.2,"lon":106.8,"battery":88,"acc":true,"timestamp":1750000000}`)})
 	p := awaitPayload(t, admin)
 	if !strings.Contains(string(p), `"VEHICLE_UPDATE"`) || !strings.Contains(string(p), `"plate_number":"B 1234 XYZ"`) {
 		t.Fatalf("unexpected payload: %s", p)

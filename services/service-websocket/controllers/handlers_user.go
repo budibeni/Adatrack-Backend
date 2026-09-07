@@ -118,7 +118,7 @@ func userCreateHandler(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "tenant manager not initialized")
 		return
 	}
-	master := masterDB()
+	master := masterDBFn()
 
 	// 1) Tenant harus terdaftar & aktif (dibuat via POST /companies).
 	var companyID int64
@@ -174,7 +174,7 @@ func userCreateHandler(c *gin.Context) {
 	userID := int64(id64)
 
 	// 4) Registry akses di company DB (WAJIB agar login tenant lolos RBAC).
-	targetDB, err := appTenant.DB(req.CompanyCode)
+	targetDB, err := companyDBByCodeFn(req.CompanyCode)
 	if err != nil || targetDB == nil {
 		// No silent drop: baris master sudah ada — log keras agar bisa dipulihkan.
 		slog.Error("user.create: company db unavailable AFTER master insert (partial state)",

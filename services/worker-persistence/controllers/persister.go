@@ -141,6 +141,7 @@ func handleMsg(msg *nats.Msg) error {
 		Heading:     t.Heading,
 		Satellites:  t.Satellites,
 		HDOP:        t.HDOP,
+		Altitude:    t.Altitude,
 		Battery:     t.Battery,
 		ACC:         t.ACC,
 		FuelLevel:   t.FuelLevel,
@@ -371,7 +372,7 @@ func insertCompanyBatch(companyCode string, rows []models.TelemetryRow) {
 			r.Lon,
 			r.Speed,
 			r.Heading,
-			0, // altitude (tidak diparse di protokol awal)
+			r.Altitude, // altitude (GPS element Teltonika; GT06 tidak menyediakan → 0)
 			boolToInt(r.ACC), // acc_status
 			r.Battery,
 			r.EventTS, // DATETIME (parseTime=true)

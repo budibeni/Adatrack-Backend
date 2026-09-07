@@ -65,7 +65,7 @@ func TestBridgeHandle_DeliversVehicleUpdate(t *testing.T) {
 	}
 
 	payload := []byte(`{"imei":"111","company_code":"DEV001","lat":-6.2,"lon":106.8,` +
-		`"speed":35.5,"battery":80,"timestamp":1700000000}`)
+		`"speed":35.5,"battery":80,"acc":true,"timestamp":1700000000}`)
 	if err := bridgeHandle(&nats.Msg{Subject: "telemetry.raw.111", Data: payload}); err != nil {
 		t.Fatalf("bridgeHandle: %v", err)
 	}
