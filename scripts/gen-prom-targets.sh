@@ -14,7 +14,7 @@
 #
 # Port mengikuti backend/.env: ingestion 8090, persistence 8091, live 8092,
 # alert 8093, websocket metrics 9091 (override dev; default .env 9090 bentrok
-# dgn Prometheus), api-vehicle 8081.
+# dgn Prometheus), api-vehicle 8081, service-media 9090 (METRICS_ADDR default).
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/monitoring/targets"
@@ -39,7 +39,8 @@ cat > "$FILE" <<EOF
       "$IP:8092",
       "$IP:8093",
       "$IP:9091",
-      "$IP:8081"
+      "$IP:8081",
+      "$IP:9090"
     ],
     "labels": {
       "job": "adatrack-services"

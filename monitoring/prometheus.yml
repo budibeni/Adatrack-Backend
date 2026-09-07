@@ -17,8 +17,11 @@
 #   worker-persistence :8091
 #   worker-live        :8092
 #   worker-alert       :8093
-#   service-websocket  :9090   (WEBSOCKET_METRICS_ADDR)
+#   service-websocket  :9091   (override dev start-services.sh; default .env 9090)
 #   api-vehicle        :8081   (/metrics di server HTTP utamanya)
+#   service-media      :9090   (default internal METRICS_ADDR)
+# Port host utk UI/API Prometheus di-override ke PROMETHEUS_PORT (default 9095)
+# karena host :9090 dipakai service-media (lihat docker-compose.monitoring.yml).
 # =====================================================================
 
 global:
