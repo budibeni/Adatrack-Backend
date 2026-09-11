@@ -31,6 +31,3 @@ database/tools/genhash/genhash
 database/tools/genregions/genregions
 tools/e2e-pub/e2e-pub
 loadtest/loadtest
-
-id_rsa_coolify
-id_rsa_coolify.pub
