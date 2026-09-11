@@ -33,6 +33,12 @@ ENDURANCE_DURATION="${ENDURANCE_DURATION:-24h}"
 REPORT="${REPORT:-/tmp/loadtest_report_$(date +%Y%m%d_%H%M%S).txt}"
 LT="$SCRIPT_DIR/../loadtest/loadtest"
 
+# Target ingestion GT06 (default 127.0.0.1:9000). Di host dev port 9000 dipakai
+# MinIO (B5b) → service ingestion biasanya dijalankan di TCP_PORT=9003 via
+# scripts/start-services.sh; override lewat env LOADTEST_HOST tanpa menyentuh
+# default lama (backward-compatible).
+LT_HOST="${LOADTEST_HOST:-127.0.0.1:9000}"
+
 TENANT_DB="${TENANT_DB:-dev001}"
 count_rows() {
   # Dialect-aware (PRD §7.1.1): postgres = schema adatrack_gps_<tenant> di
@@ -51,7 +57,8 @@ run_scenario() {
   echo "===== $name: $devices device × $rate msg/s × $dur =====" | tee -a "$REPORT"
   local before after sent
   before=$(count_rows)
-  "$LT" -devices "$devices" -rate "$rate" -duration "$dur" 2>&1 | tee /tmp/lt_last.txt
+  echo "target=$LT_HOST"
+  "$LT" -host "$LT_HOST" -devices "$devices" -rate "$rate" -duration "$dur" 2>&1 | tee /tmp/lt_last.txt
   sent=$(grep -oP 'Total frame terkirim: \K[0-9]+' /tmp/lt_last.txt | tail -1)
   sleep 12 # beri worker-persistence flush batch terakhir (5s) + margin
   after=$(count_rows)

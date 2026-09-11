@@ -64,7 +64,7 @@ func refSetCache(ctx context.Context, key string, data []byte) {
 
 // GET /api/v1/reference/countries?q= — daftar negara (ISO 3166-1), optional search by name.
 func referenceCountriesHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -118,7 +118,7 @@ func referenceCountriesHandler(c *gin.Context) {
 
 // GET /api/v1/reference/countries/:id — detail satu negara.
 func referenceCountryDetailHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -168,7 +168,7 @@ func referenceCountryDetailHandler(c *gin.Context) {
 
 // GET /api/v1/reference/provinces?country_id=&q= — daftar provinsi (filter by country, search by name).
 func referenceProvincesHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -225,7 +225,7 @@ func referenceProvincesHandler(c *gin.Context) {
 
 // GET /api/v1/reference/provinces/:id — detail satu provinsi.
 func referenceProvinceDetailHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -273,7 +273,7 @@ func referenceProvinceDetailHandler(c *gin.Context) {
 
 // GET /api/v1/reference/cities?province_id=&q= — daftar kabupaten/kota.
 func referenceCitiesHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -332,7 +332,7 @@ func referenceCitiesHandler(c *gin.Context) {
 
 // GET /api/v1/reference/cities/:id — detail satu kota/kabupaten.
 func referenceCityDetailHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -382,7 +382,7 @@ func referenceCityDetailHandler(c *gin.Context) {
 
 // GET /api/v1/reference/districts?city_id=&q= — daftar kecamatan.
 func referenceDistrictsHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -440,7 +440,7 @@ func referenceDistrictsHandler(c *gin.Context) {
 
 // GET /api/v1/reference/districts/:id — detail satu kecamatan.
 func referenceDistrictDetailHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -489,7 +489,7 @@ func referenceDistrictDetailHandler(c *gin.Context) {
 
 // GET /api/v1/reference/subdistricts?district_id=&q=&page=&limit= — daftar kelurahan/desa (pagination).
 func referenceSubdistrictsHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return
@@ -575,7 +575,7 @@ func referenceSubdistrictsHandler(c *gin.Context) {
 
 // GET /api/v1/reference/subdistricts/:id — detail satu kelurahan/desa.
 func referenceSubdistrictDetailHandler(c *gin.Context) {
-	db := masterDB()
+	db := masterDBFn()
 	if db == nil {
 		writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "internal server error")
 		return

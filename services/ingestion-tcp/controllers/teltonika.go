@@ -16,7 +16,7 @@ import (
 )
 
 // ============================================================================
-// Teltonika / FM family adapter (Codec 8 & 0x8E, plus Codec 7).
+// Teltonika / FM family adapter (Codec 8 & 0x8E).
 //
 // NOTE (honest): repo ini tidak memuat dokument Teltonika resmi; implementasi
 // ini didasarkan pada protokol AVL Teltonika yang dipublikasikan secara umum
@@ -28,8 +28,7 @@ import (
 const (
 	teltonikaCodec8  = 0x08 // standard AVL (FMB): priority + event
 	teltonikaCodec8E = 0x8E // asset-tracker long codec
-	teltonikaCodec7  = 0x07 // short codec (tanpa priority/event)
-	teltonikaCodec6  = 0x06 // extended codec dengan priority
+	teltonikaCodec6  = 0x06 // extended codec dengan priority (legacy, not dispatched)
 )
 
 // teltonikaCRC16 is CRC-16 (poly 0x1021, init 0x0000) used by Teltonika for
@@ -132,15 +131,6 @@ func parseTeltonikaAVL(payload []byte) ([]models.TelemetryMessage, error) {
 			off += n
 			out = append(out, t)
 		}
-	case teltonikaCodec7:
-		for i := 0; i < count; i++ {
-			t, n, err := parseCodec7Record(payload[off:])
-			if err != nil {
-				return nil, fmt.Errorf("teltonika codec 7 record %d: %w", i, err)
-			}
-			off += n
-			out = append(out, t)
-		}
 	default:
 		return nil, fmt.Errorf("teltonika: unsupported codec 0x%02X", codec)
 	}
@@ -202,28 +192,6 @@ func parseCodec8Record(b []byte) (models.TelemetryMessage, int, error) {
 		}
 		// Pemetaan IO dipusatkan di applyTeltonikaIO (dipakai bersama Codec 8E).
 		applyTeltonikaIO(&t, uint16(id), val)
-	}
-	return t, off, nil
-}
-
-func parseCodec7Record(b []byte) (models.TelemetryMessage, int, error) {
-	var t models.TelemetryMessage
-	if len(b) < 24 {
-		return t, 0, errors.New("short codec7 record")
-	}
-	ms := int64(binary.BigEndian.Uint64(b[0:8]))
-	t.Lon = float64(int32(binary.BigEndian.Uint32(b[8:12]))) / 1e7
-	t.Lat = float64(int32(binary.BigEndian.Uint32(b[12:16]))) / 1e7
-	t.Altitude = int16(binary.BigEndian.Uint16(b[16:18]))
-	t.Timestamp = ms / 1000
-	t.Heading = int16(binary.BigEndian.Uint16(b[18:20]))
-	t.Satellites = b[20]
-	t.Speed = float64(binary.BigEndian.Uint16(b[21:23])) / 10.0
-	ioCount := int(b[23])
-	off := 24
-	for j := 0; j < ioCount && off+2 <= len(b); j++ {
-		l := int(b[off+1])
-		off += 2 + l
 	}
 	return t, off, nil
 }

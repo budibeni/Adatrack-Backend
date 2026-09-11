@@ -190,8 +190,11 @@ run_chunk() {
 
 
   local chunk_sent
-  chunk_sent=$(grep -a -oP 'Total frame terkirim:\s*\K[0-9]+' "$chunk_log" | tail 1 || true)
-  [ -z "$chunk_sent" ] && chunk_sent=$(grep -a -oP '\[progress\]\s*\K[0-9]+' "$chunk_log" | tail 1 || echo 0)
+  # Fix 2026-09-09: tail 1 bukan argumen valid di GNU tail (error exit)
+  # → chunk_sent selalu 0, CUMULATIVE_SENT tidak terakumulasi (accounting
+  #   rusak, delta DB tetap benar). Pakai tail -n 1.
+  chunk_sent=$(grep -a -oP 'Total frame terkirim:\s*\K[0-9]+' "$chunk_log" | tail -n 1 || true)
+  [ -z "$chunk_sent" ] && chunk_sent=$(grep -a -oP '\[progress\]\s*\K[0-9]+' "$chunk_log" | tail -n 1 || echo 0)
 
   sleep 12 # flush batch margin
 
@@ -251,6 +254,15 @@ case "${1:-}" in
   --reset|-r)  do_reset; exit 0 ;;
   --help|-h)   sed -n '2,30p' "$0" | sed 's/^# \?//'; exit 0 ;;
 esac
+
+# Single-instance guard — prevent dua runner konkuren (root cause of state
+# corruption: CUMULATIVE_SENT clobbered, chunk log interleaved, verify failed).
+LOCK_FILE="$STATE_DIR/endurance.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Endurance sudah running (lock: $LOCK_FILE). Exit."
+  exit 1
+fi
 
 read_state
 
