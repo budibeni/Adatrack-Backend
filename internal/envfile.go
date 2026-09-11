@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"ajb_gps/internal/dialect"
 )
 
 // ---------------------------------------------------------------------------
@@ -44,6 +46,9 @@ const (
 // Mengembalikan daftar path yang berhasil dimuat (dipakai untuk logging).
 // Nilai dari file TIDAK menimpa environment variable yang sudah ter-set di OS.
 func LoadEnvFiles() []string {
+	// Selalu selaraskan SQL dialect dgn provider efektif (lihat helper di bawah).
+	defer syncDialectFromEnv()
+
 	// Setiap pemanggilan independen: buang jejak key dari pemanggilan
 	// sebelumnya supaya semantik "OS env menang" tetap berlaku.
 	resetDotenvTracker()
@@ -85,6 +90,9 @@ func envFilePaths() []string {
 // Nilai dari file TIDAK menimpa env proses yang sudah ter-set (OS env menang),
 // konsisten dengan LoadEnvFiles.
 func LoadProjectEnv() []string {
+	// Selalu selaraskan SQL dialect dgn provider efektif (lihat helper di bawah).
+	defer syncDialectFromEnv()
+
 	p := projectEnvPath()
 	if p == "" {
 		return nil
@@ -97,6 +105,26 @@ func LoadProjectEnv() []string {
 		return []string{p}
 	}
 	return []string{p}
+}
+
+// syncDialectFromEnv menyelaraskan process-wide SQL dialect (internal/dialect)
+// dengan DATABASE_PROVIDER efektif (OS env > .env — prioritas sama dengan
+// pembacaan konfigurasi).
+//
+// FIX 2026-09-11 (ditemukan saat drill replikasi MySQL, B4): default proses
+// dialect = Postgres (keputusan 2026-08-25) padahal TIDAK ADA service yang
+// memanggil dialect.Set() saat startup — jalur MySQL selalu memakai quoting
+// Postgres ('"telemetry_logs"') → Error 1064: batch insert worker-persistence
+// (telemetry_logs + fuel_logs) GAGAL TOTAL di provider mysql. Jalur MySQL
+// persistence terakhir terverifikasi 2026-08-22 — SEBELUM rework
+// provider-flexible 2026-08-25 — sehingga bug laten ini tak pernah ketahuan
+// (semua E2E setelahnya memakai provider postgres). LoadProjectEnv/LoadEnvFiles
+// dipanggil oleh SEMUA binary di main.go, jadi penyelarasan di sini adalah
+// titik tunggu yang memperbaiki seluruh pemakai dialect.Current()
+// (worker-persistence batch, worker-alert alerts/geofence/notify,
+// service-media insert, service-websocket user onboarding).
+func syncDialectFromEnv() {
+	dialect.Set(dialect.FromProvider(os.Getenv("DATABASE_PROVIDER")))
 }
 
 // projectEnvPath mencari akar backend dari CWD ke atas (ditandai subdir

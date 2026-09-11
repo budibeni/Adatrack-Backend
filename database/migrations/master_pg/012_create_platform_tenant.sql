@@ -13,6 +13,13 @@
 -- ============================================================================
 
 -- 1) Registrasi tenant platform di master.companies.
+-- 1a) GUARD FK country 'ID' (paritas MySQL master/012 §3a, 2026-09-11): migrasi
+--     harus self-sufficient terhadap urutan seed referensi wilayah pada init
+--     fresh environment. Idempoten; baris lengkap diisi oleh seed reference.
+INSERT INTO countries (iso_code, name)
+VALUES ('ID', 'Indonesia')
+ON CONFLICT (iso_code) DO UPDATE SET name = EXCLUDED.name;
+
 INSERT INTO companies (code, name, legal_name, country_code, timezone,
                        settings, is_active, activated_at)
 VALUES ('DEFAULT', 'adatrack Platform', 'adatrack Platform (Primary)', 'ID', 'Asia/Jakarta',

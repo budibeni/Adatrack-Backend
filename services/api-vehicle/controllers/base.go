@@ -63,10 +63,45 @@ func companyRead(c *gin.Context) (*sql.DB, error) {
 	return companyDB(c)
 }
 
-// masterDB returns the master pool (global auth authority).
+// masterDB returns the master pool (global auth authority). Nil-safe bila
+// tenant manager belum di-Init (unit test / early startup) — auditDB pola sama.
 func masterDB() *sql.DB {
+	if appTenant == nil {
+		return nil
+	}
 	return appTenant.Master()
 }
+
+// companyDBByCode resolves a company pool from the tenant manager.
+func companyDBByCode(companyCode string) (*sql.DB, error) {
+	if appTenant == nil {
+		return nil, fmt.Errorf("tenant manager not initialized")
+	}
+	return appTenant.DB(companyCode)
+}
+
+// companyReadByCode resolves a READ-preferred company pool dari tenant manager
+// (B4 HA read/write split): replica ketika tersedia & sehat, fallback primary.
+func companyReadByCode(companyCode string) (*sql.DB, error) {
+	if appTenant == nil {
+		return nil, fmt.Errorf("tenant manager not initialized")
+	}
+	if ro, err := appTenant.ReadPool(companyCode); err == nil {
+		return ro, nil
+	}
+	return appTenant.DB(companyCode)
+}
+
+// masterDBFn / companyDBByCodeFn / companyReadByCodeFn — indirection untuk
+// unit test (pola companyDBFn di worker-persistence & service-websocket):
+// handler ber-master-DB (reference, auth login, vehicle create/delete sync)
+// dan resolve pool tenant dapat dites dengan sqlmock tanpa infra nyata.
+// Default menunjuk implementasi asli; produksi tidak berubah.
+var (
+	masterDBFn          = masterDB
+	companyDBByCodeFn   = companyDBByCode
+	companyReadByCodeFn = companyReadByCode
+)
 
 // auditDB returns the master pool for audit writes, or nil bila tenant manager
 // belum siap (mis. unit test tanpa infra) — LogAudit aman utk nil db.

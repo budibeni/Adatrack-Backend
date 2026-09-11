@@ -27,10 +27,10 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Endurance watchdog started."
 while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
   RETRY=$(( RETRY + 1 ))
 
-  # Cek apakah sudah completed
+  # Cek apakah sudah completed/failed — terminal states, watchdog selesai
   STATE_FILE="$HOME/b4_chunked_endurance/state.txt"
-  if [ -f "$STATE_FILE" ] && grep -q "STATUS=completed" "$STATE_FILE"; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Endurance sudah completed. Watchdog selesai."
+  if [ -f "$STATE_FILE" ] && grep -qE "STATUS=(completed|failed)" "$STATE_FILE"; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Endurance sudah $(grep -oP 'STATUS=\K\w+' "$STATE_FILE" | head -1). Watchdog selesai."
     exit 0
   fi
 
@@ -54,8 +54,8 @@ while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Exit code: $EXIT"
 
   # Jika exit 0 (completed), watchdog selesai
-  if [ "$EXIT" -eq 0 ] && [ -f "$STATE_FILE" ] && grep -q "STATUS=completed" "$STATE_FILE"; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Endurance completed. Watchdog selesai."
+  if [ "$EXIT" -eq 0 ] && [ -f "$STATE_FILE" ] && grep -qE "STATUS=(completed|failed)" "$STATE_FILE"; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Endurance $(grep -oP 'STATUS=\K\w+' "$STATE_FILE" | head -1). Watchdog selesai."
     exit 0
   fi
 

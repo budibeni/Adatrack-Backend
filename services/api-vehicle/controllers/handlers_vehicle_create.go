@@ -52,7 +52,7 @@ func vehiclesCreateHandler(c *gin.Context) {
 
 	// Kegagalan sync di-log keras: device akan ditolak ingestion bila map
 	// tidak ter-update (admin dapat retry).
-	if _, err := masterDB().Exec(
+	if _, err := masterDBFn().Exec(
 		`INSERT INTO vehicle_imei_map (imei, company_code, vehicle_id)
 		 VALUES (?, ?, ?)
 		 ON DUPLICATE KEY UPDATE company_code = VALUES(company_code), vehicle_id = VALUES(vehicle_id)`,

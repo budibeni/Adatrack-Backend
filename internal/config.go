@@ -25,7 +25,7 @@ type Config struct {
 		// MaxConnections is the maximum number of concurrent TCP connections
 		MaxConnections int
 		// TeltonikaPort is a dedicated listener for Teltonika/FM devices
-		// (Codec 8/8E/7/6). Empty/\"0\" disables it (each protocol gets its own
+		// (Codec 8/8E). Empty/\"0\" disables it (each protocol gets its own
 		// port — GT06 on TCP_PORT, Teltonika here, TK103 on TK103Port).
 		TeltonikaPort string
 		// TK103Port is a dedicated listener for the TK-103 family (provisional).

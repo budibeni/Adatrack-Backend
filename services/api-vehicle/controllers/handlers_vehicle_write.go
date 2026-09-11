@@ -146,7 +146,7 @@ func vehiclesDeleteHandler(c *gin.Context) {
 		return
 	}
 	if imei != "" {
-		if _, err := masterDB().Exec(`DELETE FROM vehicle_imei_map WHERE imei = ?`, imei); err != nil {
+		if _, err := masterDBFn().Exec(`DELETE FROM vehicle_imei_map WHERE imei = ?`, imei); err != nil {
 			slog.Error("vehicle_imei_map delete failed", "imei", imei, "company", u.CompanyCode, "error", err)
 		}
 	}
