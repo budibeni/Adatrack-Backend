@@ -130,9 +130,8 @@ services:
       timeout: 5s
       retries: 12
       start_period: 60s
-    # Port DB TIDAK dipublish default (keamanan). Aktifkan bila perlu:
-    # ports:
-    #   - "${POSTGRES_PORT:-5432}:5432"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
 
   # --- MySQL (alternatif, HANYA aktif bila COMPOSE_PROFILES=mysql) ---
   mysql:
