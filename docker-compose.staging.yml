@@ -108,6 +108,23 @@ x-app-common-env: &app-common-env
 # INFRASTRUKTUR
 # ---------------------------------------------------------------------------
 services:
+  # --- Migration service: runs master + company migrations on deploy ---
+  migrate:
+    build:
+      context: ./database/migrate
+      dockerfile: Dockerfile
+    image: ${MIGRATE_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-adatrack_gps_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-GANTI-POSTGRES-PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   # --- PostgreSQL (provider default / PRD §7.1.1) ---
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
@@ -376,6 +393,8 @@ services:
       retries: 12
       start_period: 90s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       nats:
@@ -407,6 +426,8 @@ services:
       retries: 12
       start_period: 90s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       nats:
