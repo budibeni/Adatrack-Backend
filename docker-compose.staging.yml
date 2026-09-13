@@ -112,8 +112,8 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     build:
-      context: ./database/postgres
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Dockerfile.postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
