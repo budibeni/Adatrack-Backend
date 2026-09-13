@@ -203,10 +203,16 @@ services:
       MINIO_ROOT_PASSWORD: ${MEDIA_S3_SECRET_KEY:-minioadmin}
     command: server /data --console-address ":9001"
     ports:
-      - "${MEDIA_S3_PORT:-9000}:9000"
-      # Console port bisa di-override agar stack staging bisa coexist dengan
-      # stack dev di mesin yang sama (default tetap 9001 = perilaku lama).
-      - "${MEDIA_S3_CONSOLE_PORT:-9001}:9001"
+      # Host port S3 API sengaja TIDAK memakai default 9000 — 9000 dipakai juga
+      # oleh GT06 (TCP_HOST_PORT default) dan Teltonika/TK103 range 9000-9002,
+      # sehingga deploy "nol konfigurasi" pasti tabrakan. Pindah ke 9100;
+      # tetap bisa di-override via MEDIA_S3_PORT (mis. 9005 utk coexist dgn dev).
+      - "${MEDIA_S3_PORT:-9100}:9000"
+      # Console port default dipindah ke 9101 (awalnya 9001) karena 9001 juga
+      # dipakai TELTONIKA_HOST_PORT default ingestion-tcp → docker gagal dengan
+      # "Bind for :::9001 failed: port is already allocated". Override via
+      # MEDIA_S3_CONSOLE_PORT bila perlu coexist dgn stack lain.
+      - "${MEDIA_S3_CONSOLE_PORT:-9101}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -431,7 +437,10 @@ services:
       <<: *app-common-env
       SERVICE_MEDIA_HTTP_ADDR: :8095
       METRICS_ADDR: :9091
-      MEDIA_S3_ENDPOINT: ${MEDIA_S3_ENDPOINT:-http://minio:9000}
+      # Endpoint WAJIB internal (DNS service "minio") — jangan biarkan nilai
+      # dari .env (mis. http://localhost:9000 utk dev) terbawa ke staging, karena
+      # di dalam container "localhost" merujuk container itu sendiri, bukan MinIO.
+      MEDIA_S3_ENDPOINT: http://minio:9000
       MEDIA_S3_BUCKET: ${MEDIA_S3_BUCKET:-adatrack-media}
       MEDIA_S3_ACCESS_KEY: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
       MEDIA_S3_SECRET_KEY: ${MEDIA_S3_SECRET_KEY:-minioadmin}
