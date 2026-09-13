@@ -45,7 +45,6 @@ x-app-common-env: &app-common-env
   # --- NATS (hostname service = "nats") ---
   NATS_URL: ${NATS_URL:-nats:4222}
   NATS_SUBJECT_PREFIX: ${NATS_SUBJECT_PREFIX:-telemetry}
-  NATS_CLUSTER_ID: nats-cluster-id-adatrack-backend
   NATS_CLIENT_ID: nats-client-id-adatrack-backend
 
   # --- PostgreSQL (default) ---
