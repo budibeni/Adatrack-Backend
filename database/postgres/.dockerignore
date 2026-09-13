@@ -1,0 +1,6 @@
+# Ignore everything except what's needed
+*
+!Dockerfile
+!init-pg
+!migrations
+!seed

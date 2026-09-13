@@ -110,7 +110,10 @@ x-app-common-env: &app-common-env
 services:
   # --- PostgreSQL (provider default / PRD §7.1.1) ---
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    build:
+      context: ./database/postgres
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
@@ -121,11 +124,6 @@ services:
       PGDATA: /var/lib/postgresql/data
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Auto-init saat volume pertama (schema master, company dev, master_setup)
-      # + seed wilayah. Butuh /db/migrations & /db/seed (1 folder).
-      - ./database/init-pg:/docker-entrypoint-initdb.d:ro
-      - ./database/migrations:/db/migrations:ro
-      - ./database/seed:/db/seed:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready", "-U", "$${POSTGRES_USER}", "-d", "$${POSTGRES_DB}"]
       interval: 10s

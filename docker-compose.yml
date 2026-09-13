@@ -137,7 +137,7 @@ services:
   #     dashcam event media. Prod = AWS S3 / Aliyun OSS (service-media memakai
   #     endpoint yang sama via internal/storage). Selalu up (tanpa profile).
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: quay.io/minio/minio:latest
     container_name: minio
     restart: always
     environment:

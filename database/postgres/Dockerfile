@@ -1,0 +1,26 @@
+# ============================================================================
+# PostgreSQL Custom Image for Adatrack Backend
+# Includes: init scripts, migrations, and seed data
+# ============================================================================
+
+FROM postgres:16-alpine
+
+LABEL maintainer="Adatrack Backend Team"
+LABEL description="PostgreSQL 16 with Adatrack migrations and seed data"
+
+# Copy initialization scripts (runs automatically on first container start)
+# These scripts are executed in alphabetical order by PostgreSQL entrypoint
+COPY init-pg/ /docker-entrypoint-initdb.d/
+
+# Copy migration files (available for manual migration if needed)
+COPY migrations/ /db/migrations/
+
+# Copy seed data (available for manual seeding if needed)
+COPY seed/ /db/seed/
+
+# Set proper permissions
+RUN chmod -R 755 /docker-entrypoint-initdb.d/ && \
+    chmod -R 755 /db/migrations/ && \
+    chmod -R 755 /db/seed/
+
+# Health check is inherited from base postgres image
