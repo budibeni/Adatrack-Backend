@@ -57,7 +57,7 @@ func authorize(claims *tokenClaims) (allowed map[uint64]struct{}, db *sql.DB,
 		return nil, nil, 0, "", false, errors.New("platform tokens have no tenant scope")
 	}
 
-	db, err = appTenant.DB(claims.CompanyCode)
+	db, err = companyDBByCodeFn(claims.CompanyCode)
 	if err != nil {
 		return nil, nil, 0, "", false, err
 	}
@@ -94,7 +94,7 @@ func installAuthContext(c *gin.Context, claims *tokenClaims, allowed map[uint64]
 	// tersedia & sehat, fallback primary). Handler GET memakai companyRead();
 	// endpoint tulis tetap memakai ctxCompanyDBKey (primary).
 	if appTenant != nil {
-		if ro, rerr := appTenant.ReadPool(claims.CompanyCode); rerr == nil {
+		if ro, rerr := companyReadByCodeFn(claims.CompanyCode); rerr == nil {
 			c.Set(ctxCompanyROKey, ro)
 		} else {
 			c.Set(ctxCompanyROKey, db)

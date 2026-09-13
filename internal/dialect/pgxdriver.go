@@ -92,8 +92,8 @@ func (c *pgxadatrackConn) Prepare(q string) (driver.Stmt, error) {
 	return c.raw.Prepare(RewritePlaceholders(q))
 }
 
-func (c *pgxadatrackConn) Close() error                { return c.raw.Close() }
-func (c *pgxadatrackConn) Begin() (driver.Tx, error)   { return c.raw.Begin() }
+func (c *pgxadatrackConn) Close() error              { return c.raw.Close() }
+func (c *pgxadatrackConn) Begin() (driver.Tx, error) { return c.raw.Begin() }
 
 func (c *pgxadatrackConn) BeginTx(ctx context.Context, opts sql.TxOptions) (driver.Tx, error) {
 	if bt, ok := c.raw.(driver.ConnBeginTx); ok {

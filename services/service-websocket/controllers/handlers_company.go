@@ -14,16 +14,16 @@ import (
 // Enterprise-standard optional fields (migration 010) enrich the tenant
 // registry: legal entity name, contacts, tax id.
 type companyCreateRequest struct {
-	Code        string `json:"code"`          // e.g. "ABLE01" — uppercase, trimmed
-	Name        string `json:"name"`          // human-readable company name
-	CountryCode string `json:"country_code"`  // ISO 3166-1 alpha-2, e.g. "ID"
-	Timezone    string `json:"timezone"`      // IANA timezone, e.g. "Asia/Jakarta"
+	Code        string `json:"code"`         // e.g. "ABLE01" — uppercase, trimmed
+	Name        string `json:"name"`         // human-readable company name
+	CountryCode string `json:"country_code"` // ISO 3166-1 alpha-2, e.g. "ID"
+	Timezone    string `json:"timezone"`     // IANA timezone, e.g. "Asia/Jakarta"
 	// --- Enterprise-standard optional fields (migration 010) ---
-	LegalName   string `json:"legal_name,omitempty"`    // legal entity name
+	LegalName    string `json:"legal_name,omitempty"`    // legal entity name
 	CompanyEmail string `json:"company_email,omitempty"` // official contact email
-	Website     string `json:"website,omitempty"`       // website URL
-	TaxID       string `json:"tax_id,omitempty"`        // NPWP / VAT number
-	PostalCode  string `json:"postal_code,omitempty"`   // postal code
+	Website      string `json:"website,omitempty"`       // website URL
+	TaxID        string `json:"tax_id,omitempty"`        // NPWP / VAT number
+	PostalCode   string `json:"postal_code,omitempty"`   // postal code
 }
 
 // companyResponse is the company creation result returned to the client.
@@ -60,6 +60,26 @@ func companyCreateHandler(c *gin.Context) {
 		return
 	}
 
+	// Validasi country_code dari reference data (countries table).
+	countryCode := strings.ToUpper(strings.TrimSpace(req.CountryCode))
+	if countryCode != "" {
+		var validCountry int
+		if err := masterDBFn().QueryRow(
+			`SELECT COUNT(*) FROM countries WHERE iso_code = ? AND is_active = TRUE`, countryCode,
+		).Scan(&validCountry); err != nil || validCountry == 0 {
+			writeError(c, http.StatusBadRequest, "INVALID_COUNTRY_CODE",
+				"country_code tidak valid atau tidak aktif. Gunakan ISO 3166-1 alpha-2 (mis. 'ID', 'MY', 'US')")
+			return
+		}
+	}
+	if countryCode == "" {
+		countryCode = "ID"
+	}
+	timezone := req.Timezone
+	if timezone == "" {
+		timezone = "Asia/Jakarta"
+	}
+
 	if appTenant == nil {
 		writeError(c, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "tenant manager not initialized")
 		return
@@ -68,7 +88,7 @@ func companyCreateHandler(c *gin.Context) {
 	result, err := appTenant.ProvisionCompany(c.Request.Context(), tenant.ProvisionCompanyInput{
 		Code:         req.Code,
 		Name:         req.Name,
-		CountryCode:  req.CountryCode,
+		CountryCode:  countryCode,
 		Timezone:     req.Timezone,
 		LegalName:    strings.TrimSpace(req.LegalName),
 		CompanyEmail: strings.TrimSpace(req.CompanyEmail),
@@ -80,15 +100,6 @@ func companyCreateHandler(c *gin.Context) {
 		slog.Error("company provision failed", "code", req.Code, "error", err)
 		writeError(c, http.StatusInternalServerError, "PROVISION_FAILED", "failed to provision company database")
 		return
-	}
-
-	countryCode := req.CountryCode
-	if countryCode == "" {
-		countryCode = "ID"
-	}
-	timezone := req.Timezone
-	if timezone == "" {
-		timezone = "Asia/Jakarta"
 	}
 
 	writeSuccess(c, http.StatusCreated, companyResponse{

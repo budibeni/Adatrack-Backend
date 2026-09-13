@@ -27,7 +27,7 @@ func (wa *WorkerAlert) checkOfflineMonitors() {
 		case <-wa.ctx.Done():
 			return
 		case <-tick.C:
-			for _, c := range wa.tm.Companies() {
+			for _, c := range companiesFn(wa.tm) {
 				if !c.IsActive {
 					continue
 				}
@@ -45,7 +45,7 @@ type vehicleRow struct {
 
 // offlineScanCompany checks all active vehicles of one tenant.
 func (wa *WorkerAlert) offlineScanCompany(code string) {
-	st, err := wa.newStore(code)
+	st, err := newStoreFn(wa, code)
 	if err != nil {
 		wa.metrics.incError(code, "offline_pool")
 		return

@@ -58,7 +58,7 @@ func authorize(claims *tokenClaims) (allowed map[uint64]struct{}, db *sql.DB,
 		return make(map[uint64]struct{}), nil, 0, claims.Role, false, nil
 	}
 
-	db, err = companyDBByCode(claims.CompanyCode)
+	db, err = companyDBByCodeFn(claims.CompanyCode)
 	if err != nil {
 		return nil, nil, 0, "", false, err
 	}
@@ -285,12 +285,12 @@ func auditLogin(userID uint64, email, ip, userAgent string, success bool) {
 		eventType = "LOGIN_SUCCESS"
 	}
 	internal.LogAudit(auditDB(), internal.AuditEntry{
-		UserID:      userID,
-		EventType:   eventType,
-		Action:      "login",
-		Entity:      "user",
-		EntityID:    email,
-		IP:          ip,
-		UserAgent:   userAgent,
+		UserID:    userID,
+		EventType: eventType,
+		Action:    "login",
+		Entity:    "user",
+		EntityID:  email,
+		IP:        ip,
+		UserAgent: userAgent,
 	})
 }

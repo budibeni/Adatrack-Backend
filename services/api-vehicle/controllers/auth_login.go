@@ -38,7 +38,7 @@ func authLoginHandler(c *gin.Context) {
 		return
 	}
 
-	u, err := loadMasterUserByEmail(masterDB(), req.Email)
+	u, err := loadMasterUserByEmail(masterDBFn(), req.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			loginLimiter.recordFailure(clientIP)
@@ -70,7 +70,9 @@ func authLoginHandler(c *gin.Context) {
 		accessValid = true
 	} else {
 		// Tenant resolution: user harus punya DB company yang aktif.
-		db, err := appTenant.DB(u.CompanyCode)
+		// companyDBByCodeFn = indirection testable (pola B4): produksi resolve
+		// appTenant.DB sama persis; unit test stub ke sqlmock.
+		db, err := companyDBByCodeFn(u.CompanyCode)
 		if err != nil || db == nil {
 			slog.Warn("login rejected: company db unavailable", "email", req.Email, "company", u.CompanyCode, "error", err)
 			writeError(c, http.StatusForbidden, "FORBIDDEN", "akses ke company tidak tersedia")
@@ -111,7 +113,7 @@ func authLoginHandler(c *gin.Context) {
 		loginLimiter.recordFailure(clientIP)
 		auditLogin(u.ID, req.Email, clientIP, c.Request.UserAgent(), false)
 		// Enterprise security: increment failed login attempts + lock if threshold exceeded.
-		recordFailedLogin(masterDB(), u.ID, appCfg.RateLimit.LoginLockoutThreshold, appCfg.RateLimit.LoginLockoutWindow)
+		recordFailedLogin(masterDBFn(), u.ID, appCfg.RateLimit.LoginLockoutThreshold, appCfg.RateLimit.LoginLockoutWindow)
 		slog.Warn("login failed: bad password", "email", req.Email, "client_ip", clientIP, "failed_attempts", u.FailedLoginAttempts+1)
 		writeError(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "email or password is incorrect")
 		return
@@ -138,7 +140,7 @@ func authLoginHandler(c *gin.Context) {
 	auditLogin(u.ID, req.Email, clientIP, c.Request.UserAgent(), true)
 
 	// Reset failed-login counter + clear lockout on successful authentication.
-	if _, err := masterDB().Exec(`UPDATE users SET last_login = NOW(),
+	if _, err := masterDBFn().Exec(`UPDATE users SET last_login = NOW(),
 		failed_login_attempts = 0, locked_until = NULL
 		WHERE id = ?`, u.ID); err != nil {
 		slog.Warn("login: update last_login failed", "error", err, "user_id", u.ID)
@@ -172,15 +174,16 @@ func auditLogin(userID uint64, email, ip, userAgent string, success bool) {
 		eventType = "LOGIN_SUCCESS"
 	}
 	internal.LogAudit(auditDB(), internal.AuditEntry{
-		UserID:      userID,
-		EventType:   eventType,
-		Action:      "login",
-		Entity:      "user",
-		EntityID:    email,
-		IP:          ip,
-		UserAgent:   userAgent,
+		UserID:    userID,
+		EventType: eventType,
+		Action:    "login",
+		Entity:    "user",
+		EntityID:  email,
+		IP:        ip,
+		UserAgent: userAgent,
 	})
 }
+
 // recordFailedLogin increments master.users.failed_login_attempts and, when
 // the threshold is reached, locks the account via locked_until (enterprise
 // security — GAP #12 account lockout). Errors are logged but never block the

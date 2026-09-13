@@ -77,6 +77,16 @@ func (wa *WorkerAlert) geofenceStateKey(company, imei string) string {
 	return wa.redisKeyPrefix() + code + ":geofence_state:" + imei
 }
 
+// fuelStateKey builds the B5a fuel-sensor state key holding the last reading:
+// {prefix}{company}:fuel_state:{imei}.
+func (wa *WorkerAlert) fuelStateKey(company, imei string) string {
+	code := strings.ToLower(strings.TrimSpace(company))
+	if code == "" {
+		code = "default"
+	}
+	return wa.redisKeyPrefix() + code + ":fuel_state:" + imei
+}
+
 // sosEscalationKey builds the per-alert escalation counter key.
 func (wa *WorkerAlert) sosEscalationKey(company string, alertID uint64) string {
 	code := strings.ToLower(strings.TrimSpace(company))

@@ -37,6 +37,17 @@ ALTER TABLE users MODIFY COLUMN role
 -- 3) Registrasi tenant platform di master.companies.
 --    country_code 'ID' wajib (FK countries.iso_code); settings menandai ini
 --    sebagai platform scope agar mudah dibedakan saat audit/reporting.
+-- 3a) GUARD FK (2026-09-11): init script menjalankan SEMUA master migrations
+--     SEBELUM step seed referensi wilayah (init step 2b) — tanpa guard ini
+--     init FRESH volume selalu gagal ERROR 1452 (companies.country_code →
+--     countries.iso_code kosong), meng-abort seluruh step setelahnya
+--     (reference seed, master_seed, company migrations/seed, app grants).
+--     Ditemukan saat drill replikasi MySQL (volume fresh). Idempoten; baris
+--     lengkap (iso3/phone/currency) tetap dilengkapi oleh seed reference.
+INSERT INTO countries (iso_code, name)
+VALUES ('ID', 'Indonesia')
+ON DUPLICATE KEY UPDATE name = VALUES(name);
+
 INSERT INTO companies (code, name, legal_name, country_code, timezone,
                        settings, is_active, activated_at)
 VALUES ('DEFAULT', 'adatrack Platform', 'adatrack Platform (Primary)', 'ID', 'Asia/Jakarta',

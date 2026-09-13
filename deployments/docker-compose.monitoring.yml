@@ -34,7 +34,12 @@ services:
       - ../monitoring:/etc/monitoring:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      # Port host DI-override (default 9095): host :9090 dipakai /metrics
+      # service-media (fallback internal METRICS_ADDR ":9090"), sehingga
+      # publish "9090:9090" kalah bind dan request Prometheus UI malah
+      # diterima service-media. Dalam container port tetap 9090 — datasource
+      # Grafana (http://prometheus:9090) tidak terpengaruh.
+      - "${PROMETHEUS_PORT:-9095}:9090"
     depends_on:
       - cadvisor
       - node-exporter

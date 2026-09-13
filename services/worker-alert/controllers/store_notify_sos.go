@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"time"
 
+	"ajb_gps/internal/dialect"
 	"ajb_gps/worker-alert/models"
 )
 
@@ -17,7 +18,11 @@ func (s *companyStore) EnabledPreferences(alertTypes []string) ([]models.NotifPr
 	if len(alertTypes) == 0 {
 		return nil, nil
 	}
-	q := `SELECT user_id, alert_type, channel, COALESCE(min_severity,'warning'), COALESCE(delivery_config, JSON_OBJECT())
+	// Dialect-aware default delivery_config (PG-parity fix): JSON_OBJECT()
+	// menghasilkan tipe json di PG16 vs kolom jsonb → COALESCE error 42883;
+	// MySQL tetap JSON_OBJECT().
+	defExpr := deliveryDefaultExpr(dialect.Current())
+	q := `SELECT user_id, alert_type, channel, COALESCE(min_severity,'warning'), COALESCE(delivery_config, ` + defExpr + `)
 	      FROM notification_preferences WHERE is_enabled = TRUE AND alert_type IN (`
 	q += "'" + alertTypes[0] + "'"
 	for _, t := range alertTypes[1:] {
@@ -83,6 +88,17 @@ func nullIfEmpty(s string) interface{} {
 		return nil
 	}
 	return s
+}
+
+// deliveryDefaultExpr returns the dialect-correct SQL expression for an empty
+// delivery_config default inside COALESCE. MySQL: JSON_OBJECT(); PostgreSQL:
+// '{}'-cast ke jsonb (JSON_OBJECT() PG16 menghasilkan json → COALESCE gagal
+// "could not convert type json to jsonb", SQLSTATE 42883).
+func deliveryDefaultExpr(d dialect.Dialect) string {
+	if d == dialect.Postgres {
+		return `'{}'::jsonb`
+	}
+	return `JSON_OBJECT()`
 }
 
 // ---------------------------------------------------------------------------

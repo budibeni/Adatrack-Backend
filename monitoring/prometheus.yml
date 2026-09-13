@@ -2,17 +2,26 @@
 # Prometheus configuration — adatrack GPS Monitoring (Phase B4)
 #
 # Topologi dev saat ini: keenam service Go berjalan DI HOST (bind dari
-# backend/.env), infra (MySQL/Redis/NATS) di container compose. Prometheus
-# berjalan di container → men-scrape service host via host.docker.internal
-# (docker-compose.monitoring.yml memberi extra_hosts host-gateway).
+# backend/.env), infra (Postgres/Redis/NATS) di container compose. Prometheus
+# berjalan di container.
+#
+# PENTING (audit 2026-08-31): di Docker Desktop + WSL2, `host.docker.internal`
+# (192.168.65.254) TIDAK merutekan ke userland distro WSL tempat service Go
+# berjalan → semua target adatrack-services sempat DOWN (connection refused)
+# meski service sehat. Target kini memakai IP distro WSL (hostname -I).
+# IP WSL BISA berubah setelah restart Windows/WSL — perbarui daftar targets
+# di bawah (atau migrasi ke file_sd yang di-generate script saat start).
 #
 # Port metrik aktual (backend/.env):
 #   ingestion-tcp      :8090   (/metrics)
 #   worker-persistence :8091
 #   worker-live        :8092
 #   worker-alert       :8093
-#   service-websocket  :9090   (WEBSOCKET_METRICS_ADDR)
+#   service-websocket  :9091   (override dev start-services.sh; default .env 9090)
 #   api-vehicle        :8081   (/metrics di server HTTP utamanya)
+#   service-media      :9090   (default internal METRICS_ADDR)
+# Port host utk UI/API Prometheus di-override ke PROMETHEUS_PORT (default 9095)
+# karena host :9090 dipakai service-media (lihat docker-compose.monitoring.yml).
 # =====================================================================
 
 global:
@@ -31,17 +40,17 @@ rule_files:
   - /etc/monitoring/slo-rules.yml
 
 scrape_configs:
-  # Service Go di HOST dev (via host-gateway).
+  # Service Go di HOST dev via FILE_SD (B4 audit 2026-08-31).
+# Latar: di Docker Desktop+WSL2 `host.docker.internal` tidak menjangkau
+# userland WSL2, dan IP distro WSL berubah tiap restart → targets dipindah ke
+# file_sd yang di-generate `scripts/gen-prom-targets.sh` (refresh 30 dtk; file
+# ter-mount read-only di /etc/monitoring/targets/).
   - job_name: "adatrack-services"
     metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "host.docker.internal:8090" # ingestion-tcp
-          - "host.docker.internal:8091" # worker-persistence
-          - "host.docker.internal:8092" # worker-live
-          - "host.docker.internal:8093" # worker-alert
-          - "host.docker.internal:9090" # service-websocket metrics
-          - "host.docker.internal:8081" # api-vehicle
+    file_sd_configs:
+      - files:
+          - /etc/monitoring/targets/*.json
+        refresh_interval: 30s
 
   # Alternatif bila service dijalankan sebagai container (nama network compose).
   - job_name: "adatrack-services-containers"

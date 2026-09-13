@@ -113,6 +113,10 @@ type TelemetryMessage struct {
 	Heading     int16   `json:"heading,omitempty"`
 	Satellites  uint8   `json:"satellites,omitempty"`
 	HDOP        float64 `json:"hdop,omitempty"`
+	// Altitude (meter, signed) dari GPS element Teltonika AVL (2-byte, offset
+	// 17:19 pada Codec 8/8E; 16:18 pada Codec 7). GT06 tidak menyediakan
+	// altitude → selalu 0 (omit dari JSON via omitempty).
+	Altitude    int16   `json:"altitude,omitempty"`
 	Battery     uint8   `json:"battery_level,omitempty"`
 	GsmSignal   uint8   `json:"gsm_signal,omitempty"`
 	ACC         bool    `json:"acc,omitempty"`
@@ -120,4 +124,13 @@ type TelemetryMessage struct {
 	AlarmCode   uint8   `json:"alarm_code,omitempty"`
 	Fix         bool    `json:"fix,omitempty"`
 	Timestamp   int64   `json:"timestamp"`
+
+	// --- B5a: Fuel sensor (PRD v1.3.0 Module 7) ---
+	// Pointer + omitempty: field yang tidak hadir (absen ≠ nol) tidak muncul di JSON.
+	// FuelLevel = liquid level measurement value (cm) dari sensor AIOIL.
+	// FuelVolume = fuel volume (L) — butuh kalibrasi tangki (fuel_configs / tank_profile).
+	// FuelTempC = fuel temperature (°C).
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }

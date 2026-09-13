@@ -228,11 +228,13 @@ func (m *Manager) ProvisionCompany(ctx context.Context, input ProvisionCompanyIn
 		"country_code = " + d.ValuesExpr("country_code"),
 		"timezone = " + d.ValuesExpr("timezone"),
 		"is_active = TRUE",
-		"legal_name = COALESCE(NULLIF(?, ''), legal_name)",
-		"company_email = COALESCE(NULLIF(?, ''), company_email)",
-		"website = COALESCE(NULLIF(?, ''), website)",
-		"tax_id = COALESCE(NULLIF(?, ''), tax_id)",
-		"postal_code = COALESCE(NULLIF(?, ''), postal_code)",
+		// Existing-row refs MUST be dialect-qualified: on Postgres a bare
+		// column inside DO UPDATE SET is ambiguous with EXCLUDED (42702).
+		"legal_name = COALESCE(NULLIF(?, ''), " + d.ExistingColRef("companies", "legal_name") + ")",
+		"company_email = COALESCE(NULLIF(?, ''), " + d.ExistingColRef("companies", "company_email") + ")",
+		"website = COALESCE(NULLIF(?, ''), " + d.ExistingColRef("companies", "website") + ")",
+		"tax_id = COALESCE(NULLIF(?, ''), " + d.ExistingColRef("companies", "tax_id") + ")",
+		"postal_code = COALESCE(NULLIF(?, ''), " + d.ExistingColRef("companies", "postal_code") + ")",
 	}
 	upsertClause := d.Upsert([]string{"code"}, companySetExprs)
 	if _, err := m.master.ExecContext(ctx,

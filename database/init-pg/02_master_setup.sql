@@ -36,6 +36,16 @@ ON CONFLICT (iso_code) DO UPDATE SET
 -- -- -- Tenant platform (012) -- --
 \i /db/migrations/master_pg/012_create_platform_tenant.sql
 
+-- -- -- Media config (B5b, Modul 8): master migration 013 + seed dev DEV001 -- --
+\i /db/migrations/master_pg/013_create_company_media_config.sql
+INSERT INTO company_media_config (company_code, bucket, retention_days, max_file_mb, hmac_secret)
+VALUES ('DEV001', 'adatrack-media', 30, 100, 'dev001-hmac-secret-b5b')
+ON CONFLICT (company_code) DO UPDATE SET
+    bucket = EXCLUDED.bucket,
+    retention_days = EXCLUDED.retention_days,
+    max_file_mb = EXCLUDED.max_file_mb,
+    hmac_secret = EXCLUDED.hmac_secret;
+
 -- -- -- Seed dev tenant DEV001 (mirror master_seed.sql MySQL) -- --
 INSERT INTO companies (code, name, legal_name, country_code, address, phone, company_email, website, tax_id,
                        postal_code, timezone, settings, is_active, activated_at)

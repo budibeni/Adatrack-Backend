@@ -23,6 +23,9 @@ SET search_path TO adatrack_gps_default;
 \i /db/migrations/company_pg/010_create_notifications.sql
 \i /db/migrations/company_pg/011_create_routes.sql
 \i /db/migrations/company_pg/012_create_route_assignments.sql
+\i /db/migrations/company_pg/013_create_fuel_logs.sql
+\i /db/migrations/company_pg/014_create_fuel_configs.sql
+\i /db/migrations/company_pg/015_create_media_events.sql
 
 -- Seed default: operator (3) & driver (4) dari master + 3 vehicle sample
 INSERT INTO user_company_access (user_id, role_override, is_active) VALUES
@@ -89,6 +92,9 @@ SET search_path TO adatrack_gps_dev001;
 \i /db/migrations/company_pg/010_create_notifications.sql
 \i /db/migrations/company_pg/011_create_routes.sql
 \i /db/migrations/company_pg/012_create_route_assignments.sql
+\i /db/migrations/company_pg/013_create_fuel_logs.sql
+\i /db/migrations/company_pg/014_create_fuel_configs.sql
+\i /db/migrations/company_pg/015_create_media_events.sql
 
 INSERT INTO user_company_access (user_id, role_override, is_active) VALUES
     (1, 'Admin', TRUE),

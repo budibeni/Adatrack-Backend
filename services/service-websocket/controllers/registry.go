@@ -78,7 +78,7 @@ func (r *vehicleRegistry) lookup(companyCode, imei string) (vehicleInfo, bool) {
 // dengan fallback primary otomatis — data vehicle jarang berubah sehingga
 // aman terhadap replication lag singkat.
 func (r *vehicleRegistry) fetch(companyCode, imei string) (vehicleInfo, error) {
-	db, err := companyReadByCode(companyCode)
+	db, err := companyReadByCodeFn(companyCode)
 	if err != nil || db == nil {
 		return vehicleInfo{}, err
 	}

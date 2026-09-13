@@ -12,6 +12,7 @@ type alertMetrics struct {
 	tta        prometheus.Histogram   // sos_time_to_acknowledge_seconds
 	notifySent *prometheus.CounterVec // notifications_sent_total{company,channel,status}
 	published  *prometheus.CounterVec // nats_alerts_published_total{subject}
+	fuelAccSup *prometheus.CounterVec // alerts_fuel_acc_suppressed_total{company}
 }
 
 // newAlertMetrics builds and registers the B3 metric family on the given
@@ -43,9 +44,13 @@ func newAlertMetrics(reg *prometheus.Registry) *alertMetrics {
 			Name: "nats_alerts_published_total",
 			Help: "NATS alert/notification messages published by worker-alert",
 		}, []string{"subject"}),
+		fuelAccSup: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "alerts_fuel_acc_suppressed_total",
+			Help: "FUEL_DROP suppressed by strict ACC gate (FUEL_DROP_REQUIRE_ACC=true), per company (B5a FR-7.6)",
+		}, []string{"company"}),
 	}
 	if reg != nil {
-		reg.MustRegister(m.created, m.errors, m.escalated, m.tta, m.notifySent, m.published)
+		reg.MustRegister(m.created, m.errors, m.escalated, m.tta, m.notifySent, m.published, m.fuelAccSup)
 	}
 	return m
 }
@@ -68,5 +73,12 @@ func (m *alertMetrics) incError(company, op string) {
 func (m *alertMetrics) incPublished(subject string) {
 	if m != nil {
 		m.published.WithLabelValues(subject).Inc()
+	}
+}
+
+// incFuelACCSuppressed bumps alerts_fuel_acc_suppressed_total.
+func (m *alertMetrics) incFuelACCSuppressed(company string) {
+	if m != nil {
+		m.fuelAccSup.WithLabelValues(company).Inc()
 	}
 }

@@ -34,7 +34,7 @@ load_env() {
 load_env "$ENV_FILE"
 
 last_msgs() {
-  grep -oP '\[\s*progress\] \K[0-9]+' "$LOG" 2>/dev/null | tail -1 || echo 0
+  grep -a -oP '\[progress\]\s*\K[0-9]+' "$LOG" 2>/dev/null | tail -1 || echo 0
 }
 
 db_rows() {
@@ -61,6 +61,6 @@ while kill -0 "$PID_LT" 2>/dev/null; do
 done
 
 # Entri penutup saat loadtest berhenti (selesai ATAU mati).
-M=$(last_msgs); R=$(mysql_rows)
+M=$(last_msgs); R=$(db_rows)
 echo "$(date -Is) END msgs=$M rows=$R delta=$(( ${R:-0} - BASELINE ))" >> "$OUT"
 echo "checkpoint selesai — lihat $OUT"

@@ -1,10 +1,12 @@
 package controllers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 
+	"ajb_gps/internal/dialect"
 	"ajb_gps/internal/tenant"
 	"ajb_gps/worker-alert/models"
 )
@@ -78,9 +80,12 @@ func normalizeSeverity(s string) string {
 }
 
 // InsertAlert creates an alerts row (migration 008) and returns the new id.
+// Dialect-aware (PG-parity fix): pgx tidak mendukung res.LastInsertId() —
+// dulu INSERT berhasil tapi fungsi gagal sebelum publish/notifikasi
+// ("LastInsertId is not supported by this driver"). PG kini RETURNING id.
 func (s *companyStore) InsertAlert(a models.AlertRecord) (uint64, error) {
 	a.Severity = normalizeSeverity(a.Severity)
-	res, err := s.db.Exec(
+	id, err := dialect.InsertReturningID(dialect.Current(), context.Background(), s.db,
 		`INSERT INTO alerts (vehicle_id, alert_type, severity, description, status, vehicle_lat, vehicle_lon)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		a.VehicleID, a.AlertType, a.Severity, a.Description, a.Status, a.VehicleLat, a.VehicleLon,
@@ -88,11 +93,38 @@ func (s *companyStore) InsertAlert(a models.AlertRecord) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
 	return uint64(id), nil
+}
+
+// FuelConfigFor returns the effective fuel config (B5a, migration 014): an
+// enabled vehicle-specific row wins over the global default (vehicle_id IS
+// NULL). READ path (replica).
+func (s *companyStore) FuelConfigFor(vehicleID uint64) (models.FuelConfig, bool, error) {
+	rows, err := s.ro.Query(
+		`SELECT vehicle_id, drop_threshold, refuel_threshold, window_seconds, enabled
+		 FROM fuel_configs WHERE enabled = TRUE AND (vehicle_id = ? OR vehicle_id IS NULL)
+		 ORDER BY (vehicle_id IS NULL) ASC`, // vehicle-specific first
+		vehicleID,
+	)
+	if err != nil {
+		return models.FuelConfig{}, false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			vid sql.NullInt64
+			cfg models.FuelConfig
+		)
+		if err := rows.Scan(&vid, &cfg.DropThreshold, &cfg.RefuelThreshold, &cfg.WindowSeconds, &cfg.Enabled); err != nil {
+			return models.FuelConfig{}, false, err
+		}
+		if vid.Valid {
+			v := vid.Int64
+			cfg.VehicleID = &v
+		}
+		return cfg, true, rows.Err()
+	}
+	return models.FuelConfig{}, false, rows.Err()
 }
 
 // HasOpenAlert reports whether an open alert of alertType already exists for
@@ -136,5 +168,3 @@ func (s *companyStore) SpeedConfigFor(vehicleID uint64) (models.SpeedConfig, boo
 	}
 	return models.SpeedConfig{}, false, rows.Err()
 }
-
-

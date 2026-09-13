@@ -41,7 +41,7 @@ func (wa *WorkerAlert) handleTelemetry(msg *natsMsg) error {
 		tm.CompanyCode = code
 	}
 
-	st, err := wa.newStore(company)
+	st, err := newStoreFn(wa, company)
 	if err != nil {
 		if errors.Is(err, tenant.ErrCompanyNotFound) {
 			slog.Warn("company pool unavailable for telemetry", "company", company, "imei", tm.IMEI)
@@ -81,6 +81,10 @@ func (wa *WorkerAlert) handleTelemetry(msg *natsMsg) error {
 	wa.checkSpeeding(st, company, tm, vehicleID)
 	wa.checkBattery(st, company, tm, vehicleID)
 	wa.checkRoute(st, company, tm, vehicleID)
+	// B5a: fuel sensor — hanya dievaluasi bila payload membawa pembacaan fuel.
+	if tm.FuelLevel != nil {
+		wa.checkFuel(st, company, tm, vehicleID)
+	}
 	return nil
 }
 

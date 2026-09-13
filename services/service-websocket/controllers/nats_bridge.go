@@ -55,10 +55,22 @@ func bridgeHandle(msg *nats.Msg) error {
 			Lon:         tm.Lon,
 			Speed:       tm.Speed,
 			Heading:     tm.Heading,
-			Acc:         tm.Speed > 0,
-			Status:      status,
-			Battery:     tm.Battery,
-			Timestamp:   ts,
+			// Hotfix ACC: pakai nilai ACC riil dari tracker (GT06 status byte /
+			// Teltonika IO 239/240) yang dipublish ingestion — BUKAN inferensi
+			// Speed > 0. Dengan ini kendaraan parkir mesin menyala (idling,
+			// Speed == 0) tetap acc:true.
+			Acc:        tm.ACC,
+			Status:     status,
+			Battery:    tm.Battery,
+			Satellites: tm.Satellites,
+			// Hotfix WS DTO: altitude (meter) dari GPS element Teltonika
+			// diteruskan apa adanya (GT06 tidak menyediakan → 0/omit).
+			Altitude:   tm.Altitude,
+			GsmSignal:  tm.GsmSignal,
+			FuelLevel:  tm.FuelLevel,
+			FuelVolume: tm.FuelVolume,
+			FuelTempC:  tm.FuelTempC,
+			Timestamp:  ts,
 		},
 	}
 	payload, err := json.Marshal(event)
@@ -111,5 +123,40 @@ func notifyHandle(msg *nats.Msg) error {
 	appHub.broadcast(notif.CompanyCode, vid, payload)
 	internal.WSMessagesTotal.WithLabelValues("alert.notification", "send").Inc()
 	internal.WSMessageDuration.WithLabelValues("alert_notification").Observe(time.Since(start).Seconds())
+	return nil
+}
+
+// mediaHandle consumes subject media.event.<company> (queue group "websocket")
+// published by service-media (B5b, FR-8.5). It wraps the media payload as a
+// MEDIA_EVENT WS event and fans it out via the hub — RBAC/tenant-filtered to
+// clients of the same company with access to the vehicle (hub.broadcast).
+func mediaHandle(msg *nats.Msg) error {
+	start := time.Now()
+
+	// NATS payload mirrors MediaEventData fields at top level (service-media
+	// publishes MediaEventsEvent; json tags match). "event" field is ignored.
+	var mev models.MediaEventData
+	if err := json.Unmarshal(msg.Data, &mev); err != nil {
+		slog.Error("media: unmarshal failed", "subject", msg.Subject, "error", err)
+		return nil
+	}
+	if mev.CompanyCode == "" {
+		slog.Warn("media: missing company_code in event", "subject", msg.Subject)
+		return nil
+	}
+
+	event := models.MediaEventWS{
+		Event: "MEDIA_EVENT",
+		Data:  mev,
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("media: marshal failed", "error", err)
+		return nil
+	}
+
+	appHub.broadcast(mev.CompanyCode, mev.VehicleID, payload)
+	internal.WSMessagesTotal.WithLabelValues("media.event", "send").Inc()
+	internal.WSMessageDuration.WithLabelValues("media_event").Observe(time.Since(start).Seconds())
 	return nil
 }

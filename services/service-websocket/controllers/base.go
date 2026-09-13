@@ -29,6 +29,7 @@ var (
 	metricsHTTP  http.Handler
 	appSub       *nats.Subscription
 	appNotifySub *nats.Subscription
+	appMediaSub  *nats.Subscription
 )
 
 // Setup wires package globals and starts the NATS→hub bridge, including the
@@ -67,6 +68,18 @@ func Setup(cfg *internal.Config, redis *internal.RedisClient, natsClient *intern
 	}
 	appNotifySub = notifySub
 
+	// Media event bridge (B5b, Module 8 FR-8.5): service-media publishes to
+	// media.event.<company>; we fan out as MEDIA_EVENT with RBAC/tenant filter.
+	mediaSub, err := appNATS.Subscribe(appNATS.SubjectPlain("media", "event", ">"), "websocket", mediaHandle)
+	if err != nil {
+		appNATS.Unsubscribe(appSub)
+		appSub = nil
+		appNATS.Unsubscribe(appNotifySub)
+		appNotifySub = nil
+		return nil, err
+	}
+	appMediaSub = mediaSub
+
 	unsubscribe := func() {
 		if appSub != nil {
 			appNATS.Unsubscribe(appSub)
@@ -75,6 +88,10 @@ func Setup(cfg *internal.Config, redis *internal.RedisClient, natsClient *intern
 		if appNotifySub != nil {
 			appNATS.Unsubscribe(appNotifySub)
 			appNotifySub = nil
+		}
+		if appMediaSub != nil {
+			appNATS.Unsubscribe(appMediaSub)
+			appMediaSub = nil
 		}
 	}
 	return unsubscribe, nil
@@ -142,6 +159,16 @@ func companyReadByCode(companyCode string) (*sql.DB, error) {
 func masterDB() *sql.DB {
 	return appTenant.Master()
 }
+
+// masterDBFn / companyDBByCodeFn — indirection untuk unit test (pola
+// companyDBFn di worker-persistence): handler ber-master-DB (reference,
+// auth login, company/user provisioning) dapat dites dengan sqlmock tanpa
+// infra nyata. Default menunjuk implementasi asli; produksi tidak berubah.
+var (
+	masterDBFn          = masterDB
+	companyDBByCodeFn   = companyDBByCode
+	companyReadByCodeFn = companyReadByCode
+)
 
 // auditDB returns the master pool for audit writes, or nil bila tenant manager
 // belum siap (mis. unit test tanpa infra) — LogAudit aman utk nil db.

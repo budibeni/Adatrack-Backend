@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ajb_gps/internal/dialect"
 )
 
 // writeTestFile tulis file dengan permission aman di direktori test.
@@ -342,4 +344,40 @@ func TestConfigureLoggingUnknownLevel(t *testing.T) {
 	restore := withEnv(map[string]string{"LOG_LEVEL": "super-duper"})
 	defer restore()
 	ConfigureLogging()
+}
+
+// TestSyncDialectFromEnv anti-regresi FIX 2026-09-11: process-wide SQL dialect
+// harus mengikuti DATABASE_PROVIDER efektif (OS env > .env) — sebelumnya
+// default proses = Postgres dan tidak ada yang memanggil dialect.Set saat
+// startup, sehingga batch insert worker-persistence di provider mysql memakai
+// quoting Postgres ("telemetry_logs") → Error 1064 (data loss jalur mysql).
+func TestSyncDialectFromEnv(t *testing.T) {
+	restore := withEnv(map[string]string{"DATABASE_PROVIDER": "mysql"})
+	defer restore()
+
+	// OS env eksplisit mysql → dialect MySQL (quoting backtick).
+	syncDialectFromEnv()
+	if got := dialect.Current(); got != dialect.MySQL {
+		t.Fatalf("provider mysql: dialect = %q, want mysql", got)
+	}
+	if q := dialect.Current().QuoteIdent("telemetry_logs"); strings.Contains(q, "\"") {
+		t.Fatalf("provider mysql: quoting = %q, tidak boleh double-quote", q)
+	}
+
+	// OS env eksplisit postgres → dialect Postgres (quoting double-quote).
+	os.Setenv("DATABASE_PROVIDER", "postgres")
+	syncDialectFromEnv()
+	if got := dialect.Current(); got != dialect.Postgres {
+		t.Fatalf("provider postgres: dialect = %q, want postgres", got)
+	}
+	if q := dialect.Current().QuoteIdent("telemetry_logs"); !strings.HasPrefix(q, "\"") {
+		t.Fatalf("provider postgres: quoting = %q, harus double-quote", q)
+	}
+
+	// OS env di-unset → default proyek = Postgres (keputusan 2026-08-25).
+	os.Unsetenv("DATABASE_PROVIDER")
+	syncDialectFromEnv()
+	if got := dialect.Current(); got != dialect.Postgres {
+		t.Fatalf("provider unset: dialect = %q, want postgres (default proyek)", got)
+	}
 }

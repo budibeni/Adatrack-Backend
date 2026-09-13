@@ -240,6 +240,37 @@ func handleGT06(c net.Conn) {
 			// Reply with the current UTC time (server clock) per v3.1 §9.2.
 			_ = WriteAck(c, models.ProtoTimeCheck, EncodeTime6(time.Now().UTC()))
 
+		case models.ProtoInfoTransmit:
+			packetsTotal.WithLabelValues("info_transmit").Inc()
+			if imei == "" {
+				slog.Warn("info transmit received before authentication", "remote", c.RemoteAddr())
+				rejectedTotal.WithLabelValues("no_auth").Inc()
+				continue
+			}
+			// B5a: fuel sensor data (Information Type 0x0D, v3.1 §10.1).
+			tele, ok := ParseInfoTransmit(packet.Data)
+			if !ok {
+				fuelSensorError(imei, "unsupported info type or malformed payload")
+				continue
+			}
+			tele.IMEI = imei
+			tele.CompanyCode = company
+			tele.VehicleID = vehicleID
+			// Fuel-only packets are partial messages (no GPS fix) — publish
+			// them on the same telemetry.raw.<IMEI> subject so downstream
+			// workers (persistence/live/alert) can merge them.
+			if err := publishTelemetry(tele); err != nil {
+				slog.Error("failed to publish fuel telemetry", "imei", imei, "error", err)
+				continue
+			}
+			parsedTotal.WithLabelValues("fuel_sensor").Inc()
+			fuelReadingsTotal.WithLabelValues("gt06").Inc()
+			// ACK with the info serial number echoed back.
+			if len(packet.Data) >= 2 {
+				serial := packet.Data[len(packet.Data)-2:]
+				_ = WriteAck(c, packet.Protocol, serial)
+			}
+
 		default:
 			packetsTotal.WithLabelValues("other").Inc()
 		}

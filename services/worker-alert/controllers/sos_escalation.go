@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"ajb_gps/internal/dialect"
 	"ajb_gps/worker-alert/models"
 )
 
@@ -29,7 +30,7 @@ func (wa *WorkerAlert) escalationMonitor() {
 		case <-wa.ctx.Done():
 			return
 		case <-tick.C:
-			for _, c := range wa.tm.Companies() {
+			for _, c := range companiesFn(wa.tm) {
 				if !c.IsActive {
 					continue
 				}
@@ -42,7 +43,7 @@ func (wa *WorkerAlert) escalationMonitor() {
 
 // escalateCompany escalates every still-open SOS older than the ack window.
 func (wa *WorkerAlert) escalateCompany(code string, threshold time.Duration, maxRounds int) {
-	st, err := wa.newStore(code)
+	st, err := newStoreFn(wa, code)
 	if err != nil {
 		wa.metrics.incError(code, "escalation_pool")
 		return
@@ -88,7 +89,7 @@ func (wa *WorkerAlert) incrEscalation(company string, alertID uint64) (int, erro
 
 // recordTTA observes the Time-to-Acknowledge once per acknowledged SOS alert.
 func (wa *WorkerAlert) recordTTA(code string, threshold time.Duration) {
-	st, err := wa.newStore(code)
+	st, err := newStoreFn(wa, code)
 	if err != nil {
 		return
 	}
@@ -97,8 +98,14 @@ func (wa *WorkerAlert) recordTTA(code string, threshold time.Duration) {
 		return
 	}
 	cutoff := time.Now().Add(-threshold)
+	// Dialect-aware TTA seconds: MySQL TIMESTAMPDIFF vs PG epoch-diff
+	// (PG-parity fix — TIMESTAMPDIFF is MySQL-only, SQLSTATE 42703 di PG).
+	secExpr := "TIMESTAMPDIFF(SECOND, created_at, acknowledged_at)"
+	if dialect.Current() == dialect.Postgres {
+		secExpr = `(EXTRACT(EPOCH FROM (acknowledged_at - created_at)))::bigint`
+	}
 	rows, err := cs.ro.Query( // READ path (replica); TTA scan berkala
-		`SELECT id, TIMESTAMPDIFF(SECOND, created_at, acknowledged_at)
+		`SELECT id, `+secExpr+`
 		 FROM alerts
 		 WHERE alert_type = 'SOS' AND status != 'open'
 		   AND acknowledged_at IS NOT NULL AND created_at <= ?`, cutoff)
@@ -160,6 +167,9 @@ func lowerCode(s string) string {
 // publishSOSEscalation re-emits the alert on alert.sos.<company> with the new
 // escalation level so downstream consumers can re-notify.
 func (wa *WorkerAlert) publishSOSEscalation(company string, entry models.OpenSOSAlert, level int, threshold time.Duration) {
+	if wa.nac == nil {
+		return
+	}
 	imei := wa.imeiForVehicle(company, entry.VehicleID)
 	payload := map[string]interface{}{
 		"alert_id":     entry.ID,
@@ -186,7 +196,7 @@ func (wa *WorkerAlert) publishSOSEscalation(company string, entry models.OpenSOS
 
 // imeiForVehicle resolves the IMEI of a vehicle row (best effort).
 func (wa *WorkerAlert) imeiForVehicle(company string, vehicleID uint64) string {
-	st, err := wa.newStore(company)
+	st, err := newStoreFn(wa, company)
 	if err != nil {
 		return ""
 	}

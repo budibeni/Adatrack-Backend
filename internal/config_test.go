@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"ajb_gps/internal/dialect"
+	"github.com/nats-io/nats.go"
 )
 
 // withEnv sets a list of env vars and returns a restore func.
@@ -70,6 +71,70 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if c.RateLimit.LoginMaxAttempts != 5 {
 		t.Errorf("default LoginMaxAttempts = %d, want 5", c.RateLimit.LoginMaxAttempts)
+	}
+}
+
+// TestJetStreamRetentionDefaults memastikan stream retention punya default aman
+// (B4 audit 2026-08-31 — sebelumnya stream dibuat tanpa limit → unbounded).
+func TestJetStreamRetentionDefaults(t *testing.T) {
+	restore := withEnv(map[string]string{
+		"JETSTREAM_MAX_AGE_HOURS": "",
+		"JETSTREAM_MAX_BYTES":     "",
+	})
+	defer restore()
+
+	c := LoadConfig()
+	if c.NATS.JetStreamMaxAgeHours != 48 {
+		t.Errorf("default JETSTREAM_MAX_AGE_HOURS = %d, want 48", c.NATS.JetStreamMaxAgeHours)
+	}
+	if c.NATS.JetStreamMaxBytes != 4*1024*1024*1024 {
+		t.Errorf("default JETSTREAM_MAX_BYTES = %d, want 4 GiB", c.NATS.JetStreamMaxBytes)
+	}
+
+	cfg := &nats.StreamConfig{}
+	applyJetStreamRetention(cfg, c)
+	if cfg.MaxAge != 48*time.Hour {
+		t.Errorf("stream MaxAge = %v, want 48h", cfg.MaxAge)
+	}
+	if cfg.MaxBytes != int64(4*1024*1024*1024) {
+		t.Errorf("stream MaxBytes = %d, want 4 GiB", cfg.MaxBytes)
+	}
+}
+
+// TestJetStreamRetentionOverride memastikan env override diterapkan, dan nilai
+// 0/negatif fail-safe kembali ke default (tidak ada stream tanpa retensi).
+func TestJetStreamRetentionOverride(t *testing.T) {
+	restore := withEnv(map[string]string{
+		"JETSTREAM_MAX_AGE_HOURS": "72",
+		"JETSTREAM_MAX_BYTES":     "1073741824",
+	})
+	defer restore()
+
+	c := LoadConfig()
+	if c.NATS.JetStreamMaxAgeHours != 72 || c.NATS.JetStreamMaxBytes != 1073741824 {
+		t.Fatalf("override tidak diterapkan: age=%d bytes=%d", c.NATS.JetStreamMaxAgeHours, c.NATS.JetStreamMaxBytes)
+	}
+	cfg := &nats.StreamConfig{}
+	applyJetStreamRetention(cfg, c)
+	if cfg.MaxAge != 72*time.Hour || cfg.MaxBytes != 1073741824 {
+		t.Errorf("cfg MaxAge=%v MaxBytes=%d, want 72h/1GiB", cfg.MaxAge, cfg.MaxBytes)
+	}
+
+	// Fail-safe: nilai 0 → default (48h/4GiB), BUKAN unlimited.
+	c2 := LoadConfig()
+	c2.NATS.JetStreamMaxAgeHours = 0
+	c2.NATS.JetStreamMaxBytes = 0
+	cfg2 := &nats.StreamConfig{}
+	applyJetStreamRetention(cfg2, c2)
+	if cfg2.MaxAge != 48*time.Hour || cfg2.MaxBytes != int64(4*1024*1024*1024) {
+		t.Errorf("zero-value harus fallback ke default; got MaxAge=%v MaxBytes=%d", cfg2.MaxAge, cfg2.MaxBytes)
+	}
+
+	// Nil-safe: config nil tidak boleh panic.
+	cfg3 := &nats.StreamConfig{}
+	applyJetStreamRetention(cfg3, nil)
+	if cfg3.MaxAge != 48*time.Hour {
+		t.Errorf("nil config harus pakai default; got %v", cfg3.MaxAge)
 	}
 }
 

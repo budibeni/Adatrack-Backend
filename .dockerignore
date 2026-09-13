@@ -1,0 +1,50 @@
+# ============================================================================
+# .dockerignore — build context bersih untuk semua service (monorepo).
+#
+# Tiap Dockerfile melakukan `COPY . .` dari root repo; daftar ini mencegah
+# artefak lokal (binary, .env, secret, logs, dokumen) ikut masuk build context.
+# Bagian yang DIBUTUHKAN build JANGAN dikecualikan: services/, internal/,
+# go.mod/go.sum (per-module).
+# ============================================================================
+
+# --- VCS / CI ---
+.git
+.gitignore
+.dockerignore
+
+# --- Environment & secret (JANGAN pernah ikut image) ---
+.env
+.env.*
+!.env.example
+id_rsa*
+*.pem
+*.key
+certs/
+
+# --- Log & artefak lokal ---
+*.log
+*.test
+backups/
+
+# --- Binary hasil build lokal (path spesifik, hindari mengecualikan direktori) ---
+services/ingestion-tcp/ingestion-tcp
+services/worker-live/worker-live
+services/worker-persistence/worker-persistence
+services/worker-alert/worker-alert
+services/service-websocket/service-websocket
+services/api-vehicle/api-vehicle
+services/service-media/service-media
+cmd/migrate-tenant/migrate-tenant
+cmd/db-replica-probe/db-replica-probe
+cmd/querybench/querybench
+cmd/partition-maintain/partition-maintain
+database/tools/genhash/genhash
+database/tools/genregions/genregions
+tools/e2e-pub/e2e-pub
+loadtest/loadtest
+
+# --- Direktori yang tidak dibutuhkan build image service ---
+docs/
+monitoring/
+deployments/
+loadtest/

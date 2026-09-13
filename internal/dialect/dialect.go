@@ -136,6 +136,20 @@ func (d Dialect) ValuesExpr(col string) string {
 	return "VALUES(" + d.QuoteIdent(col) + ")"
 }
 
+// ExistingColRef returns an expression referencing the EXISTING (pre-conflict)
+// row's column inside an upsert body.
+//
+//	mysql: bare col            (ON DUPLICATE KEY UPDATE scope resolves it)
+//	pg:    <table>.<col>       REQUIRED: within ON CONFLICT DO UPDATE SET an
+//	        unqualified column reference is ambiguous between the target row
+//	        and the EXCLUDED pseudo-relation (SQLSTATE 42702).
+func (d Dialect) ExistingColRef(table, col string) string {
+	if d == Postgres {
+		return d.QuoteIdent(table) + "." + d.QuoteIdent(col)
+	}
+	return d.QuoteIdent(col)
+}
+
 // Upsert returns the trailing upsert clause appended to an INSERT statement.
 //
 //	mysql: "ON DUPLICATE KEY UPDATE <setExprs>"            (conflictCols ignored)

@@ -25,7 +25,7 @@ type Config struct {
 		// MaxConnections is the maximum number of concurrent TCP connections
 		MaxConnections int
 		// TeltonikaPort is a dedicated listener for Teltonika/FM devices
-		// (Codec 8/8E/7/6). Empty/\"0\" disables it (each protocol gets its own
+		// (Codec 8/8E). Empty/\"0\" disables it (each protocol gets its own
 		// port — GT06 on TCP_PORT, Teltonika here, TK103 on TK103Port).
 		TeltonikaPort string
 		// TK103Port is a dedicated listener for the TK-103 family (provisional).
@@ -47,6 +47,12 @@ type Config struct {
 		// remain unprefixed to preserve the documented convention
 		// (alert.geofence.*, alert.sos.*, notify.alert.<vehicle_id>).
 		SubjectPrefix string
+		// JetStream retention (B4 audit 2026-08-31): stream dibuat via
+		// initializeStreams dengan LimitsPolicy + batas ini. Sebelumnya TANPA
+		// limit → telemetry-raw tumbuh ±8 GB/hari @400 msg/s. Default 48 jam
+		// & 4 GiB dengan DiscardOld; 0/negatif memakai default tersebut.
+		JetStreamMaxAgeHours int
+		JetStreamMaxBytes    int
 	}
 
 	// DatabaseProvider selects the persistent DB engine (PRD §7.1.1):
@@ -178,6 +184,33 @@ type Config struct {
 		// rounds performed for a single alert.
 		EscalationMax int
 	}
+
+	// Media (B5b, service-media — PRD v1.3.0 Module 8). Object-storage &
+	// ingest configuration for the dashcam event-media pipeline.
+	Media struct {
+		// S3Endpoint is the MinIO / AWS S3 / OSS endpoint (MEDIA_S3_ENDPOINT).
+		S3Endpoint string
+		// S3Bucket is the default bucket (MEDIA_S3_BUCKET); per-company bucket
+		// from master company_media_config.bucket takes precedence.
+		S3Bucket string
+		// S3AccessKey / S3SecretKey (MEDIA_S3_ACCESS_KEY / MEDIA_S3_SECRET_KEY).
+		S3AccessKey string
+		S3SecretKey string
+		// S3UseSSL (MEDIA_S3_USE_SSL).
+		S3UseSSL bool
+		// S3Region (MEDIA_S3_REGION, optional; default empty = us-east-1 for S3).
+		S3Region string
+		// PresignTTL is the presigned URL lifetime (MEDIA_PRESIGN_TTL_SECONDS).
+		PresignTTL time.Duration
+		// MaxFileMB is the global fallback max file size (MEDIA_MAX_FILE_MB).
+		MaxFileMB int
+		// DefaultHMACSecret is a dev fallback when master company_media_config
+		// has no row for a company (documented convenience; per-company secret is
+		// the source of truth for FR-8.1).
+		DefaultHMACSecret string
+		// CleanupCron is the daily retention job spec (MEDIA_CLEANUP_CRON).
+		CleanupCron string
+	}
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -209,6 +242,10 @@ func LoadConfig() *Config {
 	c.NATS.ClientID = getEnv("NATS_CLIENT_ID", "")
 	// NATS_SUBJECT_PREFIX default "telemetry" (PRD §7) — applied to telemetry.*.
 	c.NATS.SubjectPrefix = getEnv("NATS_SUBJECT_PREFIX", "telemetry")
+	// JetStream retention (B4 audit 2026-08-31): batasi pertumbuhan stream.
+	// 48 jam & 4 GiB cukup utk replay/debug tanpa mengisi disk produksi.
+	c.NATS.JetStreamMaxAgeHours = getEnvInt("JETSTREAM_MAX_AGE_HOURS", 48)
+	c.NATS.JetStreamMaxBytes = getEnvInt("JETSTREAM_MAX_BYTES", 4*1024*1024*1024)
 
 	// Database provider (PRD §7.1.1: DATABASE_PROVIDER=postgres|mysql).
 	// Default PROYEK = "postgres" (keputusan 2026-08-25); backend/.env selalu
@@ -306,6 +343,18 @@ func LoadConfig() *Config {
 	// SOS escalation (B3: automatic escalation when un-acknowledged)
 	c.SOS.EscalationMinutes = time.Duration(getEnvInt("SOS_ESCALATION_MINUTES", 2)) * time.Minute
 	c.SOS.EscalationMax = getEnvInt("SOS_ESCALATION_MAX", 3)
+
+	// Media (B5b, service-media — PRD v1.3.0 Module 8).
+	c.Media.S3Endpoint = getEnv("MEDIA_S3_ENDPOINT", "http://localhost:9000")
+	c.Media.S3Bucket = getEnv("MEDIA_S3_BUCKET", "adatrack-media")
+	c.Media.S3AccessKey = getEnv("MEDIA_S3_ACCESS_KEY", "minioadmin")
+	c.Media.S3SecretKey = getEnv("MEDIA_S3_SECRET_KEY", "minioadmin")
+	c.Media.S3UseSSL = getEnvBool("MEDIA_S3_USE_SSL", false)
+	c.Media.S3Region = getEnv("MEDIA_S3_REGION", "")
+	c.Media.PresignTTL = time.Duration(getEnvInt("MEDIA_PRESIGN_TTL_SECONDS", 600)) * time.Second
+	c.Media.MaxFileMB = getEnvInt("MEDIA_MAX_FILE_MB", 100)
+	c.Media.DefaultHMACSecret = getEnv("MEDIA_DEFAULT_HMAC_SECRET", "")
+	c.Media.CleanupCron = getEnv("MEDIA_CLEANUP_CRON", "0 3 * * *")
 
 	return c
 }
@@ -440,6 +489,40 @@ func (c *Config) GetSOSEscalationMinutes() time.Duration {
 // GetSOSEscalationMax returns the maximum automatic escalation rounds.
 func (c *Config) GetSOSEscalationMax() int {
 	return c.SOS.EscalationMax
+}
+
+// GetFuelDropThreshold returns the FUEL_DROP delta threshold (B5a, env
+// FUEL_DROP_THRESHOLD; satuan mengikuti fuel_level sensor).
+func (c *Config) GetFuelDropThreshold() float64 {
+	return float64(getEnvInt("FUEL_DROP_THRESHOLD", 10))
+}
+
+// GetFuelRefuelThreshold returns the REFUEL delta threshold (B5a, env
+// FUEL_REFUEL_THRESHOLD).
+func (c *Config) GetFuelRefuelThreshold() float64 {
+	return float64(getEnvInt("FUEL_REFUEL_THRESHOLD", 10))
+}
+
+// GetFuelWindow returns the minimum interval between compared fuel readings
+// (B5a, env FUEL_WINDOW_SECONDS, default 300s).
+func (c *Config) GetFuelWindow() time.Duration {
+	return time.Duration(getEnvInt("FUEL_WINDOW_SECONDS", 300)) * time.Second
+}
+
+// GetFuelDropRequireACC reports whether FUEL_DROP must be strictly gated on
+// ACC ON (literal FR-7.6). Default FALSE: drops fire regardless of ignition
+// so parked-vehicle siphoning is never suppressed; the last known ACC is
+// instead attached to the alert description as context.
+func (c *Config) GetFuelDropRequireACC() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("FUEL_DROP_REQUIRE_ACC")))
+	return v == "true" || v == "1" || v == "yes"
+}
+
+// GetFuelACCStaleSeconds bounds how long a stored live-state ACC value stays
+// trustworthy for the FUEL_DROP gate (default 600s). Older values are treated
+// as unknown (fail-open).
+func (c *Config) GetFuelACCStaleSeconds() int {
+	return getEnvInt("FUEL_ACC_STALE_SECONDS", 600)
 }
 
 // Subject builds a fully-qualified NATS subject in the telemetry.* namespace:
