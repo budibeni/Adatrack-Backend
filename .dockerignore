@@ -1,0 +1,13 @@
+# Docker build context exclusions (context = backend/).
+.git
+.gitignore
+.agent
+docs
+bin
+logs
+monitoring/targets
+**/*_test.go
+**/testdata
+.env
+.env.*
+tmp

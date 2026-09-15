@@ -1,0 +1,29 @@
+# ============================================================================
+# ADATRACK — LOCAL variant (development / staging, PRD §7 + §14.1)
+# ============================================================================
+# Selected automatically by scripts/compose-up.sh when COMPOSE_VARIANT=local
+# (default). Extends the canonical stack with dev-only concerns:
+#   * host ports bound to 127.0.0.1 (never exposed to the LAN)
+#   * MinIO profile stays opt-in (B5b)
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml --env-file .env.local up -d
+# ============================================================================
+name: adatrack_gps_system
+
+include:
+  - ./docker-compose.yml
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${HOST_PG_PORT:-5533}:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:${HOST_REDIS_PORT:-6380}:6379"
+
+  nats:
+    ports:
+      - "127.0.0.1:${HOST_NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${HOST_NATS_MONITOR_PORT:-8222}:8222"

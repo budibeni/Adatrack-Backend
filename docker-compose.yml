@@ -1,0 +1,132 @@
+# ============================================================================
+# ADATRACK — Canonical dev/staging infrastructure (PRD §14.1 / §7 LOCAL variant)
+# ============================================================================
+# Services: PostgreSQL 15 · Redis 7 · NATS 2 (JetStream)
+#
+# Variant selection (§7):
+#   LOCAL   : backend/docker-compose.local.yml  (this file) + backend/.env.local
+#   COOLIFY : backend/deployments/docker-compose.coolify.yml  + backend/.env.coolify
+#
+# Helper: backend/scripts/compose-up.sh [local|coolify] <compose args...>
+#
+# NOTE: MinIO (service-media / B5b) lives behind the "media" profile so the B0
+# core stack stays green without it:
+#   docker compose --profile media up -d
+#
+# All values fall back to safe dev defaults, so `docker compose up -d` works
+# standalone while still honoring the .env variant file (see compose-up.sh).
+# ============================================================================
+name: adatrack_gps_system
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: adatrack_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-adatrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adatrack_dev_pw}
+      POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+      # Reproducible collation for the reference seed (BPS region codes).
+      LANG: C.UTF-8
+    ports:
+      - "${HOST_PG_PORT:-5533}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Bootstrap (idempotent): schemas + master setup + company template.
+      - ./database/init-pg:/docker-entrypoint-initdb.d:ro
+      - ./database/migrations:/db/migrations:ro
+      - ./database/seed:/db/seed:ro
+      - ./scripts/pg-wait.sh:/usr/local/bin/pg-wait.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-adatrack} -d ${POSTGRES_DB:-adatrack_gps_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [adatrack]
+
+  redis:
+    image: redis:7-alpine
+    container_name: adatrack_redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "60 1"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "${HOST_REDIS_PORT:-6380}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [adatrack]
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: adatrack_nats
+    restart: unless-stopped
+    # JetStream is mandatory (PRD §4.1). Limits (max_file_store/max_memory_store)
+    # live in deployments/nats/nats.conf so stream retention is always honoured;
+    # JETSTREAM_MAX_* in the service config stays the source of truth for the
+    # per-stream MaxAge/MaxBytes.
+    command: ["-c", "/etc/nats/nats.conf"]
+    ports:
+      - "${HOST_NATS_PORT:-4222}:4222"
+      - "${HOST_NATS_MONITOR_PORT:-8222}:8222"
+    volumes:
+      - natsdata:/data
+      - ./deployments/nats/nats.conf:/etc/nats/nats.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [adatrack]
+
+  # ---------------------------------------------------------------------------
+  # B5b (Dashcam Event Media) only — disabled by default (profile "media").
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: adatrack_minio
+    profiles: ["media"]
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MEDIA_S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "${HOST_MINIO_PORT:-9000}:9000"
+      - "${HOST_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [adatrack]
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:
+  miniodata:
+
+networks:
+  adatrack:
+    name: adatrack_gps_net
+    driver: bridge

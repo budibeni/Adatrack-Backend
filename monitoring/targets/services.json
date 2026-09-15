@@ -1,0 +1,5 @@
+[
+  {"targets": ["127.0.0.1:18090"], "labels": {"service": "ingestion-tcp", "env": "local"}},
+  {"targets": ["127.0.0.1:18091"], "labels": {"service": "worker-live", "env": "local"}},
+  {"targets": ["127.0.0.1:18092"], "labels": {"service": "worker-persistence", "env": "local"}}
+]

@@ -1,0 +1,30 @@
+# Build artifacts
+/bin/
+/logs/
+*.exe
+*.test
+*.out
+
+# Compiled module binaries — `go build .` inside a module drops the binary next
+# to its sources; canonical builds write to bin/ via `make build`. Never commit.
+/services/foundation-check/foundation-check
+/services/ingestion-tcp/ingestion-tcp
+/services/worker-live/worker-live
+/services/worker-persistence/worker-persistence
+/tools/e2e/e2e
+
+# Go
+vendor/
+
+# Local runtime data
+*.log
+tmp/
+.pgdata/
+
+# Secrets: never commit production credentials (§9.5).
+# .env.local is intentionally committed (dev-only safe defaults);
+# .env.coolify holds placeholders only.
+.env.coolify.local
+.env.*.secret
+*.pem
+*.key

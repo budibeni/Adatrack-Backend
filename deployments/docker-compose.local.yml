@@ -1,0 +1,13 @@
+# ============================================================================
+# ADATRACK — LOCAL entry point (PRD §14.1)
+# ============================================================================
+# `docker compose -f backend/deployments/docker-compose.yml up -d` ===
+# `docker compose -f backend/docker-compose.local.yml up -d` (canonical stack).
+#
+# Keep this file a thin include so there is exactly one source of truth for the
+# LOCAL infra definition (backend/docker-compose.yml).
+# ============================================================================
+name: adatrack_gps_system
+
+include:
+  - ../docker-compose.local.yml

@@ -1,0 +1,157 @@
+# ============================================================================
+# ADATRACK — COOLIFY variant (production, PRD §7 + §14.1 + §14.5)
+# ============================================================================
+# Selected automatically by scripts/compose-up.sh when COMPOSE_VARIANT=coolify
+# (or --provider coolify). Differences vs LOCAL:
+#   * NO host port publishing for infra — everything stays on the internal
+#     `adatrack_gps_net` network; Coolify's proxy publishes app services only.
+#   * NO dev credential fallbacks: secrets MUST come from Coolify resources /
+#     .env.coolify (${VAR:?err} fails fast instead of silently using dev values).
+#   * App services built from the repo Dockerfiles (context = backend/), so the
+#     migration artifacts (database/) travel inside the image (§14.5 step 1).
+#   * MIGRATE_ON_BOOT=true + pre-deploy hook runs scripts/migrate.sh (§14.5).
+#
+# NEVER mix this file with .env.local (§7 "tidak ada config campuran").
+# ============================================================================
+name: adatrack_gps_prod
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infra (managed as Coolify resources; internal-only networking)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.coolify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.coolify}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.coolify}
+      LANG: C.UTF-8
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../database/init-pg:/docker-entrypoint-initdb.d:ro
+      - ../database/migrations:/db/migrations:ro
+      - ../database/seed:/db/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [adatrack]
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "900 1"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-1gb}
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [adatrack]
+
+  nats:
+    image: nats:2.10-alpine
+    restart: always
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - natsdata:/data
+      - ../deployments/nats/nats.conf:/etc/nats/nats.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [adatrack]
+
+  # ---------------------------------------------------------------------------
+  # Pipeline services (B1)
+  # ---------------------------------------------------------------------------
+  ingestion-tcp:
+    build:
+      context: ../
+      dockerfile: services/ingestion-tcp/Dockerfile
+    image: adatrack/ingestion-tcp:${IMAGE_TAG:-latest}
+    restart: always
+    env_file: [../.env.coolify]
+    environment:
+      MIGRATE_ON_BOOT: "true"
+    expose:
+      - "${TCP_PORT:-9003}"
+      - "${TELTONIKA_TCP_PORT:-9011}"
+      - "8090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8090/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+    networks: [adatrack]
+
+  worker-live:
+    build:
+      context: ../
+      dockerfile: services/worker-live/Dockerfile
+    image: adatrack/worker-live:${IMAGE_TAG:-latest}
+    restart: always
+    env_file: [../.env.coolify]
+    expose:
+      - "8091"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8091/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    depends_on:
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+    networks: [adatrack]
+
+  worker-persistence:
+    build:
+      context: ../
+      dockerfile: services/worker-persistence/Dockerfile
+    image: adatrack/worker-persistence:${IMAGE_TAG:-latest}
+    restart: always
+    env_file: [../.env.coolify]
+    environment:
+      MIGRATE_ON_BOOT: "true"
+    expose:
+      - "8092"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8092/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      nats: {condition: service_healthy}
+    networks: [adatrack]
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:
+
+networks:
+  adatrack:
+    name: adatrack_gps_net
+    driver: bridge
