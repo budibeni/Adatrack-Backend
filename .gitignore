@@ -21,9 +21,11 @@ vendor/
 tmp/
 .pgdata/
 
-# Secrets: never commit production credentials (§9.5).
-# .env.local is intentionally committed (dev-only safe defaults);
-# .env.coolify holds placeholders only.
+# Secrets: never commit credentials (§9.5). `.env.local` (dev defaults) and
+# `.env.coolify` (production placeholders) are NOT tracked: copy the tracked
+# template `.env.example` and fill in values per variant (§7 — no mixed config).
+.env.local
+.env.coolify
 .env.coolify.local
 .env.*.secret
 *.pem
