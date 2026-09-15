@@ -46,6 +46,7 @@ SET search_path TO adatrack_gps_master;
 \i :migrations_dir/master_pg/016_seed_modules_menus.sql
 \i :migrations_dir/master_pg/017_create_platform_tenant.sql
 \i :migrations_dir/master_pg/018_create_company_media_config.sql
+\i :migrations_dir/master_pg/019_create_platform_admin.sql
 \endif
 
 -- -- -- Minimal country seed required by tm_companies.country_code FK -- -- --

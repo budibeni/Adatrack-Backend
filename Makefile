@@ -7,10 +7,10 @@
 SHELL := /bin/bash
 ROOT  := $(shell cd . && pwd)
 VARIANT ?= local
-MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/foundation-check tools/e2e
+MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/foundation-check tools/e2e tools/e2ews
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e clean
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -39,7 +39,7 @@ provision-tenant: ## Provision a tenant: make provision-tenant CODE=ACME NAME="P
 
 build: ## Build every Go module
 	@set -e; for m in $(MODULES); do echo "build: $$m"; (cd $$m && go build ./...); done
-	@mkdir -p bin; for s in ingestion-tcp worker-live worker-persistence foundation-check; do (cd services/$$s && go build -o $(ROOT)/bin/$$s .); done
+	@mkdir -p bin; for s in ingestion-tcp worker-live worker-persistence service-websocket foundation-check; do (cd services/$$s && go build -o $(ROOT)/bin/$$s .); done
 	@echo "build: ok (bin/)"
 
 test: ## Run unit + integration tests (all modules)
@@ -62,6 +62,9 @@ services-down: ## Stop host-run pipeline services
 
 e2e: ## End-to-end pipeline test (device frame → NATS → Redis + PostgreSQL)
 	@scripts/e2e-pipeline.sh
+
+e2e-ws: ## End-to-end REST + WebSocket test (login → RBAC → live push, B2)
+	@scripts/e2e-websocket.sh
 
 clean: ## Remove build artifacts
 	@rm -rf bin logs/*.log logs/pids monitoring/targets/services.json

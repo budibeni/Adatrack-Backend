@@ -1,10 +1,10 @@
 # Backend Phases — Rencana Pengerjaan B0–B12 (Clean Slate)
 
 > **STATUS 2026-09-15 (diperbarui):** Landasan & pipeline data **SELESAI** —
-> **B0 ✅** dan **B1 ✅** (bukti verifikasi ada di tiap checklist). Fase
-> berikutnya yang dikerjakan: **B2** (service-websocket: REST + WebSocket +
-> RBAC). Fase B3–B12 masih ⬜ terbuka. Checklist hanya dicentang bila ada bukti
-> verifikasi nyata (perintah + hasil) pada kode baru di `backend/`.
+> **B0 ✅**, **B1 ✅**, dan **B2 ✅** (bukti verifikasi ada di tiap checklist).
+> Fase berikutnya yang dikerjakan: **B3** (worker-alert + api-vehicle: alerts,
+> geofence, routes). Fase B4–B12 masih ⬜ terbuka. Checklist hanya dicentang bila
+> ada bukti verifikasi nyata (perintah + hasil) pada kode baru di `backend/`.
 
 ## Referensi
 - **PRD:** `PRD.md` (konsolidasi v1.7.0) — sumber kebenaran requirement.
@@ -105,23 +105,40 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B2 — service-websocket: REST + WebSocket + RBAC + Auth ⬜
+## Phase B2 — service-websocket: REST + WebSocket + RBAC + Auth ✅ (selesai 2026-09-15)
 
 **Tujuan:** API konsumsi data (REST + WS) dengan auth & otorisasi row-level.
 
 ### Tasks
-- [ ] Auth: login (bcrypt), JWT access+refresh, logout + revocation (denylist), middleware.
-- [ ] RBAC row-level per company + `tm_user_vehicles`; format response & error_code PRD §8.1.
-- [ ] REST: vehicles list/detail (enrich live-state: posisi, speed, acc, fuel_level/volume/temp, satellites, altitude, gsm_signal), positions history (pagination).
-- [ ] WebSocket: handshake token, subscribe per tenant, push `VehicleUpdateData` real-time (<1 s dari publish worker-live).
-- [ ] Auto-provision company (FR-5.5): `POST /api/v1/companies` (SuperAdmin) → schema + admin tenant.
-- [ ] Audit akses & mutasi awal (tabel audit siap dipakai lintas modul).
+- [x] Auth: login (bcrypt), JWT access+refresh, logout + revocation (denylist), middleware.
+      → `services/service-websocket/controllers/{auth,auth_flow,middleware,handlers_auth}.go`: login bcrypt **cost 12** di master `tm_users`, JWT **HS256** (`user_id,email,role,company_code,global_role,vehicle_ids,iat,nbf,exp,jti`; expiry 24 h, clock-skew 30 s), refresh token **opaque 256-bit** (SHA-256 sebagai key Redis — raw tidak pernah disimpan), **rotasi wajib** (token bekas → `401 TOKEN_INVALID`), logout = denylist `jti` ber-TTL + revoke refresh, cek revocation di `requireAuth` (`401 TOKEN_REVOKED`). Fail-closed: `JWT_SECRET` tanpa default (min 32 char, boot ditolak bila kosong); Redis mati → `503`; audit gagal → request ditolak.
+- [x] RBAC row-level per company + `tm_user_vehicles`; format response & error_code PRD §8.1.
+      → `controllers/{store_tenant,rbac,handlers_vehicles}.go`: `tm_user_company_access.role_override` mengalahkan role global (`TestRoleOverrideWins`), baris non-aktif → `401 ACCOUNT_INACTIVE`; filter `tm_user_vehicles` di query (`WHERE id IN (...)` parameterized; grant kosong = **nol kendaraan**, bukan semua) — Admin/Manager tenant-wide, Operator/Driver hanya yang di-assign; kendaraan tidak ada → `404 VEHICLE_NOT_FOUND`, ada tapi bukan hak → `403 UNAUTHORIZED_VEHICLE`. Semua response memakai envelope §8.1 (`status/data/pagination`, `status/error_code/message/timestamp/errors`).
+- [x] REST: vehicles list/detail (enrich live-state: posisi, speed, acc, fuel_level/volume/temp, satellites, altitude, gsm_signal), positions history (pagination).
+      → `GET /api/v1/vehicles` (filter `status`/`search`/`include_deleted` + pagination `page`/`limit` ≤ 1000), `GET /api/v1/vehicles/{id}`, `GET /api/v1/vehicles/{id}/history` (`from`/`to` RFC3339|date, `from≤to`, maks `HISTORY_MAX_RANGE_DAYS`, partisi `th_telemetry_logs` ter-prune). Enrich live dari Redis via **satu MGET** (`internal.RedisClient.LiveStateKey`); Redis mati = degradasi halus (list tetap tersaji, di-log + `live_state_read_errors_total`).
+- [x] WebSocket: handshake token, subscribe per tenant, push `VehicleUpdateData` real-time (<1 s dari publish worker-live).
+      → `GET /ws/v1/adatrack?token=<JWT>` (`controllers/{ws,wsclient,hub,bridge}.go`): handshake memakai chain auth HTTP (401/403 JSON sebelum upgrade; token revoked ditolak), validasi Origin (browser allowlist; non-browser tanpa Origin diizinkan), kapasitas **dicek sebelum upgrade** → `503`; subscribe `{"action":"subscribe","vehicle_ids":[...]}` atau `topic:"vehicle.update.{id}"` **dengan RBAC** (tidak berhak → `ERROR UNAUTHORIZED_VEHICLE`); fan-out per `(company_code, vehicle_id)` (isolasi tenant struktural); queue **1000 drop-oldest** + log + metrik, `SetWriteBufferSize` 256 KB, ping 30 s/pong 60 s, `WS_MAX_CONNECTIONS` 5000. Bridge consume `telemetry.live.>` queue group `websocket` → `VEHICLE_UPDATE` (payload FR-5.2: acc riil, fuel, satellites, altitude, gsm_signal, plate_number dari cache 60 s non-blocking).
+- [x] Auto-provision company (FR-5.5): `POST /api/v1/companies` (SuperAdmin) → schema + admin tenant.
+      → `controllers/handlers_companies.go` + `internal/tenant.ProvisionCompany` (`ProvisionOptions{Code,Name,BusinessType,CountryCode,Timezone}` — additive; wrapper `Provision` lama tetap): platform-only (`403 PLATFORM_ONLY` untuk token tenant; `403 PLATFORM_SCOPE` untuk token platform di route tenant), `code DEFAULT` ditolak `400`; satu panggilan = schema `adatrack_gps_{code}` + **seluruh** migrasi company (ledger + advisory lock) + baris `tm_user_company_access` + admin `admin@{code}.local` (`Admin@123` bcrypt cost 12, `must_change_password=true`) + audit **COMPANY_CREATED/TENANT_PROVISIONED/ADMIN_USER_AUTOCREATED**; idempoten → `409 COMPANY_EXISTS` **tanpa menimpa password**. `POST /api/v1/users` (FR-5.6): 201 + `tm_user_company_access` + opsional `tm_user_vehicles` (validasi kepemilikan → anti-IDOR) + audit `USER_CREATED`; guard `403 PLATFORM_ROLE_RESERVED` (role SuperAdmin), `400` konteks `DEFAULT`, `404 COMPANY_NOT_FOUND`, `409 USER_EXISTS`.
+- [x] Audit akses & mutasi awal (tabel audit siap dipakai lintas modul).
+      → `controllers/audit.go`: writer async buffered (`tm_audit_logs` batch + retry backoff + dead-letter `notify.deadletter` + `audit_write_errors_total`); aksi sensitif (`LOGIN_*`, `LOGOUT`, `TOKEN_REVOKED`, provisioning, `USER_CREATED`, `SOFT_DELETED_VIEWED`) memakai `RecordSync` **fail-closed**; `actor_ip/user_agent/request_id` (korelasi `X-Request-ID`), before/after JSONB **teredaksi** (password/token/secret/hmac/api_key → `[REDACTED]`); 401/403 menulis `ACCESS_DENIED`.
 
 ### Acceptance
-- [ ] 401/403 benar (tanpa token, cross-tenant, tanpa hak vehicle).
-- [ ] WS push end-to-end <1 s dari ingest; reconnect + resubscribe aman.
-- [ ] REST sesuai kontrak PRD §8.2 (pagination, error_code).
-- [ ] Unit/integration test handler + middleware hijau.
+- [x] 401/403 benar (tanpa token, cross-tenant, tanpa hak vehicle).
+      → `go test ./controllers/...` (unit) + **`make e2e-ws` 21/21 PASS** terhadap service nyata: tanpa token `401 UNAUTHORIZED`; JWT rusak `401 TOKEN_INVALID`; akun non-aktif `401 ACCOUNT_INACTIVE`; token platform di route tenant `403 PLATFORM_SCOPE`; token tenant di route platform `403 PLATFORM_ONLY`; role `SuperAdmin` via API `403 PLATFORM_ROLE_RESERVED`; `must_change_password` → `403 PASSWORD_CHANGE_REQUIRED` (logout tetap boleh); operator/driver di kendaraan tak di-assign → `403 UNAUTHORIZED_VEHICLE` (`admin=3 driver=1` di tenant DEV001); tenant lain → `404` (tenant berasal dari **token**, bukan body).
+- [x] WS push end-to-end <1 s dari ingest; reconnect + resubscribe aman.
+      → `make e2e-ws`: `ws.push_under_1s latency=4 ms event=VEHICLE_UPDATE speed=53.7 plate="B 1234 XYZ"` melalui jalur nyata (frame GT06 1:1 → ingestion-tcp → NATS → worker-live → service-websocket → klien WS); `ws.reconnect_resubscribe` PASS (tutup koneksi → `ws_connections_active` kembali 0 → connect+subscribe ulang → update mengalir lagi); `ws.unauthorized_vehicle` PASS (`ERROR UNAUTHORIZED_VEHICLE`); isolasi fan-out lintas tenant diuji unit (`TestWSCrossTenantFanOutIsIsolated`, `TestHubBroadcastOnlyMatchesTenantAndVehicle`).
+- [x] REST sesuai kontrak PRD §8.2 (pagination, error_code).
+      → `make e2e-ws`: `rest.pagination page=1 limit=1 total=3`; `rest.validation 400 VALIDATION_ERROR` (limit cap/enum status/path param); `rest.vehicle_not_found 404 VEHICLE_NOT_FOUND`; `rest.history_pagination total=5256 rows<=2; inverted range → 400`; `rest.live_enrichment live.speed=40.7` (posisi/speed/acc/fuel/satellites/altitude/gsm_signal); `audit.trail_rows actions=ACCESS_DENIED=8 LOGIN_FAILURE=6 LOGIN_SUCCESS=8 LOGOUT=2 TOKEN_REFRESH=4 TOKEN_REVOKED=4 (append-only enforced)`.
+- [x] Unit/integration test handler + middleware hijau.
+      → `make test` exit 0: `service-websocket/controllers` hijau **dengan `-race` (0 data race)** — auth (login/rate-limit/lockout/rotasi/revocation/fail-closed), RBAC (matrix 401/403, role override, row-level, include_deleted), REST (envelope/pagination/validasi/history), WS (handshake/origin/kapasitas/subscribe RBAC/drop-oldest/reconnect/unsubscribe/heartbeat), hub, bridge, audit (redaksi/batch/drain/dead-letter), config (default §7.2, fail-fast) + adapter Redis nyata (miniredis). Cakupan `controllers` 66,9 % (lapisan SQL `store_pg/store_vehicles` diverifikasi lewat E2E nyata). **FR-5.5/FR-5.6 E2E 31/31 PASS** (schema+ledger migrasi, seed role-menu, admin `must_change_password`, 409 idempotensi tanpa menimpa password, seluruh guard FR-5.6). Rate limit §8.4 terbukti live: 5×`401 INVALID_CREDENTIALS` → ke-6 `429 RATE_LIMITED` + audit `LOGIN_FAILURE|denied|login rate limit exceeded`.
+
+### Bukti verifikasi (2026-09-15, environment lokal)
+- `make vet` exit 0 · `make build` exit 0 (9/9 modul + `bin/`) · `make test` exit 0 · `gofmt -l` bersih.
+- `make e2e-ws` (harness `tools/e2ews` + `scripts/e2e-websocket.sh`) → **21/21 PASS**.
+- Verifikasi provisioning FR-5.5/FR-5.6 di service nyata → **31/31 PASS** (re-run akhir dari keadaan **bersih**: schema `adatrack_gps_e2eb2c` di-drop, baris master dihapus, rate-limit Redis dibersihkan; window audit di-scope ke jam mulai run — semua PASS exit=0, hash admin terlihat `$2a$12$` cost 12).
+- Migrasi master baru `019_create_platform_admin.sql`: akun platform `platform@adatrackgps.local` / `Platform@123` (bcrypt cost 12, **hash nyata terverifikasi**; upsert **tidak** menimpa password yang sudah dirotasi) — diterapkan otomatis saat boot service (`MIGRATE_ON_BOOT=true`, §14.5 step 3).
+- Catatan lingkungan: PostgreSQL/Redis/NATS diverifikasi langsung di host (PG 18.6 :5544, Redis :6379, NATS :4222) karena Docker daemon tidak tersedia; batas rate-limit dilonggarkan **hanya** pada satu run verifikasi provisioning (bukan default).
 
 ---
 

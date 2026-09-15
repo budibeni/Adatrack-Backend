@@ -12,6 +12,7 @@
 /services/worker-live/worker-live
 /services/worker-persistence/worker-persistence
 /tools/e2e/e2e
+/tools/e2ews/e2ews
 
 # Go
 vendor/

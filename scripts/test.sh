@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-MODULES=(internal services/ingestion-tcp services/worker-live services/worker-persistence services/foundation-check)
+MODULES=(internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/foundation-check)
 flags=()
 target=""
 run_e2e=false

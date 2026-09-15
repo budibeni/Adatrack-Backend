@@ -1678,15 +1678,17 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 
 ### 20.1 Fase Backend (B0–B12)
 
-> **Progress 2026-09-15:** **B0 ✅** dan **B1 ✅** selesai & terverifikasi. Detail
-> rencana & checklist: `.agent/03-backend-phases.md`.
+> **Progress 2026-09-15:** **B0 ✅**, **B1 ✅**, dan **B2 ✅** selesai & terverifikasi
+> (`make e2e-ws` 21/21 PASS — WS push 4 ms; auto-provision FR-5.5/FR-5.6 **31/31 PASS
+> re-run bersih** — schema+audit terverifikasi langsung di PG; logout revocation 401 TOKEN_REVOKED).
+> Detail rencana & checklist: `.agent/03-backend-phases.md`.
 
 | Fase | Area | Status |
 |---|---|---|
 | **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ✅ Selesai 2026-09-15 |
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ✅ Selesai 2026-09-15 |
-| **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ⬜ Berikutnya (belum dimulai) |
-| **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Belum dimulai |
+| **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ✅ Selesai 2026-09-15 |
+| **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Berikutnya (belum dimulai) |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ⬜ Belum dimulai |
 | **B5b** | Dashcam Event Media Scope A (Module 8) | ⬜ Belum dimulai |
 | **B4** | Performance, Monitoring, Testing, Hardening | ⬜ Belum dimulai |

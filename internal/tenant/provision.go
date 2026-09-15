@@ -21,7 +21,30 @@ type ProvisionResult struct {
 	Created      bool
 }
 
-// Provision creates (or reconciles) a tenant schema (PRD §6.2, §14.5 step 4):
+// ProvisionOptions describes a tenant to provision (FR-5.5: the API path passes
+// country/timezone from the request; the CLI/scaffolding path uses the defaults).
+type ProvisionOptions struct {
+	Code         string
+	Name         string
+	BusinessType string // b2b (default) | b2c
+	CountryCode  string // ISO-3166 alpha-2, default ID
+	Timezone     string // default Asia/Jakarta
+}
+
+// Defaults applied when an option is omitted (PRD §7.2 defaults).
+const (
+	DefaultCountryCode = "ID"
+	DefaultTimezone    = "Asia/Jakarta"
+)
+
+// Provision creates (or reconciles) a tenant schema with the default country and
+// timezone. It is a thin wrapper over ProvisionCompany so existing callers keep
+// working unchanged.
+func (m *Manager) Provision(ctx context.Context, code, name, businessType string) (*ProvisionResult, error) {
+	return m.ProvisionCompany(ctx, ProvisionOptions{Code: code, Name: name, BusinessType: businessType})
+}
+
+// ProvisionCompany creates (or reconciles) a tenant schema (PRD §6.2, §14.5 step 4):
 //
 //  1. master.tm_companies row (idempotent upsert, business_type b2b/b2c)
 //  2. CREATE SCHEMA adatrack_gps_{code}
@@ -32,10 +55,22 @@ type ProvisionResult struct {
 // migration and never overwrites existing data. The default tenant admin account
 // (`Admin@123` + must_change_password) is created by the B2 API path (FR-5.5),
 // which calls this function and then adds the admin user.
-func (m *Manager) Provision(ctx context.Context, code, name, businessType string) (*ProvisionResult, error) {
-	normalized, err := NormalizeCode(code)
+func (m *Manager) ProvisionCompany(ctx context.Context, opts ProvisionOptions) (*ProvisionResult, error) {
+	normalized, err := NormalizeCode(opts.Code)
 	if err != nil {
 		return nil, err
+	}
+	code, name, businessType := normalized, opts.Name, opts.BusinessType
+	country := strings.ToUpper(strings.TrimSpace(opts.CountryCode))
+	if country == "" {
+		country = DefaultCountryCode
+	}
+	if len(country) != 2 {
+		return nil, fmt.Errorf("tenant: country_code must be a 2-letter ISO code, got %q", opts.CountryCode)
+	}
+	timezone := strings.TrimSpace(opts.Timezone)
+	if timezone == "" {
+		timezone = DefaultTimezone
 	}
 	businessType = strings.ToLower(strings.TrimSpace(businessType))
 	if businessType == "" {
@@ -45,12 +80,12 @@ func (m *Manager) Provision(ctx context.Context, code, name, businessType string
 		return nil, fmt.Errorf("tenant: business_type must be b2b|b2c, got %q", businessType)
 	}
 	if strings.TrimSpace(name) == "" {
-		name = normalized + " Company"
+		name = code + " Company"
 	}
 
 	res := &ProvisionResult{
-		CompanyCode:  normalized,
-		Schema:       m.cfg.CompanySchema(normalized),
+		CompanyCode:  code,
+		Schema:       m.cfg.CompanySchema(code),
 		BusinessType: businessType,
 	}
 
@@ -58,15 +93,17 @@ func (m *Manager) Provision(ctx context.Context, code, name, businessType string
 	var companyID int64
 	err = m.master.DB.QueryRowContext(ctx, `
 		INSERT INTO tm_companies (code, name, country_code, business_type, timezone, is_active, activated_at)
-		VALUES ($1, $2, 'ID', $3, 'Asia/Jakarta', TRUE, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP)
 		ON CONFLICT (code) DO UPDATE SET
 			name = EXCLUDED.name,
+			country_code = EXCLUDED.country_code,
 			business_type = EXCLUDED.business_type,
+			timezone = EXCLUDED.timezone,
 			is_active = TRUE,
 			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, normalized, name, businessType).Scan(&companyID)
+		RETURNING id`, code, name, country, businessType, timezone).Scan(&companyID)
 	if err != nil {
-		return nil, fmt.Errorf("tenant: register company %s: %w", normalized, err)
+		return nil, fmt.Errorf("tenant: register company %s: %w", code, err)
 	}
 	res.Created = true
 
