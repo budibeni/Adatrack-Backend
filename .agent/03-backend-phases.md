@@ -50,30 +50,30 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B1 — Pipeline Data: ingestion-tcp · worker-live · worker-persistence ⬜
+## Phase B1 — Pipeline Data: ingestion-tcp · worker-live · worker-persistence ✅
 
 **Tujuan:** jalur data device → NATS → live state + persistensi, end-to-end.
 
 ### Tasks — ingestion-tcp
-- [ ] TCP server + manajemen koneksi per device (timeout, limit, guard per-IP).
-- [ ] Protokol GT06: handshake login/auth, jawaban server, decode telemetry (posisi, speed, ACC, course, altitude, satellites, gsm_signal, alarm, IO). Teltonika Codec 8 + 8E (login IMEI, AVL, IO mapping).
-- [ ] Publish `telemetry.raw.<IMEI>` (payload terstruktur + tenant ter-resolve via `master.tm_vehicle_imei_map`).
-- [ ] Backpressure: buffer per-connection + shed load; metrik koneksi/throughput.
+- [x] TCP server + manajemen koneksi per device (timeout, limit, guard per-IP).
+- [x] Protokol GT06: handshake login/auth, jawaban server, decode telemetry (posisi, speed, ACC, course, altitude, satellites, gsm_signal, alarm, IO). Teltonika Codec 8 + 8E (login IMEI, AVL, IO mapping).
+- [x] Publish `telemetry.raw.<IMEI>` (payload terstruktur + tenant ter-resolve via `master.tm_vehicle_imei_map`).
+- [x] Backpressure: buffer per-connection + shed load; metrik koneksi/throughput.
 
 ### Tasks — worker-live
-- [ ] Consume telemetry → live state Redis `adatrack_gps:{tenant}:vehicle:state:{IMEI}` (batch MSET, TTL 5 min).
-- [ ] Status ONLINE/IDLE/OFFLINE (idling, `OFFLINE_AFTER_MINUTES` sweeper).
-- [ ] Publish update untuk service-websocket (channel per tenant `telemetry.live.<IMEI>`).
+- [x] Consume telemetry → live state Redis `adatrack_gps:{tenant}:vehicle:state:{IMEI}` (batch MSET, TTL 5 min).
+- [x] Status ONLINE/IDLE/OFFLINE (idling, `OFFLINE_AFTER_MINUTES` sweeper).
+- [x] Publish update untuk service-websocket (channel per tenant `telemetry.live.<IMEI>`).
 
 ### Tasks — worker-persistence
-- [ ] Batch insert `th_telemetry_logs` ke company schema (flush by size/interval 500 rows / 5s).
-- [ ] Penanganan transient error (retry + backoff) — tanpa silent drop; dead-letter NATS.
+- [x] Batch insert `th_telemetry_logs` ke company schema (flush by size/interval 500 rows / 5s).
+- [x] Penanganan transient error (retry + backoff) — tanpa silent drop; dead-letter NATS.
 
 ### Acceptance
-- [ ] Load 1000 msg/s sustained tanpa data loss (delta DB = pesan terkirim).
-- [ ] Live state benar (posisi/speed/ACC ter-update; OFFLINE sesuai kriteria).
-- [ ] Isolasi antar tenant schema terverifikasi (0 leakage).
-- [ ] Unit + integration test inti (decoder, state machine, batcher) hijau.
+- [x] Load 1000 msg/s sustained tanpa data loss (delta DB = pesan terkirim).
+- [x] Live state benar (posisi/speed/ACC ter-update; OFFLINE sesuai kriteria).
+- [x] Isolasi antar tenant schema terverifikasi (0 leakage).
+- [x] Unit + integration test inti (decoder, state machine, batcher) hijau.
 
 ---
 

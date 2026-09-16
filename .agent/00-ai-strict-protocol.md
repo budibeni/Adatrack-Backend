@@ -10,7 +10,7 @@
    - **Arsitektur:** Struktur file yang akan dibuat.
    - **Logic Detail:** Algoritma utama, integrasi, dan batasan (limit/TTL/retry).
    - **Zero Placeholders:** Penjelasan bahwa kode akan ditulis siap-produksi (production-ready).
-4. **BERHENTI BERPIKIR.** Tanyakan kepada pengguna (User) apakah plan tersebut disetujui. JANGAN LANJUTKAN ke tahap eksekusi.
+###4. **BERHENTI BERPIKIR.** Tanyakan kepada pengguna (User) apakah plan tersebut disetujui. JANGAN LANJUTKAN ke tahap eksekusi.
 
 ## TAHAP 2: EKSEKUSI (Setelah Disetujui User)
 1. Setelah User membalas "Setuju" atau "Lanjut", barulah AI boleh memodifikasi/membuat file kode.
