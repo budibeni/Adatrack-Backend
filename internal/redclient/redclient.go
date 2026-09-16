@@ -2,7 +2,7 @@ package redclient
 
 import (
 	"context"
-	"ajb_gps/internal/config"
+	"adatrack/internal/config"
 	"github.com/redis/go-redis/v9"
 )
 

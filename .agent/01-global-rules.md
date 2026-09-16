@@ -1,6 +1,6 @@
 # 01 — Global Rules & Conventions
 
-> Panduan utama untuk semua kerja di project `ajb_gps`. Selalu dibaca sebelum mulai implementasi.
+> Panduan utama untuk semua kerja di project `adatrack`. Selalu dibaca sebelum mulai implementasi.
 
 ## 1. Project Context
 
@@ -25,10 +25,10 @@ Platform **Real-Time GPS Tracking & adatrack Management**.
 ## 3. Repository Layout (Backend-First)
 
 ```
-ajb_gps/
-├── PRD.md                           # PRD konsolidated v1.7.0
-├── .agent/                          # Aturan & roadmap kerja
+adatrack/
 ├── backend/
+├   ── .agent/                          # Aturan & roadmap kerja
+├   ── PRD.md                           # PRD konsolidated v1.7.0  
 │   ├── docker-compose.yml           # Infra dev: PostgreSQL, Redis, NATS
 │   ├── deployments/docker-compose.yml
 │   └── services/
@@ -49,7 +49,7 @@ ajb_gps/
 2. **Backend-first** = setiap modul selesai (kode + test + ter-integrasi + jalan) baru lanjut.
 3. **Jangan hapus/ubah** file dokumentasi PRD kecuali disetujui user.
 4. **Satu layanan satu module Go.**
-   - Module pattern: `ajb_gps/<service-name>` per service (`ajb_gps/ingestion-tcp`, `ajb_gps/worker-persistence`, `ajb_gps/worker-live`, `ajb_gps/service-websocket`, `ajb_gps/api-vehicle`, dst.). Ikuti pola ini untuk semua service (clean slate — pola ditetapkan sejak awal pengerjaan).
+   - Module pattern: `adatrack/<service-name>` per service (`adatrack/ingestion-tcp`, `adatrack/worker-persistence`, `adatrack/worker-live`, `adatrack/service-websocket`, `adatrack/api-vehicle`, dst.). Ikuti pola ini untuk semua service (clean slate — pola ditetapkan sejak awal pengerjaan).
    - File utama: `main.go` (di root service), pakai build `go build -o <name> .` untuk konsisten dengan Dockerfile.
 5. **Selalu baca go.mod** service terkait sebelum menambah dependency; gunakan dependency yang sudah ada bila cukup.
 6. **Config via environment variable** — ikuti daftar env di `PRD.md §7`. Taruh default aman untuk dev lokal di kode (fallback), tetap bisa di-override env.

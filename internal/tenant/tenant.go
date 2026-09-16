@@ -3,7 +3,7 @@ package tenant
 import (
 	"context"
 	"fmt"
-	"ajb_gps/internal/dbclient"
+	"adatrack/internal/dbclient"
 )
 
 func ResolveSchemaByIMEI(ctx context.Context, imei string) (string, error) {

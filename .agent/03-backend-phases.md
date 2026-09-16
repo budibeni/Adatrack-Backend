@@ -17,7 +17,7 @@
 Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tidak memblokir frontend.
 
 ## Konvensi (berlaku semua fase)
-- Go + chi/Gin + `pgx` (PostgreSQL) + Redis + NATS JetStream; layout `services/<nama>`; shared `internal/` via `replace ajb_gps/internal => ../../internal`.
+- Go + chi/Gin + `pgx` (PostgreSQL) + Redis + NATS JetStream; layout `services/<nama>`; shared `internal/` via `replace adatrack/internal => ../../internal`.
 - Setiap service: `config`, logger slog-JSON, `metrics` (/metrics Prometheus), `/healthz`, graceful shutdown.
 - **Karena dimulai dari nol**, keputusan struktur diterapkan sejak awal (bukan migrasi lanjutan):
   - Penamaan tabel langsung **`tm_`/`th_`/`td_`** (B10 tinggal verifikasi konsistensi).

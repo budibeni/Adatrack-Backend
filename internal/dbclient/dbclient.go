@@ -3,7 +3,7 @@ package dbclient
 import (
 	"context"
 	"fmt"
-	"ajb_gps/internal/config"
+	"adatrack/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

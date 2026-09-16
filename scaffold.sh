@@ -14,6 +14,6 @@ touch .env.local .env.coolify
 touch Makefile
 
 # Go mod (we'll just create the file manually since go is not found)
-echo "module ajb_gps" > go.mod
+echo "module adatrack" > go.mod
 echo "go 1.21" >> go.mod
 

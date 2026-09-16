@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"ajb_gps/internal/config"
-	"ajb_gps/internal/logger"
-	"ajb_gps/internal/natsclient"
-	"ajb_gps/internal/redclient"
-	"ajb_gps/internal/tenant"
-	"ajb_gps/internal/dbclient"
+	"adatrack/internal/config"
+	"adatrack/internal/logger"
+	"adatrack/internal/natsclient"
+	"adatrack/internal/redclient"
+	"adatrack/internal/tenant"
+	"adatrack/internal/dbclient"
 	
 	"github.com/nats-io/nats.go"
 )

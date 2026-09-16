@@ -7,9 +7,9 @@ import (
 	"net"
 	"time"
 
-	"ajb_gps/internal/config"
-	"ajb_gps/internal/logger"
-	"ajb_gps/internal/natsclient"
+	"adatrack/internal/config"
+	"adatrack/internal/logger"
+	"adatrack/internal/natsclient"
 )
 
 type TelemetryPayload struct {

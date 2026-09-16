@@ -1,7 +1,7 @@
 package natsclient
 
 import (
-	"ajb_gps/internal/config"
+	"adatrack/internal/config"
 	"github.com/nats-io/nats.go"
 )
 
