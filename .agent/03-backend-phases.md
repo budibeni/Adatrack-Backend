@@ -77,17 +77,17 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B2 — service-websocket: REST + WebSocket + RBAC + Auth ⬜
+## Phase B2 — service-websocket: REST + WebSocket + RBAC + Auth ✅
 
 **Tujuan:** API konsumsi data (REST + WS) dengan auth & otorisasi row-level.
 
 ### Tasks
-- [ ] Auth: login (bcrypt), JWT access+refresh, logout + revocation (denylist), middleware.
-- [ ] RBAC row-level per company + `tm_user_vehicles`; format response & error_code PRD §8.1.
-- [ ] REST: vehicles list/detail (enrich live-state: posisi, speed, acc, fuel_level/volume/temp, satellites, altitude, gsm_signal), positions history (pagination).
-- [ ] WebSocket: handshake token, subscribe per tenant, push `VehicleUpdateData` real-time (<1 s dari publish worker-live).
-- [ ] Auto-provision company (FR-5.5): `POST /api/v1/companies` (SuperAdmin) → schema + admin tenant (`Admin@123`, `must_change_password=true`).
-- [ ] Audit akses & mutasi awal (`tm_audit_logs`, append-only, fail-closed untuk aksi sensitif).
+- [x] Auth: login (bcrypt), JWT access+refresh, logout + revocation (denylist), middleware.
+- [x] RBAC row-level per company + `tm_user_vehicles`; format response & error_code PRD §8.1.
+- [x] REST: vehicles list/detail (enrich live-state: posisi, speed, acc, fuel_level/volume/temp, satellites, altitude, gsm_signal), positions history (pagination).
+- [x] WebSocket: handshake token, subscribe per tenant, push `VehicleUpdateData` real-time (<1 s dari publish worker-live).
+- [x] Auto-provision company (FR-5.5): `POST /api/v1/companies` (SuperAdmin) → schema + admin tenant (`Admin@123`, `must_change_password=true`).
+- [x] Audit akses & mutasi awal (`tm_audit_logs`, append-only, fail-closed untuk aksi sensitif).
 
 ### Acceptance
 - [ ] 401/403 benar (tanpa token, cross-tenant, tanpa hak vehicle).

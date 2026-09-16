@@ -16,7 +16,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 |---|---|---|---|
 | **B0** | Infrastruktur + Foundations | `backend/` | ✅ Selesai |
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ⬜ Belum dimulai |
-| **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ⬜ Belum dimulai |
+| **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ✅ Selesai (Menunggu review) |
 | **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ⬜ Belum dimulai |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ⬜ Belum dimulai |
 | **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ⬜ Belum dimulai |
