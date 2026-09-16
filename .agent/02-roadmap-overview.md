@@ -2,7 +2,7 @@
 
 Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
-> **STATUS AWAL (Clean Slate):** Seluruh fase pengerjaan (B0–B12 dan F1–F4) **⬜ belum dimulai**.
+> **STATUS PROYEK:** Fase B0 dan B1 telah **✅ Selesai**.
 > Proyek dimulai dari titik nol (clean slate). Pengerjaan akan dimulai secara berurutan dari fase **B0** (Infrastruktur + Foundations).
 > Rencana pengerjaan dan checklist teknis: `.agent/03-backend-phases.md`.
 
