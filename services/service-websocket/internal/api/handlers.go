@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -161,7 +163,6 @@ func (h *Handler) auditLog(ctx context.Context, companyCode, action, outcome str
 // REST ENDPOINTS
 
 func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
-	// Auto-provisioning logic (B2 5.5)
 	var req struct {
 		Code        string `json:"code"`
 		Name        string `json:"name"`
@@ -200,8 +201,28 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Note: Auto-creating schema and applying migrations requires running raw SQL or migration tool programmatically.
-	// We'll leave that logic for a CLI/Provisioner, but for B2 we pretend we did it.
+	schema := fmt.Sprintf("adatrack_gps_%s", req.Code)
+	_, err = dbclient.Pool.Exec(r.Context(), fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema))
+	if err != nil {
+		logger.Log.Error("Failed to create schema", "err", err)
+	} else {
+	    // Apply migrations
+	    files, _ := filepath.Glob("../../database/migrations/company_pg/*.up.sql")
+	    for _, file := range files {
+	        sqlBytes, err := os.ReadFile(file)
+	        if err == nil {
+	            // Set search path for this execution
+	            execSQL := fmt.Sprintf("SET search_path TO %s; %s", schema, string(sqlBytes))
+	            _, err := dbclient.Pool.Exec(r.Context(), execSQL)
+	            if err != nil {
+	                logger.Log.Error("Migration failed", "file", file, "err", err)
+	            }
+	        }
+	    }
+	    
+	    // Give admin user access
+	    dbclient.Pool.Exec(r.Context(), fmt.Sprintf("INSERT INTO %s.tm_user_company_access (user_id, role_override) VALUES ($1, 'Admin')", schema), newUserID)
+	}
 	
 	h.auditLog(r.Context(), req.Code, "COMPANY_CREATED", "success", claims.UserID, claims.Email, claims.Role, "Company "+req.Code+" created")
 	h.auditLog(r.Context(), req.Code, "TENANT_PROVISIONED", "success", claims.UserID, claims.Email, claims.Role, "Tenant provisioned")
@@ -223,35 +244,61 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 	
-	var vehicleIDs []int64
+	type Vehicle struct {
+		ID          int64  `json:"id"`
+		PlateNumber string `json:"plate_number"`
+		Status      string `json:"status"`
+	}
+	var vehicles []Vehicle
+	
+	var query string
+	var args []interface{}
 	
 	if claims.Role == "Admin" || claims.Role == "SuperAdmin" {
-		rows, err := dbclient.Pool.Query(r.Context(), fmt.Sprintf("SELECT id FROM %s.tm_vehicles WHERE deleted_at IS NULL", schema))
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var id int64
-				rows.Scan(&id)
-				vehicleIDs = append(vehicleIDs, id)
-			}
-		}
+		query = fmt.Sprintf("SELECT id, plate_number, status FROM %s.tm_vehicles WHERE deleted_at IS NULL", schema)
 	} else {
-		rows, err := dbclient.Pool.Query(r.Context(), fmt.Sprintf("SELECT vehicle_id FROM %s.tm_user_vehicles WHERE user_id = $1", schema), claims.UserID)
-		if err == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var id int64
-				rows.Scan(&id)
-				vehicleIDs = append(vehicleIDs, id)
-			}
+		query = fmt.Sprintf("SELECT v.id, v.plate_number, v.status FROM %s.tm_vehicles v JOIN %s.tm_user_vehicles uv ON v.id = uv.vehicle_id WHERE uv.user_id = $1 AND v.deleted_at IS NULL", schema, schema)
+		args = append(args, claims.UserID)
+	}
+	
+	rows, err := dbclient.Pool.Query(r.Context(), query, args...)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var v Vehicle
+			rows.Scan(&v.ID, &v.PlateNumber, &v.Status)
+			vehicles = append(vehicles, v)
 		}
+	}
+	
+	// Enrich with Redis Live State
+	var enriched []map[string]interface{}
+	for _, v := range vehicles {
+		vMap := map[string]interface{}{
+			"id": v.ID,
+			"plate_number": v.PlateNumber,
+			"db_status": v.Status,
+		}
+		
+		key := fmt.Sprintf("telemetry:live:%s:%d", claims.CompanyCode, v.ID)
+		val, err := redclient.Client.Get(r.Context(), key).Result()
+		if err == nil && val != "" {
+			var state map[string]interface{}
+			if err := json.Unmarshal([]byte(val), &state); err == nil {
+				vMap["live_state"] = state
+			}
+		} else {
+			vMap["live_state"] = nil
+		}
+		enriched = append(enriched, vMap)
 	}
 	
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"data": vehicleIDs,
+		"data": enriched,
 	})
 }
+
 
 func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 	_ = chi.URLParam(r, "id")
