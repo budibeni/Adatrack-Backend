@@ -1678,14 +1678,14 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 
 ### 20.1 Fase Backend (B0–B12)
 
-> **Status Awal (Clean Slate):** Seluruh fase backend (B0–B12) **⬜ belum dimulai**.
+> **Status Proyek:** Fase B0 dan B1 telah **✅ Selesai**. Fase selanjutnya siap dikerjakan.
 > Proyek dibangun dari titik nol. Pengerjaan akan dimulai secara berurutan dari fase **B0**
 > (Infrastruktur + Foundations). Detail rencana & checklist: `.agent/03-backend-phases.md`.
 
 | Fase | Area | Status |
 |---|---|---|
-| **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ⬜ Belum dimulai |
-| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ⬜ Belum dimulai |
+| **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ✅ Selesai |
+| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ✅ Selesai |
 | **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ⬜ Belum dimulai |
 | **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Belum dimulai |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ⬜ Belum dimulai |
