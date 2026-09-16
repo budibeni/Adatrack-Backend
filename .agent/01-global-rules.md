@@ -25,7 +25,6 @@ Platform **Real-Time GPS Tracking & adatrack Management**.
 ## 3. Repository Layout (Backend-First)
 
 ```
-adatrack/
 ├── backend/
 ├   ── .agent/                          # Aturan & roadmap kerja
 ├   ── PRD.md                           # PRD konsolidated v1.7.0  

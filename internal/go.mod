@@ -1,4 +1,4 @@
-module adatrack
+module adatrack/internal
 
 go 1.21
 
