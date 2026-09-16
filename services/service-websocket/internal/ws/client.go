@@ -9,7 +9,7 @@ import (
 
 	"backend/internal/config"
 	"backend/internal/logger"
-	"backend/service-websocket/internal/auth"
+	"backend/internal/auth"
 )
 
 const (

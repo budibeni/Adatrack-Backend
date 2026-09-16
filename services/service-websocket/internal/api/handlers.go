@@ -15,7 +15,7 @@ import (
 	"backend/internal/dbclient"
 	"backend/internal/logger"
 	"backend/internal/redclient"
-	"backend/service-websocket/internal/auth"
+	"backend/internal/auth"
 	"backend/service-websocket/internal/ws"
 )
 

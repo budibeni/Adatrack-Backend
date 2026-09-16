@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"backend/internal/auth"
 	"backend/internal/config"
 )
 
@@ -19,7 +20,7 @@ func SetupRouter(cfg *config.Config) *chi.Mux {
 	r.Use(middleware.Recoverer)
 
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // Adjust as needed
+		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
@@ -31,9 +32,17 @@ func SetupRouter(cfg *config.Config) *chi.Mux {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	h := NewHandler(cfg)
+
 	r.Route("/api/v1", func(r chi.Router) {
-		// Needs auth middleware from service-websocket or shared
-		r.Get("/vehicles", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"status":"success"}`)) })
+		r.Use(auth.AuthMiddleware(cfg))
+		
+		r.Post("/vehicles", h.CreateVehicle)
+		r.Delete("/vehicles/{id}", h.SoftDeleteVehicle)
+		r.Post("/vehicles/{id}/restore", h.RestoreVehicle)
+		
+		r.Post("/geofences", h.CreateGeofence)
+		r.Post("/routes", h.CreateRoute)
 	})
 
 	return r

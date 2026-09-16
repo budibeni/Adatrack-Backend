@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"backend/internal/config"
-	"backend/service-websocket/internal/auth"
+	"backend/internal/auth"
 	"backend/service-websocket/internal/ws"
 )
 
