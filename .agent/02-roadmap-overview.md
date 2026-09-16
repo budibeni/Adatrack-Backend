@@ -12,8 +12,9 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > circle/polygon, overspeed grace band, SOS critical + eskalasi, battery/offline,
 > route deviation, notifikasi preferensi + fan-out; api-vehicle — CRUD
 > vehicles/geofences/routes/assignments/speed-configs + soft delete/restore +
-> RBAC row-level; `scripts/test.sh` exit 0 semua modul; E2E live per-alert
-> menunggu infra). Fase berikutnya: **B5a / B4**.
+> RBAC row-level; `scripts/test.sh` exit 0 semua modul; live DB drift diperbaiki
+> (commit `408c241`: migrasi `020_repair_platform_admin` + `013_repair_dev_rbac`,
+> kedua kredensial dev login 200, ledger 0 failure). Fase berikutnya: **B5a / B4**.
 > Checklist & bukti: `.agent/03-backend-phases.md`.
 
 > **Acuan struktur aplikasi (PRD v1.7.0):** penerapan backend mengikuti
@@ -27,7 +28,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B0** | Infrastruktur + Foundations | `backend/` | ✅ Selesai 2026-09-15 |
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ✅ Selesai 2026-09-15 |
 | **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ✅ Selesai 2026-09-15 |
-| **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai 2026-09-16 (E2E live per-alert menyusul) |
+| **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai 2026-09-16 (live DB drift diperbaiki, migrasi `020`+`013`) |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ⬜ Belum dimulai |
 | **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ⬜ Belum dimulai |
 | **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | ⬜ Belum dimulai |
