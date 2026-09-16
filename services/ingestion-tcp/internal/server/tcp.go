@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"backend/ingestion-tcp/internal/handler"
-	"backend/ingestion-tcp/internal/protocol/gt06"
+	"backend/ingestion-tcp/internal/protocol"
 	"backend/ingestion-tcp/internal/publisher"
 	"backend/internal/logger"
 )
@@ -16,17 +16,19 @@ import (
 type TCPServer struct {
 	addr         string
 	maxConns     int
+	decoder      protocol.Decoder
 	connLimiter  chan struct{}
 	wg           sync.WaitGroup
 	ctx          context.Context
 	cancel       context.CancelFunc
 }
 
-func NewTCPServer(addr string, maxConns int) *TCPServer {
+func NewTCPServer(addr string, maxConns int, decoder protocol.Decoder) *TCPServer {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TCPServer{
 		addr:        addr,
 		maxConns:    maxConns,
+		decoder:     decoder,
 		connLimiter: make(chan struct{}, maxConns),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -38,7 +40,7 @@ func (s *TCPServer) Start() error {
 	if err != nil {
 		return err
 	}
-	logger.Log.Info("TCP Ingestion Server started", "addr", s.addr, "maxConns", s.maxConns)
+	logger.Log.Info("TCP Ingestion Server started", "protocol", s.decoder.ProtocolName(), "addr", s.addr)
 
 	go func() {
 		<-s.ctx.Done()
@@ -49,7 +51,7 @@ func (s *TCPServer) Start() error {
 		conn, err := listener.Accept()
 		if err != nil {
 			if s.ctx.Err() != nil {
-				return nil // Shutting down gracefully
+				return nil 
 			}
 			logger.Log.Error("Failed to accept connection", "error", err)
 			continue
@@ -60,17 +62,16 @@ func (s *TCPServer) Start() error {
 			s.wg.Add(1)
 			go s.handleConnection(conn)
 		default:
-			logger.Log.Warn("Max connections reached. Shedding load.", "ip", conn.RemoteAddr().String())
+			logger.Log.Warn("Max connections reached. Shedding load.", "ip", conn.RemoteAddr().String(), "protocol", s.decoder.ProtocolName())
 			conn.Close()
 		}
 	}
 }
 
 func (s *TCPServer) Stop() {
-	logger.Log.Info("Stopping TCP Server. Waiting for connections to drain...")
+	logger.Log.Info("Stopping TCP Server", "protocol", s.decoder.ProtocolName())
 	s.cancel()
 	s.wg.Wait()
-	logger.Log.Info("TCP Server stopped gracefully")
 }
 
 func (s *TCPServer) handleConnection(conn net.Conn) {
@@ -81,15 +82,13 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 	}()
 
 	ip := conn.RemoteAddr().String()
-	logger.Log.Info("New device connection", "ip", ip)
-
 	var imei string
 	var tenant handler.TenantInfo
 	authenticated := false
 
-	buffer := make([]byte, 1024)
+	buffer := make([]byte, 2048)
 	for {
-		conn.SetReadDeadline(time.Now().Add(5 * time.Minute)) // Idle timeout
+		conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
 		n, err := conn.Read(buffer)
 		if err != nil {
 			if err != io.EOF {
@@ -100,14 +99,14 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 
 		data := buffer[:n]
 		
-		if len(data) >= 4 && data[3] == gt06.ProtocolLogin {
-			deviceIMEI, response, err := gt06.DecodeLogin(data)
+		// Attempt Login if not authenticated
+		if !authenticated {
+			deviceIMEI, response, err := s.decoder.DecodeLogin(data)
 			if err != nil {
-				logger.Log.Warn("Login parse failed", "ip", ip, "err", err)
+				logger.Log.Warn("Login parse failed", "ip", ip, "protocol", s.decoder.ProtocolName(), "err", err)
 				break
 			}
 			
-			// Resolve tenant
 			tenantData, err := handler.ResolveDevice(s.ctx, deviceIMEI)
 			if err != nil {
 				logger.Log.Warn("Unauthorized device", "imei", deviceIMEI, "err", err)
@@ -117,33 +116,27 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			imei = deviceIMEI
 			tenant = tenantData
 			authenticated = true
-			conn.Write(response)
-			logger.Log.Info("Device authenticated", "imei", imei, "tenant", tenant.CompanyCode)
+			if response != nil { conn.Write(response) }
+			logger.Log.Info("Device authenticated", "imei", imei, "protocol", s.decoder.ProtocolName())
 			continue
 		}
 
-		if !authenticated {
-			logger.Log.Warn("Unauthenticated payload dropped", "ip", ip)
-			break
-		}
-
-		if gt06.IsHeartbeat(data) {
-			resp := gt06.GenerateHeartbeatResponse(data)
+		// Handle Heartbeat
+		if s.decoder.IsHeartbeat(data) {
+			resp := s.decoder.GenerateHeartbeatResponse(data)
 			if resp != nil { conn.Write(resp) }
 			continue
 		}
 
-		if len(data) >= 4 && (data[3] == gt06.ProtocolLocation || data[3] == 0x22) {
-			payload, err := gt06.DecodeLocation(data, imei, tenant.CompanyCode, tenant.VehicleID)
-			if err != nil {
-				logger.Log.Warn("Invalid location packet", "imei", imei, "err", err)
-				continue
-			}
-			
-			if err := publisher.PublishTelemetry(payload); err != nil {
-				logger.Log.Error("Publish failed", "imei", imei, "err", err)
-				// Note: in enterprise we don't drop silently. NATS handles dead-letters.
-			}
+		// Handle Telemetry Location
+		payload, err := s.decoder.DecodeLocation(data, imei, tenant.CompanyCode, tenant.VehicleID)
+		if err != nil {
+			logger.Log.Warn("Invalid location packet", "imei", imei, "err", err)
+			continue
+		}
+		
+		if err := publisher.PublishTelemetry(payload); err != nil {
+			logger.Log.Error("Publish failed", "imei", imei, "err", err)
 		}
 	}
 }
