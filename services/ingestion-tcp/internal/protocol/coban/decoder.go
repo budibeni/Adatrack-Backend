@@ -1,6 +1,8 @@
 package coban
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"strings"
 	"time"
@@ -21,17 +23,17 @@ func (d *Decoder) DecodeLogin(data []byte) (string, []byte, error) {
 	if !strings.HasPrefix(str, "imei:") {
 		return "", nil, errors.New("invalid coban login header")
 	}
-	
+
 	parts := strings.Split(str, ",")
 	if len(parts) == 0 {
 		return "", nil, errors.New("invalid coban format")
 	}
-	
+
 	imei := strings.TrimPrefix(parts[0], "imei:")
 	if len(imei) < 15 {
 		return "", nil, errors.New("invalid imei length")
 	}
-	
+
 	// Coban expects an ON ACK for login/activation (e.g. LOAD)
 	return imei[:15], []byte("LOAD"), nil
 }
@@ -63,19 +65,20 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	}, nil
 }
 
-importbufio "bufio"
-importbytes "bytes"
-
-func (d *Decoder) FrameSplitter() importbufio.SplitFunc {
+func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) == 0 { return 0, nil, nil }
-		if i := importbytes.IndexByte(data, ';'); i >= 0 {
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
+		if i := bytes.IndexByte(data, ';'); i >= 0 {
 			return i + 1, data[:i+1], nil
 		}
-		if i := importbytes.IndexByte(data, '\n'); i >= 0 {
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
 			return i + 1, data[:i+1], nil
 		}
-		if atEOF { return len(data), data, nil }
+		if atEOF {
+			return len(data), data, nil
+		}
 		return 0, nil, nil
 	}
 }

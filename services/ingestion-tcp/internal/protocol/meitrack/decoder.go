@@ -1,6 +1,8 @@
 package meitrack
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"strings"
 	"time"
@@ -21,12 +23,12 @@ func (d *Decoder) DecodeLogin(data []byte) (string, []byte, error) {
 	if !strings.HasPrefix(str, "$$") {
 		return "", nil, errors.New("invalid meitrack header")
 	}
-	
+
 	parts := strings.Split(str, ",")
 	if len(parts) < 3 {
 		return "", nil, errors.New("invalid meitrack format")
 	}
-	
+
 	imei := parts[2]
 	return imei, nil, nil // Meitrack doesn't strictly require an ACK for login
 }
@@ -54,16 +56,17 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	}, nil
 }
 
-importbufio "bufio"
-importbytes "bytes"
-
-func (d *Decoder) FrameSplitter() importbufio.SplitFunc {
+func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) == 0 { return 0, nil, nil }
-		if i := importbytes.Index(data, []byte("\r\n")); i >= 0 {
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
+		if i := bytes.Index(data, []byte("\r\n")); i >= 0 {
 			return i + 2, data[:i+2], nil
 		}
-		if atEOF { return len(data), data, nil }
+		if atEOF {
+			return len(data), data, nil
+		}
 		return 0, nil, nil
 	}
 }

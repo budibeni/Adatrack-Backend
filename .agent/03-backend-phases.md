@@ -150,21 +150,21 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B4 — Performance, Monitoring, Testing, Hardening ⬜
+## Phase B4 — Performance, Monitoring, Testing, Hardening ✅
 
 ### Tasks
-- [ ] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).
-- [ ] Endurance 24 jam kumulatif (chunked, resume-safe).
-- [ ] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
-- [ ] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
-- [ ] Query SLA: history 30 hari < 1,5 s (index & tuning).
-- [ ] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
-- [ ] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
-- [ ] Backup/DR: dump harian + checksum + uji restore; replikasi PostgreSQL (read-replica) & Redis + drill failover.
-- [ ] Retensi DB: partisi/purge telemetry sesuai §11.
+- [x] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).
+- [x] Endurance 24 jam kumulatif (chunked, resume-safe).
+- [x] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
+- [x] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
+- [x] Query SLA: history 30 hari < 1,5 s (index & tuning).
+- [x] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
+- [x] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
+- [x] Backup/DR: dump harian + checksum + uji restore; replikasi PostgreSQL (read-replica) & Redis + drill failover.
+- [x] Retensi DB: partisi/purge telemetry sesuai §11.
 
 ### Acceptance
-- [ ] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
+- [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
 
 ---
 

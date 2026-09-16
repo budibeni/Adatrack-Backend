@@ -1,0 +1,18 @@
+{
+  "title": "Adatrack SLO Dashboard",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total Messages Processed",
+      "targets": [
+        {
+          "expr": "sum(adatrack_messages_processed_total)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 16,
+  "version": 1
+}

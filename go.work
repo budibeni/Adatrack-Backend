@@ -3,4 +3,9 @@ go 1.25.0
 use (
 	./internal
 	./services/api-vehicle
+	./services/ingestion-tcp
+	./services/service-websocket
+	./services/worker-alert
+	./services/worker-live
+	./services/worker-persistence
 )
