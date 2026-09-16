@@ -28,52 +28,52 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B0 — Infrastruktur + Foundations ✅
+## Phase B0 — Infrastruktur + Foundations ⬜
 
 **Tujuan:** environment compose + kerangka service Go + skema PostgreSQL siap diisi pipeline.
 
 ### Tasks
-- [x] `docker-compose` primary: PostgreSQL 15 (`postgres:15-alpine`), Redis, NATS (JetStream) — healthcheck semua service.
-- [x] Config ganda sejak awal: `docker-compose.local.yml` / `docker-compose.coolify.yml` + `.env.local` / `.env.coolify` (PRD §14) + helper `scripts/compose-up.sh`.
-- [x] Bootstrap `init-pg/`: master schema (`adatrack_gps_master`) + seed referensi wilayah Indonesia (provinsi → desa) + template company schema (`adatrack_gps_{code}`).
-- [x] Migrasi master awal: `tm_users`, `tm_companies` (+`business_type` B2B/B2C), `tm_user_vehicles`, `tm_modules` + `tm_menus` (seed registry menu dari `docs/FRONTEND.md` §1–§2).
-- [x] Kerangka `internal/`: `config`, `logger`, `metrics`, `natsclient`, `dbclient` (pgx pool), `redclient`, `tenant` (resolusi schema per request).
-- [x] NATS streams/subjects: `telemetry.raw.>`, `alert.*`, `notify.*`, `media.*` + retention limits.
-- [x] `Makefile`/`scripts/` dev loop: build, test, up/down, reset-db, provision tenant.
-- [x] Satu service minimal ter-boot end-to-end sebagai bukti wiring (healthz + metrics + NATS + PG + Redis).
+- [ ] `docker-compose` primary: PostgreSQL 15 (`postgres:15-alpine`), Redis, NATS (JetStream) — healthcheck semua service.
+- [ ] Config ganda sejak awal: `docker-compose.local.yml` / `docker-compose.coolify.yml` + `.env.local` / `.env.coolify` (PRD §14) + helper `scripts/compose-up.sh`.
+- [ ] Bootstrap `init-pg/`: master schema (`adatrack_gps_master`) + seed referensi wilayah Indonesia (provinsi → desa) + template company schema (`adatrack_gps_{code}`).
+- [ ] Migrasi master awal: `tm_users`, `tm_companies` (+`business_type` B2B/B2C), `tm_user_vehicles`, `tm_modules` + `tm_menus` (seed registry menu dari `docs/FRONTEND.md` §1–§2).
+- [ ] Kerangka `internal/`: `config`, `logger`, `metrics`, `natsclient`, `dbclient` (pgx pool), `redclient`, `tenant` (resolusi schema per request).
+- [ ] NATS streams/subjects: `telemetry.raw.>`, `alert.*`, `notify.*`, `media.*` + retention limits.
+- [ ] `Makefile`/`scripts/` dev loop: build, test, up/down, reset-db, provision tenant.
+- [ ] Satu service minimal ter-boot end-to-end sebagai bukti wiring (healthz + metrics + NATS + PG + Redis).
 
 ### Acceptance
-- [x] `compose up` (mode local & coolify) → semua container healthy.
-- [x] Provision tenant baru → schema per-tenant lengkap + seed referensi.
-- [x] Service contoh: `/healthz` OK, `/metrics` ter-scrape, publish/consume NATS OK.
-- [x] `init-pg` idempoten (re-run tanpa error).
+- [ ] `compose up` (mode local & coolify) → semua container healthy.
+- [ ] Provision tenant baru → schema per-tenant lengkap + seed referensi.
+- [ ] Service contoh: `/healthz` OK, `/metrics` ter-scrape, publish/consume NATS OK.
+- [ ] `init-pg` idempoten (re-run tanpa error).
 
 ---
 
-## Phase B1 — Pipeline Data: ingestion-tcp · worker-live · worker-persistence ✅
+## Phase B1 — Pipeline Data: ingestion-tcp · worker-live · worker-persistence ⬜
 
 **Tujuan:** jalur data device → NATS → live state + persistensi, end-to-end.
 
 ### Tasks — ingestion-tcp
-- [x] TCP server + manajemen koneksi per device (timeout, limit, guard per-IP).
-- [x] Protokol GT06: handshake login/auth, jawaban server, decode telemetry (posisi, speed, ACC, course, altitude, satellites, gsm_signal, alarm, IO). Teltonika Codec 8 + 8E (login IMEI, AVL, IO mapping).
-- [x] Publish `telemetry.raw.<IMEI>` (payload terstruktur + tenant ter-resolve via `master.tm_vehicle_imei_map`).
-- [x] Backpressure: buffer per-connection + shed load; metrik koneksi/throughput.
+- [ ] TCP server + manajemen koneksi per device (timeout, limit, guard per-IP).
+- [ ] Protokol GT06: handshake login/auth, jawaban server, decode telemetry (posisi, speed, ACC, course, altitude, satellites, gsm_signal, alarm, IO). Teltonika Codec 8 + 8E (login IMEI, AVL, IO mapping).
+- [ ] Publish `telemetry.raw.<IMEI>` (payload terstruktur + tenant ter-resolve via `master.tm_vehicle_imei_map`).
+- [ ] Backpressure: buffer per-connection + shed load; metrik koneksi/throughput.
 
 ### Tasks — worker-live
-- [x] Consume telemetry → live state Redis `adatrack_gps:{tenant}:vehicle:state:{IMEI}` (batch MSET, TTL 5 min).
-- [x] Status ONLINE/IDLE/OFFLINE (idling, `OFFLINE_AFTER_MINUTES` sweeper).
-- [x] Publish update untuk service-websocket (channel per tenant `telemetry.live.<IMEI>`).
+- [ ] Consume telemetry → live state Redis `adatrack_gps:{tenant}:vehicle:state:{IMEI}` (batch MSET, TTL 5 min).
+- [ ] Status ONLINE/IDLE/OFFLINE (idling, `OFFLINE_AFTER_MINUTES` sweeper).
+- [ ] Publish update untuk service-websocket (channel per tenant `telemetry.live.<IMEI>`).
 
 ### Tasks — worker-persistence
-- [x] Batch insert `th_telemetry_logs` ke company schema (flush by size/interval 500 rows / 5s).
-- [x] Penanganan transient error (retry + backoff) — tanpa silent drop; dead-letter NATS.
+- [ ] Batch insert `th_telemetry_logs` ke company schema (flush by size/interval 500 rows / 5s).
+- [ ] Penanganan transient error (retry + backoff) — tanpa silent drop; dead-letter NATS.
 
 ### Acceptance
-- [x] Load 1000 msg/s sustained tanpa data loss (delta DB = pesan terkirim).
-- [x] Live state benar (posisi/speed/ACC ter-update; OFFLINE sesuai kriteria).
-- [x] Isolasi antar tenant schema terverifikasi (0 leakage).
-- [x] Unit + integration test inti (decoder, state machine, batcher) hijau.
+- [ ] Load 1000 msg/s sustained tanpa data loss (delta DB = pesan terkirim).
+- [ ] Live state benar (posisi/speed/ACC ter-update; OFFLINE sesuai kriteria).
+- [ ] Isolasi antar tenant schema terverifikasi (0 leakage).
+- [ ] Unit + integration test inti (decoder, state machine, batcher) hijau.
 
 ---
 

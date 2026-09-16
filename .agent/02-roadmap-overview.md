@@ -2,7 +2,7 @@
 
 Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
-> **STATUS PROYEK:** Fase B0 dan B1 telah **✅ Selesai**.
+> **STATUS AWAL (Clean Slate):** Seluruh fase pengerjaan (B0–B12 dan F1–F4) **⬜ belum dimulai**.
 > Proyek dimulai dari titik nol (clean slate). Pengerjaan akan dimulai secara berurutan dari fase **B0** (Infrastruktur + Foundations).
 > Rencana pengerjaan dan checklist teknis: `.agent/03-backend-phases.md`.
 
@@ -14,8 +14,8 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
 | Fase | Area | Lokasi | Status |
 |---|---|---|---|
-| **B0** | Infrastruktur + Foundations | `backend/` | ✅ Selesai |
-| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ✅ Selesai |
+| **B0** | Infrastruktur + Foundations | `backend/` | ⬜ Belum dimulai |
+| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ⬜ Belum dimulai |
 | **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ⬜ Belum dimulai |
 | **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ⬜ Belum dimulai |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ⬜ Belum dimulai |
