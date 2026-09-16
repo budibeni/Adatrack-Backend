@@ -20,10 +20,14 @@ load_variant_env() {
   . "$env_file"
   set +a
 
-  # Running on the host (not inside compose)? fall back to the published ports.
+  # Running on the host (not inside compose)? the compose service name and the
+  # in-container port from the env file are meaningless out here — OVERRIDE with
+  # the published bind host/port (HOST_* in .env.<variant>). A plain ":=" default
+  # is not enough: .env.local sets POSTGRES_PORT=5432 (container-internal), which
+  # would silently point host-side psql at whatever else listens on host 5432.
   if [[ "${POSTGRES_HOST:-}" == "postgres" && ! -f /.dockerenv ]]; then
-    : "${POSTGRES_HOST:=127.0.0.1}"
-    : "${POSTGRES_PORT:=${HOST_PG_PORT:-5533}}"
+    POSTGRES_HOST="127.0.0.1"
+    POSTGRES_PORT="${HOST_PG_PORT:-5533}"
   fi
 
   export PGHOST="$POSTGRES_HOST"

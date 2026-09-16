@@ -1,5 +1,8 @@
 [
-  {"targets": ["127.0.0.1:18090"], "labels": {"service": "ingestion-tcp", "env": "local"}},
-  {"targets": ["127.0.0.1:18091"], "labels": {"service": "worker-live", "env": "local"}},
-  {"targets": ["127.0.0.1:18092"], "labels": {"service": "worker-persistence", "env": "local"}}
+  {"targets": ["127.0.0.1:8090"], "labels": {"service": "ingestion-tcp", "env": "local"}},
+  {"targets": ["127.0.0.1:8091"], "labels": {"service": "worker-live", "env": "local"}},
+  {"targets": ["127.0.0.1:8092"], "labels": {"service": "worker-persistence", "env": "local"}},
+  {"targets": ["127.0.0.1:8094"], "labels": {"service": "worker-alert", "env": "local"}},
+  {"targets": ["127.0.0.1:8082"], "labels": {"service": "service-websocket", "env": "local"}},
+  {"targets": ["127.0.0.1:8081"], "labels": {"service": "api-vehicle", "env": "local"}}
 ]

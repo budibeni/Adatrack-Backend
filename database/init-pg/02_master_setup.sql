@@ -47,6 +47,7 @@ SET search_path TO adatrack_gps_master;
 \i :migrations_dir/master_pg/017_create_platform_tenant.sql
 \i :migrations_dir/master_pg/018_create_company_media_config.sql
 \i :migrations_dir/master_pg/019_create_platform_admin.sql
+\i :migrations_dir/master_pg/020_repair_platform_admin.sql
 \endif
 
 -- -- -- Minimal country seed required by tm_companies.country_code FK -- -- --
@@ -83,19 +84,28 @@ ON CONFLICT (code) DO UPDATE SET
 -- The bcrypt hash below is a REAL cost-12 hash of `Admin@123` (verified), so the
 -- dev accounts are usable in B2 login tests. Production tenant admins are created
 -- by FR-5.5 auto-provisioning with must_change_password = TRUE.
-INSERT INTO tm_users (id, company_id, company_code, email, password_hash, full_name, first_name, last_name,
+--
+-- IDS MUST NEVER BE HARDCODED HERE. `tm_users` is shared with the platform
+-- SuperAdmin (master 019), so a fixed `id = 1` silently collides with that row:
+-- the previous `ON CONFLICT (id) DO UPDATE` rewrote the platform identity into a
+-- DEV001 `Admin` (privilege escalation) and left `admin@dev001.io` missing
+-- entirely. `uq_tm_users_email` makes the email the stable natural key — the
+-- conflict target, so re-running this file only ever touches these three rows.
+INSERT INTO tm_users (company_id, company_code, email, password_hash, full_name, first_name, last_name,
                       global_role, is_active, email_verified, mfa_enabled, locale)
 VALUES
-    (1, (SELECT id FROM tm_companies WHERE code = 'DEV001'), 'DEV001', 'admin@dev001.io',
+    ((SELECT id FROM tm_companies WHERE code = 'DEV001'), 'DEV001', 'admin@dev001.io',
      '$2a$12$68Y3c8vQndkODvLUKj52RuC02x8yLdpJorBYysKXAkLvV9mgf3YTK', 'Admin Default', 'Admin', 'Dev',
      'Admin', TRUE, TRUE, FALSE, 'id'),
-    (3, (SELECT id FROM tm_companies WHERE code = 'DEV001'), 'DEV001', 'operator@dev001.io',
+    ((SELECT id FROM tm_companies WHERE code = 'DEV001'), 'DEV001', 'operator@dev001.io',
      '$2a$12$68Y3c8vQndkODvLUKj52RuC02x8yLdpJorBYysKXAkLvV9mgf3YTK', 'Operator Default', 'Operator', 'Dev',
      'Operator', TRUE, TRUE, FALSE, 'id'),
-    (4, (SELECT id FROM tm_companies WHERE code = 'DEV001'), 'DEV001', 'driver@dev001.io',
+    ((SELECT id FROM tm_companies WHERE code = 'DEV001'), 'DEV001', 'driver@dev001.io',
      '$2a$12$68Y3c8vQndkODvLUKj52RuC02x8yLdpJorBYysKXAkLvV9mgf3YTK', 'Driver Default', 'Driver', 'Dev',
      'Driver', TRUE, TRUE, FALSE, 'id')
-ON CONFLICT (id) DO UPDATE SET
+ON CONFLICT (email) DO UPDATE SET
+    company_id = EXCLUDED.company_id,
+    company_code = EXCLUDED.company_code,
     password_hash = EXCLUDED.password_hash,
     full_name = EXCLUDED.full_name,
     first_name = EXCLUDED.first_name,

@@ -33,6 +33,11 @@ SET search_path TO adatrack_gps_default;
 \i :migrations_dir/company_pg/005_create_vehicles.sql
 \i :migrations_dir/company_pg/006_create_user_vehicles.sql
 \i :migrations_dir/company_pg/007_create_telemetry_logs.sql
+\i :migrations_dir/company_pg/008_create_geofences.sql
+\i :migrations_dir/company_pg/009_create_speed_configs.sql
+\i :migrations_dir/company_pg/010_create_routes.sql
+\i :migrations_dir/company_pg/011_create_alerts.sql
+\i :migrations_dir/company_pg/012_create_notification_preferences.sql
 
 -- ---------------------------------------------------------------------------
 -- Dev tenant (adatrack_gps_dev001)
@@ -46,6 +51,11 @@ SET search_path TO adatrack_gps_dev001;
 \i :migrations_dir/company_pg/005_create_vehicles.sql
 \i :migrations_dir/company_pg/006_create_user_vehicles.sql
 \i :migrations_dir/company_pg/007_create_telemetry_logs.sql
+\i :migrations_dir/company_pg/008_create_geofences.sql
+\i :migrations_dir/company_pg/009_create_speed_configs.sql
+\i :migrations_dir/company_pg/010_create_routes.sql
+\i :migrations_dir/company_pg/011_create_alerts.sql
+\i :migrations_dir/company_pg/012_create_notification_preferences.sql
 \endif
 
 -- ---------------------------------------------------------------------------
@@ -53,11 +63,13 @@ SET search_path TO adatrack_gps_dev001;
 -- ---------------------------------------------------------------------------
 SET search_path TO adatrack_gps_dev001;
 
--- -- -- Dev RBAC rows (user_ids 1/3/4 come from master.tm_users) -- -- --
+-- -- -- Dev RBAC rows (resolved by email so ids are never hardcoded — ids are NOT
+-- stable across environments and the platform SuperAdmin (master 019) must NEVER
+-- gain tenant membership; PRD §3.1 scope guard, anti privilege-escalation). -- --
 INSERT INTO tm_user_company_access (user_id, role_override, is_active) VALUES
-    (1, 'Admin', TRUE),
-    (3, 'Operator', TRUE),
-    (4, 'Driver', TRUE)
+    ((SELECT id FROM adatrack_gps_master.tm_users WHERE email = 'admin@dev001.io'),  'Admin',    TRUE),
+    ((SELECT id FROM adatrack_gps_master.tm_users WHERE email = 'operator@dev001.io'), 'Operator', TRUE),
+    ((SELECT id FROM adatrack_gps_master.tm_users WHERE email = 'driver@dev001.io'),  'Driver',   TRUE)
 ON CONFLICT (user_id) DO UPDATE SET
     role_override = EXCLUDED.role_override,
     is_active = EXCLUDED.is_active;
@@ -93,6 +105,10 @@ SELECT setval(pg_get_serial_sequence('tm_vehicles', 'id'),
               GREATEST((SELECT COALESCE(MAX(id), 1) FROM tm_vehicles), 3));
 
 -- Operator gets vehicles 1-2, driver gets vehicle 3 (row-level RBAC fixtures).
+-- Resolved by email so ids are never hardcoded (ids are not stable across
+-- environments; PRD §3.1 scope guard).
 INSERT INTO tm_user_vehicles (user_id, vehicle_id) VALUES
-    (3, 1), (3, 2), (4, 3)
+    ((SELECT id FROM adatrack_gps_master.tm_users WHERE email = 'operator@dev001.io'), 1),
+    ((SELECT id FROM adatrack_gps_master.tm_users WHERE email = 'operator@dev001.io'), 2),
+    ((SELECT id FROM adatrack_gps_master.tm_users WHERE email = 'driver@dev001.io'),  3)
 ON CONFLICT (user_id, vehicle_id) DO NOTHING;
