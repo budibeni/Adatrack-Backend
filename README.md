@@ -11,10 +11,11 @@ Backend **Real-Time GPS Tracking & Fleet Management Platform** — multi-tenant 
 | **B0** | Fondasi: compose infra, migrasi, `internal/` shared pkg | ✅ Selesai |
 | **B1** | Pipeline data: `ingestion-tcp` · `worker-live` · `worker-persistence` | ✅ Selesai |
 | **B2** | `service-websocket`: REST + WebSocket + RBAC + auto-provision tenant | ✅ Selesai |
-| **B3** | `worker-alert` + `api-vehicle` (GEOFENCE/OVERSPEED/OFFLINE/SOS/…) | ⬜ Berikutnya |
+| **B3** | `worker-alert` + `api-vehicle`: alarm engine (GEOFENCE/OVERSPEEDING/SOS/BATTERY/OFFLINE/ROUTE_DEVIATION + notifikasi) & fleet CRUD (vehicles/geofences/routes/assignments/speed-configs + soft delete/restore + RBAC row-level) | ✅ Selesai |
 | B4–B12 | Fuel, dashcam, fleet core, hardening, protokol tambahan, dll. | ⬜ Planned |
 
 Verifikasi B2 (2026-09-15): `make e2e-ws` **21/21 PASS** (push WS end-to-end 4 ms), provisioning FR-5.5/FR-5.6 **31/31 PASS**, `make test -race` bersih.
+Verifikasi B3 (2026-09-16): `scripts/test.sh` **exit 0 semua modul** (unit test geometri Haversine/ray-casting, konfigurasi speed & grace band, RBAC row-level, lifecycle acknowledge/resolve, validasi geometri + pagination); migrasi company `008–012` idempoten & ledger-audited. E2E live per-alert mengikuti setelah infra compose tersedia.
 
 ## Arsitektur
 
@@ -38,6 +39,8 @@ Perangkat GPS (GT06 / Teltonika, port 200+ protokol referensi Traccar)
 
 Alur: frame perangkat → NATS → **worker-live** (update state Redis + publish `telemetry.live.<IMEI>`) → konsumsi oleh **service-websocket** (push `VEHICLE_UPDATE` ke klien WS, target < 1 s) dan **worker-persistence** (batch insert ke `th_telemetry_logs`).
 
+Alur B3 (alert & fleet): stream `telemetry.raw.>` juga dikonsumsi **worker-alert** — evaluasi geofence (circle/polygon), overspeeding (grace band), SOS, battery low, offline, route deviation → insert `th_alerts` + publish `alert.sos.<IMEI>` / `notify.alert.<vehicle_id>` sesuai `tm_notification_preferences`. **api-vehicle** melayani manajemen armada (`/api/v1/vehicles|geofences|routes|speed-configs|alerts` + soft delete/restore) dengan JWT & denylist Redis yang sama dengan service-websocket dan RBAC row-level yang konsisten.
+
 ## Tech Stack
 
 | Layer | Teknologi |
@@ -47,7 +50,7 @@ Alur: frame perangkat → NATS → **worker-live** (update state Redis + publish
 | Message broker | NATS 2.10 + JetStream |
 | Live state / cache | Redis 7 (`go-redis/v9`) |
 | Database | PostgreSQL 15 (`pgx/v5`, schema-per-tenant) |
-| REST API | Gin (`service-websocket`) |
+| REST API | Gin (`service-websocket`, `api-vehicle`) |
 | WebSocket | Gorilla WebSocket |
 | Auth | JWT HS256 (`golang-jwt`) + bcrypt cost 12 (`golang.org/x/crypto`) |
 | Metrics | Prometheus client (`/metrics` per service) |
@@ -63,6 +66,8 @@ Alur: frame perangkat → NATS → **worker-live** (update state Redis + publish
 │   ├── ingestion-tcp/         # TCP server + parser protokol perangkat (GT06, Teltonika)
 │   ├── worker-live/           # Konsumsi telemetry → Redis live state + publish live
 │   ├── worker-persistence/    # Konsumsi telemetry → batch insert PostgreSQL
+│   ├── worker-alert/          # Alarm engine: geofence/overspeed/SOS/battery/offline/route → th_alerts + notifikasi
+│   ├── api-vehicle/           # REST fleet management: vehicles/geofences/routes/speed-configs/alerts
 │   ├── service-websocket/     # REST /api/v1 + WS /ws/v1/adatrack + auth/RBAC/audit
 │   └── foundation-check/      # Pemeriksaan kesiapan infra (self-check)
 ├── tools/
