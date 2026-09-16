@@ -56,13 +56,16 @@ func (w *Worker) cacheRefresher() {
 
 
 type TelemetryPayload struct {
-	IMEI        string  `json:"imei"`
-	CompanyCode string  `json:"company_code"`
-	VehicleID   int     `json:"vehicle_id"`
-	Lat         float64 `json:"lat"`
-	Lon         float64 `json:"lon"`
-	Speed       float64 `json:"speed"`
-	EventCode   int     `json:"event_code"`
+	IMEI        string   `json:"imei"`
+	CompanyCode string   `json:"company_code"`
+	VehicleID   int      `json:"vehicle_id"`
+	Lat         float64  `json:"lat"`
+	Lon         float64  `json:"lon"`
+	Speed       float64  `json:"speed"`
+	EventCode   int      `json:"event_code"`
+	FuelLevel   *float64 `json:"fuel_level,omitempty"`
+	FuelVolume  *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC   *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 func (w *Worker) processTelemetry(m *nats.Msg) {
@@ -136,6 +139,43 @@ func (w *Worker) processTelemetry(m *nats.Msg) {
 				// Note: typically we track entry/exit state in Redis.
 				// redclient.Client.Set(...)
 			}
+		}
+	}
+
+	// 4. FUEL LOGIC
+	if payload.FuelLevel != nil || payload.FuelVolume != nil {
+		type FuelConfig struct {
+			MaxVolume float64
+			RefuelThreshold float64
+			DropThreshold float64
+		}
+		
+		// Note: normally we'd cache this in another sync.Map
+		var config FuelConfig
+		err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf("SELECT max_volume_liters, refuel_threshold_liters, drop_threshold_liters FROM %s.tm_fuel_configs WHERE vehicle_id = $1 AND enabled = true", schema), payload.VehicleID).Scan(&config.MaxVolume, &config.RefuelThreshold, &config.DropThreshold)
+		
+		if err == nil {
+			// Calculate volume if only level provided
+			var currentVol float64
+			if payload.FuelVolume != nil {
+				currentVol = *payload.FuelVolume
+			} else if payload.FuelLevel != nil {
+				currentVol = (*payload.FuelLevel / 100.0) * config.MaxVolume
+			}
+			
+			lastVolRaw, ok := w.speedCache.Load(fmt.Sprintf("fuel:%s:%d", payload.CompanyCode, payload.VehicleID))
+			if ok {
+				lastVol := lastVolRaw.(float64)
+				diff := currentVol - lastVol
+				
+				if diff < 0 && (-diff) >= config.DropThreshold {
+					w.createAlert(ctx, schema, "FUEL_DROP", "high", payload.VehicleID, payload.Lat, payload.Lon, map[string]interface{}{"drop_volume": -diff, "current_volume": currentVol, "previous_volume": lastVol})
+				} else if diff > 0 && diff >= config.RefuelThreshold {
+					w.createAlert(ctx, schema, "REFUEL", "info", payload.VehicleID, payload.Lat, payload.Lon, map[string]interface{}{"refuel_volume": diff, "current_volume": currentVol, "previous_volume": lastVol})
+				}
+			}
+			
+			w.speedCache.Store(fmt.Sprintf("fuel:%s:%d", payload.CompanyCode, payload.VehicleID), currentVol)
 		}
 	}
 }

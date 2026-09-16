@@ -137,3 +137,108 @@ func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	h.auditLog(r.Context(), claims.CompanyCode, "ENTITY_CREATED", "success", claims.UserID, claims.Email, claims.Role, "Route created")
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success"})
 }
+
+type FuelConfigRequest struct {
+	VehicleID             int     `json:"vehicle_id"`
+	MaxVolumeLiters       float64 `json:"max_volume_liters"`
+	RefuelThresholdLiters float64 `json:"refuel_threshold_liters"`
+	DropThresholdLiters   float64 `json:"drop_threshold_liters"`
+	Enabled               bool    `json:"enabled"`
+}
+
+func (h *Handler) CreateFuelConfig(w http.ResponseWriter, r *http.Request) {
+	var req FuelConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	
+	query := fmt.Sprintf(`
+		INSERT INTO %s.tm_fuel_configs 
+		(vehicle_id, max_volume_liters, refuel_threshold_liters, drop_threshold_liters, enabled)
+		VALUES ($1, $2, $3, $4, $5) RETURNING id
+	`, schema)
+	
+	var id int
+	err := dbclient.Pool.QueryRow(r.Context(), query, 
+		req.VehicleID, req.MaxVolumeLiters, req.RefuelThresholdLiters, req.DropThresholdLiters, req.Enabled,
+	).Scan(&id)
+	
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "Failed to create fuel config")
+		return
+	}
+	
+	h.auditLog(r.Context(), claims.CompanyCode, "ENTITY_CREATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Fuel config %d created", id))
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "data": map[string]interface{}{"id": id}})
+}
+
+func (h *Handler) UpdateFuelConfig(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	var req FuelConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	
+	query := fmt.Sprintf(`
+		UPDATE %s.tm_fuel_configs 
+		SET max_volume_liters = $1, refuel_threshold_liters = $2, drop_threshold_liters = $3, enabled = $4
+		WHERE id = $5
+	`, schema)
+	
+	_, err := dbclient.Pool.Exec(r.Context(), query, 
+		req.MaxVolumeLiters, req.RefuelThresholdLiters, req.DropThresholdLiters, req.Enabled, id,
+	)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "Failed to update fuel config")
+		return
+	}
+	
+	h.auditLog(r.Context(), claims.CompanyCode, "ENTITY_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Fuel config %d updated", id))
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success"})
+}
+
+func (h *Handler) GetFuelHistory(w http.ResponseWriter, r *http.Request) {
+	vid, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	
+	start := r.URL.Query().Get("start")
+	end := r.URL.Query().Get("end")
+	
+	query := fmt.Sprintf(`
+		SELECT id, imei, fuel_level, fuel_volume, fuel_temp_c, timestamp 
+		FROM %s.th_fuel_logs 
+		WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3
+		ORDER BY timestamp DESC LIMIT 1000
+	`, schema)
+	
+	rows, err := dbclient.Pool.Query(r.Context(), query, vid, start, end)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "Failed to fetch fuel logs")
+		return
+	}
+	defer rows.Close()
+	
+	var logs []map[string]interface{}
+	for rows.Next() {
+		var id int
+		var imei string
+		var level, vol, temp *float64
+		var ts string
+		if err := rows.Scan(&id, &imei, &level, &vol, &temp, &ts); err == nil {
+			logs = append(logs, map[string]interface{}{
+				"id": id, "imei": imei, "fuel_level": level, "fuel_volume": vol, "fuel_temp_c": temp, "timestamp": ts,
+			})
+		}
+	}
+	
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "data": logs})
+}

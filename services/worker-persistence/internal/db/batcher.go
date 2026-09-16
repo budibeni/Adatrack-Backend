@@ -32,6 +32,14 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 			ON CONFLICT DO NOTHING
 		`, schema)
 
+		fuelQuery := fmt.Sprintf(`
+			INSERT INTO %s.th_fuel_logs 
+			(vehicle_id, imei, company_code, fuel_level, fuel_volume, fuel_temp_c, timestamp)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT DO NOTHING
+		`, schema)
+
+		var expectedExecs int
 		for _, item := range items {
 			batch.Queue(query, 
 				item.VehicleID, item.IMEI, item.CompanyCode, 
@@ -39,12 +47,21 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 				item.Heading, item.Altitude, item.ACCStatus, 
 				item.Battery, item.Timestamp,
 			)
+			expectedExecs++
+			
+			if item.FuelLevel != nil || item.FuelVolume != nil || item.FuelTempC != nil {
+				batch.Queue(fuelQuery,
+					item.VehicleID, item.IMEI, item.CompanyCode,
+					item.FuelLevel, item.FuelVolume, item.FuelTempC, item.Timestamp,
+				)
+				expectedExecs++
+			}
 		}
 
 		br := dbclient.Pool.SendBatch(ctx, batch)
 		
 		var batchError error
-		for i := 0; i < len(items); i++ {
+		for i := 0; i < expectedExecs; i++ {
 			if _, err := br.Exec(); err != nil {
 				batchError = err
 				break

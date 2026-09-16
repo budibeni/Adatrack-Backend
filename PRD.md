@@ -1688,8 +1688,8 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ⬜ Belum dimulai |
 | **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ⬜ Belum dimulai |
 | **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Belum dimulai |
-| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ⬜ Belum dimulai |
-| **B5b** | Dashcam Event Media Scope A (Module 8) | ⬜ Belum dimulai |
+| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ✅ Selesai |
+| **B5b** | Dashcam Event Media Scope A (Module 8) | ✅ Selesai |
 | **B4** | Performance, Monitoring, Testing, Hardening | ⬜ Belum dimulai |
 | **B6** | Real-Time Data Hardening (Audit Fix) | ⬜ Belum dimulai |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⬜ Belum dimulai |

@@ -16,4 +16,9 @@ type TelemetryPayload struct {
 	Battery     float64   `json:"battery_level"`
 	Timestamp   time.Time `json:"timestamp"`
 	RawData     string    `json:"raw_data,omitempty"` // Hex representation for debugging
+	
+	// Fuel sensor data
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }

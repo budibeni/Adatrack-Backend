@@ -122,31 +122,31 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B5a — Fuel Sensor End-to-End (PRD Module 7) ⬜
+## Phase B5a — Fuel Sensor End-to-End (PRD Module 7) ✅
 
 ### Tasks
-- [ ] Ingest kanal fuel: GT06 `0x0D` + Teltonika AVL IO → mapping fuel_level/volume/temp.
-- [ ] Persist `td_fuel_logs` (batch).
-- [ ] Alert FUEL_DROP / REFUEL (threshold + window, dedup, severity).
-- [ ] API fuel-configs CRUD + riwayat fuel (range waktu, pagination) + enrich live state.
+- [x] Ingest kanal fuel: GT06 `0x0D` + Teltonika AVL IO → mapping fuel_level/volume/temp.
+- [x] Persist `td_fuel_logs` (batch).
+- [x] Alert FUEL_DROP / REFUEL (threshold + window, dedup, severity).
+- [x] API fuel-configs CRUD + riwayat fuel (range waktu, pagination) + enrich live state.
 
 ### Acceptance
-- [ ] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference.
-- [ ] Unit test threshold/dedup + parser kanal fuel hijau.
+- [x] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference.
+- [x] Unit test threshold/dedup + parser kanal fuel hijau.
 
 ---
 
-## Phase B5b — Dashcam Event Media — Scope A (PRD Module 8) ⬜
+## Phase B5b — Dashcam Event Media — Scope A (PRD Module 8) ✅
 
 ### Tasks
-- [ ] MinIO/S3 (bucket + policy) + storage layer `internal/storage`.
-- [ ] Upload multipart + JSON(HMAC) → lifecycle complete; katalog media per-tenant ber-RBAC row-level.
-- [ ] WS `MEDIA_EVENT` (fan-out ke user berhak) + presigned GET (round-trip byte-persis).
-- [ ] Retensi: job penanda `expired` + penghapusan objek sesuai policy; endpoint complete (+audit).
+- [x] MinIO/S3 (bucket + policy) + storage layer `internal/storage`.
+- [x] Upload multipart + JSON(HMAC) → lifecycle complete; katalog media per-tenant ber-RBAC row-level.
+- [x] WS `MEDIA_EVENT` (fan-out ke user berhak) + presigned GET (round-trip byte-persis).
+- [x] Retensi: job penanda `expired` + penghapusan objek sesuai policy; endpoint complete (+audit).
 
 ### Acceptance
-- [ ] E2E multipart & JSON(HMAC) → MinIO → katalog → WS → retensi.
-- [ ] Negatif: 401/400/404/oversize ditolak; audit + metrics media tercatat.
+- [x] E2E multipart & JSON(HMAC) → MinIO → katalog → WS → retensi.
+- [x] Negatif: 401/400/404/oversize ditolak; audit + metrics media tercatat.
 
 ---
 

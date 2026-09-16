@@ -1,9 +1,12 @@
 package gt06
 
 import (
+	"bufio"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"backend/internal/models"
@@ -13,6 +16,7 @@ const (
 	ProtocolLogin    = 0x01
 	ProtocolLocation = 0x12 
 	ProtocolHeartbeat= 0x13
+	ProtocolFuel     = 0x0D
 )
 
 type Decoder struct{}
@@ -51,13 +55,45 @@ func (d *Decoder) GenerateHeartbeatResponse(data []byte) []byte {
 }
 
 func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleID int) (models.TelemetryPayload, error) {
-	if len(data) < 30 {
+	if len(data) < 10 {
 		return models.TelemetryPayload{}, errors.New("location packet too short")
 	}
 	
 	dt := data[4:10]
 	year := int(dt[0]) + 2000
 	timestamp := time.Date(year, time.Month(dt[1]), int(dt[2]), int(dt[3]), int(dt[4]), int(dt[5]), 0, time.UTC)
+	
+	payload := models.TelemetryPayload{
+		IMEI: imei, CompanyCode: companyCode, VehicleID: vehicleID,
+		Timestamp: timestamp, RawData: hex.EncodeToString(data),
+	}
+
+	if data[3] == ProtocolFuel {
+		// Fuel packet: !AILOIL,
+		// Payload is ASCII
+		if len(data) > 10 {
+			strData := string(data[10:])
+			if strings.HasPrefix(strData, "!AILOIL,") {
+				parts := strings.Split(strData, ",")
+				if len(parts) >= 2 {
+					valStr := strings.TrimSpace(parts[1])
+					// Handle possible trailing characters (like # or \r\n)
+					idx := strings.IndexAny(valStr, "#\r\n\x00")
+					if idx != -1 {
+						valStr = valStr[:idx]
+					}
+					if val, err := strconv.ParseFloat(valStr, 64); err == nil {
+						payload.FuelLevel = &val
+					}
+				}
+			}
+		}
+		return payload, nil
+	}
+
+	if len(data) < 30 {
+		return models.TelemetryPayload{}, errors.New("location packet too short for 0x12")
+	}
 	
 	lat := float64(binary.BigEndian.Uint32(data[11:15])) / 1800000.0
 	lon := float64(binary.BigEndian.Uint32(data[15:19])) / 1800000.0
@@ -69,16 +105,15 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		if (termInfo & 0x02) == 0x02 { accStatus = 1 }
 	}
 
-	return models.TelemetryPayload{
-		IMEI: imei, CompanyCode: companyCode, VehicleID: vehicleID,
-		Latitude: lat, Longitude: lon, Speed: speed, ACCStatus: accStatus,
-		Timestamp: timestamp, RawData: hex.EncodeToString(data),
-	}, nil
+	payload.Latitude = lat
+	payload.Longitude = lon
+	payload.Speed = speed
+	payload.ACCStatus = accStatus
+
+	return payload, nil
 }
 
-importbufio "bufio"
-
-func (d *Decoder) FrameSplitter() importbufio.SplitFunc {
+func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 { return 0, nil, nil }
 		if len(data) < 4 { return 0, nil, nil } // Wait for more data

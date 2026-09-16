@@ -43,6 +43,17 @@ func SetupRouter(cfg *config.Config) *chi.Mux {
 		
 		r.Post("/geofences", h.CreateGeofence)
 		r.Post("/routes", h.CreateRoute)
+		
+		// Fuel
+		r.Post("/fuel-configs", h.CreateFuelConfig)
+		r.Put("/fuel-configs/{id}", h.UpdateFuelConfig)
+		r.Get("/vehicles/{id}/fuel/history", h.GetFuelHistory)
+		
+		r.Post("/media/events", h.CreateMediaEvent)
+		r.Post("/media/events/{id}/complete", h.CompleteMediaEvent)
+		r.Get("/media/{id}/url", h.GetMediaURL)
+		r.Delete("/media/{id}", h.DeleteMediaEvent)
+		r.Post("/media/{id}/restore", h.RestoreMediaEvent)
 	})
 
 	return r
