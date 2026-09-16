@@ -2,6 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS adatrack_gps_template;
 SET search_path TO adatrack_gps_template;
 
+-- 1. Master Tables (Company Context)
 CREATE TABLE IF NOT EXISTS tm_user_company_access (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL, -- Logical FK to master.tm_users.id (no physical cross-schema FK)
@@ -48,6 +49,64 @@ CREATE TABLE IF NOT EXISTS tm_user_vehicles (
     PRIMARY KEY(user_id, vehicle_id)
 );
 
+CREATE TABLE IF NOT EXISTS tm_geofences (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    area_type VARCHAR(20) NOT NULL,
+    coordinates JSONB NOT NULL,
+    radius_meters FLOAT,
+    boundary_points JSONB,
+    created_by INT,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS tm_geofence_vehicles (
+    geofence_id INT REFERENCES tm_geofences(id) ON DELETE CASCADE,
+    vehicle_id INT REFERENCES tm_vehicles(id) ON DELETE CASCADE,
+    enabled BOOLEAN DEFAULT true,
+    PRIMARY KEY(geofence_id, vehicle_id)
+);
+
+CREATE TABLE IF NOT EXISTS tm_speed_configs (
+    id SERIAL PRIMARY KEY,
+    vehicle_id INT REFERENCES tm_vehicles(id),
+    max_speed_kmh FLOAT NOT NULL,
+    grace_margin_percent FLOAT DEFAULT 0,
+    alert_severity VARCHAR(20) DEFAULT 'medium',
+    enabled BOOLEAN DEFAULT true,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS tm_fuel_configs (
+    id SERIAL PRIMARY KEY,
+    vehicle_id INT REFERENCES tm_vehicles(id),
+    drop_threshold_percent FLOAT NOT NULL,
+    refuel_threshold_percent FLOAT NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS tm_notification_preferences (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    alert_type VARCHAR(50) NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    min_severity VARCHAR(20) DEFAULT 'low'
+);
+
+CREATE TABLE IF NOT EXISTS tm_routes (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    waypoints JSONB NOT NULL,
+    driver_user_id INT,
+    vehicle_id INT REFERENCES tm_vehicles(id),
+    status VARCHAR(20) DEFAULT 'active',
+    deviation_threshold_meters FLOAT DEFAULT 100,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 2. Transaction Header Tables (th_)
 CREATE TABLE IF NOT EXISTS th_telemetry_logs (
     id BIGSERIAL,
     vehicle_id INT NOT NULL,
@@ -64,6 +123,94 @@ CREATE TABLE IF NOT EXISTS th_telemetry_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(id, timestamp)
 ) PARTITION BY RANGE (timestamp);
-
 CREATE INDEX idx_telemetry_vehicle_ts ON th_telemetry_logs(vehicle_id, timestamp DESC);
 CREATE INDEX idx_telemetry_imei_ts ON th_telemetry_logs(imei, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS th_fuel_logs (
+    id BIGSERIAL,
+    vehicle_id INT NOT NULL,
+    fuel_level FLOAT,
+    volume_liters FLOAT,
+    temperature_c FLOAT,
+    lat DECIMAL(10, 7),
+    lon DECIMAL(10, 7),
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(id, timestamp)
+) PARTITION BY RANGE (timestamp);
+
+CREATE TABLE IF NOT EXISTS th_alerts (
+    id BIGSERIAL PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    vehicle_id INT NOT NULL,
+    lat DECIMAL(10, 7),
+    lon DECIMAL(10, 7),
+    metadata JSONB,
+    status VARCHAR(20) DEFAULT 'open',
+    acknowledged_by INT,
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS th_route_assignments (
+    id BIGSERIAL PRIMARY KEY,
+    route_id INT NOT NULL REFERENCES tm_routes(id),
+    vehicle_id INT NOT NULL REFERENCES tm_vehicles(id),
+    driver_user_id INT,
+    status VARCHAR(20) DEFAULT 'assigned',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS th_media_events (
+    id BIGSERIAL PRIMARY KEY,
+    vehicle_id INT NOT NULL REFERENCES tm_vehicles(id),
+    status VARCHAR(20) DEFAULT 'uploaded',
+    storage_key VARCHAR(255) NOT NULL,
+    content_type VARCHAR(50),
+    media_type VARCHAR(20),
+    size_bytes BIGINT,
+    uploaded_at TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS th_vehicle_trips (
+    id BIGSERIAL PRIMARY KEY,
+    vehicle_id INT NOT NULL REFERENCES tm_vehicles(id),
+    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITH TIME ZONE,
+    start_lat DECIMAL(10, 7),
+    start_lon DECIMAL(10, 7),
+    end_lat DECIMAL(10, 7),
+    end_lon DECIMAL(10, 7),
+    distance_km FLOAT,
+    max_speed FLOAT,
+    avg_speed FLOAT,
+    stop_count INT DEFAULT 0,
+    duration_seconds INT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Transaction Detail Tables (td_)
+CREATE TABLE IF NOT EXISTS td_vehicle_stops (
+    id BIGSERIAL PRIMARY KEY,
+    trip_id BIGINT NOT NULL REFERENCES th_vehicle_trips(id) ON DELETE CASCADE,
+    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITH TIME ZONE,
+    duration_seconds INT,
+    lat DECIMAL(10, 7),
+    lon DECIMAL(10, 7),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS td_notifications (
+    id BIGSERIAL PRIMARY KEY,
+    alert_id BIGINT NOT NULL REFERENCES th_alerts(id) ON DELETE CASCADE,
+    user_id INT NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending',
+    provider_response JSONB,
+    error_reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);

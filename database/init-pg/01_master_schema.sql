@@ -2,7 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS adatrack_gps_master;
 SET search_path TO adatrack_gps_master;
 
--- 2. Reference Tables
+-- 2. Reference Tables (Territories)
 CREATE TABLE IF NOT EXISTS tm_countries (
     code VARCHAR(10) PRIMARY KEY,
     name VARCHAR(100) NOT NULL
@@ -11,6 +11,24 @@ CREATE TABLE IF NOT EXISTS tm_countries (
 CREATE TABLE IF NOT EXISTS tm_provinces (
     id SERIAL PRIMARY KEY,
     country_code VARCHAR(10) REFERENCES tm_countries(code),
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tm_cities (
+    id SERIAL PRIMARY KEY,
+    province_id INT REFERENCES tm_provinces(id),
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tm_districts (
+    id SERIAL PRIMARY KEY,
+    city_id INT REFERENCES tm_cities(id),
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tm_subdistricts (
+    id SERIAL PRIMARY KEY,
+    district_id INT REFERENCES tm_districts(id),
     name VARCHAR(100) NOT NULL
 );
 
@@ -79,7 +97,18 @@ CREATE TABLE IF NOT EXISTS tm_menus (
     enabled BOOLEAN DEFAULT true
 );
 
--- 5. Fleet / Telemetry Lookup
+-- 5. Fleet / Telemetry Lookup & References
+CREATE TABLE IF NOT EXISTS tm_vehicle_categories (
+    code VARCHAR(20) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tm_vehicle_types (
+    code VARCHAR(20) PRIMARY KEY,
+    category_code VARCHAR(20) REFERENCES tm_vehicle_categories(code),
+    name VARCHAR(100) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS tm_vehicle_imei_map (
     imei VARCHAR(20) PRIMARY KEY,
     company_code VARCHAR(50) NOT NULL REFERENCES tm_companies(code),
@@ -88,7 +117,18 @@ CREATE TABLE IF NOT EXISTS tm_vehicle_imei_map (
 );
 CREATE INDEX idx_imei_map_company ON tm_vehicle_imei_map(company_code);
 
--- 6. Audit & Migrations
+-- 6. Media Configuration
+CREATE TABLE IF NOT EXISTS tm_company_media_config (
+    id SERIAL PRIMARY KEY,
+    company_code VARCHAR(50) NOT NULL REFERENCES tm_companies(code),
+    bucket VARCHAR(100) NOT NULL,
+    retention_days INT DEFAULT 30,
+    max_file_mb INT DEFAULT 50,
+    hmac_secret VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Audit & Migrations
 CREATE TABLE IF NOT EXISTS tm_audit_logs (
     id BIGSERIAL PRIMARY KEY,
     action VARCHAR(100) NOT NULL,
