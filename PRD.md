@@ -1678,13 +1678,13 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 
 ### 20.1 Fase Backend (B0–B12)
 
-> **Status Proyek:** Fase B0 telah **✅ Selesai**. Melanjutkan ke Fase B1.
+> **Status Awal (Clean Slate):** Seluruh fase backend (B0–B12) **⬜ belum dimulai**.
 > Proyek dibangun dari titik nol. Pengerjaan akan dimulai secara berurutan dari fase **B0**
 > (Infrastruktur + Foundations). Detail rencana & checklist: `.agent/03-backend-phases.md`.
 
 | Fase | Area | Status |
 |---|---|---|
-| **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ✅ Selesai |
+| **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ⬜ Belum dimulai |
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ⬜ Belum dimulai |
 | **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ⬜ Belum dimulai |
 | **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Belum dimulai |
