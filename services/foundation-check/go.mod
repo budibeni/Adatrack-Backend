@@ -1,9 +1,9 @@
-module adatrack/foundation-check
+module backend/foundation-check
 
 go 1.21
 
 require (
-	adatrack/internal v0.0.0
+	backend/internal v0.0.0
 )
 
-replace adatrack/internal => ../../internal
+replace backend/internal => ../../internal

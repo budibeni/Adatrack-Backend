@@ -48,7 +48,7 @@ Platform **Real-Time GPS Tracking & adatrack Management**.
 2. **Backend-first** = setiap modul selesai (kode + test + ter-integrasi + jalan) baru lanjut.
 3. **Jangan hapus/ubah** file dokumentasi PRD kecuali disetujui user.
 4. **Satu layanan satu module Go.**
-   - Module pattern: `adatrack/<service-name>` per service (`adatrack/ingestion-tcp`, `adatrack/worker-persistence`, `adatrack/worker-live`, `adatrack/service-websocket`, `adatrack/api-vehicle`, dst.). Ikuti pola ini untuk semua service (clean slate — pola ditetapkan sejak awal pengerjaan).
+   - Module pattern: `backend/<service-name>` per service (`backend/ingestion-tcp`, `backend/worker-persistence`, `backend/worker-live`, `backend/service-websocket`, `backend/api-vehicle`, dst.). Ikuti pola ini untuk semua service (clean slate — pola ditetapkan sejak awal pengerjaan).
    - File utama: `main.go` (di root service), pakai build `go build -o <name> .` untuk konsisten dengan Dockerfile.
 5. **Selalu baca go.mod** service terkait sebelum menambah dependency; gunakan dependency yang sudah ada bila cukup.
 6. **Config via environment variable** — ikuti daftar env di `PRD.md §7`. Taruh default aman untuk dev lokal di kode (fallback), tetap bisa di-override env.

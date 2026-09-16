@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"adatrack/internal/dbclient"
+	"backend/internal/dbclient"
 )
 
 // ResolveCompanyCodeByIMEI securely retrieves the tenant ID from the master db

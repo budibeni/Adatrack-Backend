@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"adatrack/internal/config"
-	"adatrack/internal/logger"
+	"backend/internal/config"
+	"backend/internal/logger"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

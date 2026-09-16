@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"adatrack/internal/config"
-	"adatrack/internal/dbclient"
-	"adatrack/internal/logger"
-	"adatrack/internal/natsclient"
-	"adatrack/internal/redclient"
+	"backend/internal/config"
+	"backend/internal/dbclient"
+	"backend/internal/logger"
+	"backend/internal/natsclient"
+	"backend/internal/redclient"
 )
 
 func main() {

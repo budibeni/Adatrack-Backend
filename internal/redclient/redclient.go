@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"adatrack/internal/config"
-	"adatrack/internal/logger"
+	"backend/internal/config"
+	"backend/internal/logger"
 	"github.com/redis/go-redis/v9"
 )
 

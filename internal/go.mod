@@ -1,4 +1,4 @@
-module adatrack/internal
+module backend/internal
 
 go 1.21
 
