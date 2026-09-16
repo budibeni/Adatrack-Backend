@@ -9,7 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"backend/ingestion-tcp/internal/protocol/coban"
 	"backend/ingestion-tcp/internal/protocol/gt06"
+	"backend/ingestion-tcp/internal/protocol/h02"
+	"backend/ingestion-tcp/internal/protocol/meitrack"
 	"backend/ingestion-tcp/internal/protocol/teltonika"
 	"backend/ingestion-tcp/internal/server"
 	"backend/internal/config"
@@ -31,17 +34,19 @@ func main() {
 		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
 	}
 
-	// Metrics/Health Server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	healthServer := &http.Server{Addr: ":8081", Handler: mux}
 	go healthServer.ListenAndServe()
 
-	// Traccar-style Port Binding: Spin up multiple TCP servers for each protocol
+	// Traccar-style Port Binding for Universal Protocol Support
 	var wg sync.WaitGroup
 	servers := []*server.TCPServer{
-		server.NewTCPServer(":9000", 5000, &gt06.Decoder{}),
-		server.NewTCPServer(":9001", 5000, &teltonika.Decoder{}),
+		server.NewTCPServer(":9000", 5000, &gt06.Decoder{}),      // GT06, Concox, Jimilab
+		server.NewTCPServer(":9001", 5000, &teltonika.Decoder{}), // Teltonika Codec 8/8E
+		server.NewTCPServer(":9002", 5000, &coban.Decoder{}),     // Coban, TK103
+		server.NewTCPServer(":9003", 5000, &meitrack.Decoder{}),  // Meitrack
+		server.NewTCPServer(":9004", 5000, &h02.Decoder{}),       // H02, SinoTrack
 	}
 
 	for _, srv := range servers {
