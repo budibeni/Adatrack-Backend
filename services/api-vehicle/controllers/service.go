@@ -1,0 +1,70 @@
+package controllers
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"ajb_gps/api-vehicle/models"
+	"ajb_gps/internal/tenant"
+)
+
+// Deps are the collaborators of the service (production wiring in main.go).
+type Deps struct {
+	Settings Settings
+	Store    Store
+	KV       *RedisKV
+	Tenants  *tenant.Manager
+	Registry *prometheus.Registry
+}
+
+// Service owns the HTTP engine and every handler of api-vehicle (PRD §8.2
+// fleet management, phase B3).
+type Service struct {
+	settings Settings
+	store    Store
+	kv       *RedisKV
+	tenants  *tenant.Manager
+	registry *prometheus.Registry
+
+	auth   *AuthService
+	engine *gin.Engine
+}
+
+// NewService wires the service and its routes.
+func NewService(deps Deps) *Service {
+	s := &Service{
+		settings: deps.Settings,
+		store:    deps.Store,
+		kv:       deps.KV,
+		tenants:  deps.Tenants,
+		registry: deps.Registry,
+	}
+	s.auth = NewAuthService(deps.Settings, deps.KV)
+	s.engine = s.buildRouter()
+	return s
+}
+
+// Handler returns the HTTP engine (tests use it with httptest).
+func (s *Service) Handler() *gin.Engine { return s.engine }
+
+// PostgresStore returns the store as a *PostgresStore when available.
+func (s *Service) PostgresStore() (*PostgresStore, bool) {
+	pg, ok := s.store.(*PostgresStore)
+	return pg, ok
+}
+
+// vehicleStoreErr maps a persistence failure onto the generic 503 the PRD §8.1
+// contract prescribes (internal details are never leaked to the client).
+func vehicleStoreErr(err error) error {
+	_ = err
+	return errUnavailable("data source unavailable")
+}
+
+// deniedListGuard rejects `include_deleted=true` for non-Admin identities
+// (PRD §6.0.1: only the tenant Admin may look behind the soft-delete veil).
+func deniedListGuard(identity *tenantIdentity, includeDel bool) *APIError {
+	if includeDel && identity.role != models.RoleAdmin {
+		return errForbidden(CodeForbidden, "only Admin may list deleted records")
+	}
+	return nil
+}

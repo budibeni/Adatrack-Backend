@@ -10,6 +10,7 @@ func LoadConfig() *Config {
 	c := &Config{}
 	loadCoreConfig(c)
 	loadPipelineConfig(c)
+	loadAlertConfig(c)
 	return c
 }
 
@@ -83,4 +84,37 @@ func loadPipelineConfig(c *Config) {
 		time.Second, 5 * time.Second, 10 * time.Second,
 	})
 	c.Persistence.MaxPending = envInt("PERSISTENCE_MAX_PENDING", 5000)
+}
+
+// loadAlertConfig fills the worker-alert engine settings (B3, PRD §5.9/§7.2).
+func loadAlertConfig(c *Config) {
+	c.Alert.MetricsAddr = EnvOr("ALERT_METRICS_ADDR", ":8094")
+	c.Alert.DedupWindow = time.Duration(envInt("ALERT_DEDUP_WINDOW_SEC", 300)) * time.Second
+	c.Alert.OfflineAfterMinutes = envInt("OFFLINE_AFTER_MINUTES", 3)
+	c.Alert.OfflineSweepInterval = time.Duration(envInt("ALERT_OFFLINE_SWEEP_SEC", 30)) * time.Second
+	c.Alert.BatteryLowPercent = envInt("BATTERY_LOW_PERCENT", 20)
+	c.Alert.RouteDeviationThresholdM = envFloat("ROUTE_DEVIATION_THRESHOLD_M", 200)
+	c.Alert.RouteDeviationRefresh = time.Duration(envInt("ROUTE_DEVIATION_REFRESH_SEC", 30)) * time.Second
+	c.Alert.GeoFenceRefresh = time.Duration(envInt("GEOFENCE_REFRESH_SEC", 30)) * time.Second
+	c.Alert.SOSEscalationMinutes = envInt("SOS_ESCALATION_MINUTES", 5)
+	c.Alert.SOSEscalationMax = envInt("SOS_ESCALATION_MAX", 3)
+	c.Alert.SOSEscalationInterval = time.Duration(envInt("SOS_ESCALATION_INTERVAL_SEC", 30)) * time.Second
+	c.Alert.SOSCooldownSeconds = envInt("SOS_COOLDOWN_SECONDS", 60)
+	c.Alert.NotifyRateLimitPerMin = envInt("NOTIFY_RATE_LIMIT_PER_MIN", 600)
+	c.Alert.NotifyRetryMax = envInt("NOTIFICATION_RETRY_MAX", 3)
+	c.Alert.NotifyRetryBackoff = envDurationList("NOTIFICATION_RETRY_BACKOFF_MS", []time.Duration{
+		2 * time.Second, 6 * time.Second, 12 * time.Second,
+	})
+
+	c.Alert.SMTP.Host = EnvOr("SMTP_HOST", "")
+	c.Alert.SMTP.Port = EnvOr("SMTP_PORT", "587")
+	c.Alert.SMTP.Username = EnvOr("SMTP_USERNAME", "")
+	c.Alert.SMTP.Password = EnvOr("SMTP_PASSWORD", "")
+	c.Alert.SMTP.From = EnvOr("SMTP_FROM", "notifications@adatrackgps.io")
+	c.Alert.SMTP.TLS = envBool("SMTP_TLS", true)
+
+	c.Alert.SMS.Provider = EnvOr("SMS_PROVIDER", "none")
+	c.Alert.SMS.AccountSID = EnvOr("SMS_TWILIO_ACCOUNT_SID", "")
+	c.Alert.SMS.AuthToken = EnvOr("SMS_AUTH_TOKEN", "")
+	c.Alert.SMS.From = EnvOr("SMS_FROM", "")
 }

@@ -134,13 +134,14 @@ func ParseAlarm(data []byte) (models.TelemetryMessage, bool) {
 }
 
 // ParseLBSAlarm decodes a non-GPS alarm packet (0x19): LBS-only positioning has
-// no UTC date and no coordinates, so the timestamp is "now" and lat/lon stay 0
-// (B3 turns these into OFFLINE/LBS alerts).
+// no UTC date and no coordinates, so the timestamp is "now" and lat/lon stay 0.
+// AlarmLBS marks the message so worker-alert turns it into a SOS/LBS alert (B3).
 func ParseLBSAlarm(_ []byte, imei, company string, vehicleID int64) models.TelemetryMessage {
 	return models.TelemetryMessage{
 		IMEI:        imei,
 		CompanyCode: company,
 		VehicleID:   vehicleID,
+		AlarmLBS:    true,
 		Timestamp:   time.Now().Unix(),
 	}
 }

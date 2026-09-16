@@ -2,13 +2,18 @@
 
 Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
-> **PROGRESS 2026-09-15:** **B0 ✅**, **B1 ✅**, dan **B2 ✅** selesai & terverifikasi
+> **PROGRESS 2026-09-16:** **B0 ✅**, **B1 ✅**, **B2 ✅**, dan **B3 ✅** selesai
 > (compose/migrations/`internal`/`foundation-check` + pipeline ingestion-tcp →
 > worker-live → worker-persistence: load 1000 msg/s tanpa data loss, isolasi
 > tenant 0 leakage, unit+integration test hijau; **service-websocket**: login
 > JWT+refresh rotation, RBAC row-level, REST + WS, FR-5.5 auto-provision,
 > audit trail — `make e2e-ws` **21/21 PASS** dengan WS push **8 ms**,
-> provisioning FR-5.5/FR-5.6 **31/31 PASS**). Fase berikutnya: **B3**.
+> provisioning FR-5.5/FR-5.6 **31/31 PASS**; **B3**: worker-alert — geofence
+> circle/polygon, overspeed grace band, SOS critical + eskalasi, battery/offline,
+> route deviation, notifikasi preferensi + fan-out; api-vehicle — CRUD
+> vehicles/geofences/routes/assignments/speed-configs + soft delete/restore +
+> RBAC row-level; `scripts/test.sh` exit 0 semua modul; E2E live per-alert
+> menunggu infra). Fase berikutnya: **B5a / B4**.
 > Checklist & bukti: `.agent/03-backend-phases.md`.
 
 > **Acuan struktur aplikasi (PRD v1.7.0):** penerapan backend mengikuti
@@ -22,7 +27,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B0** | Infrastruktur + Foundations | `backend/` | ✅ Selesai 2026-09-15 |
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ✅ Selesai 2026-09-15 |
 | **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ✅ Selesai 2026-09-15 |
-| **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ⬜ Berikutnya (belum dimulai) |
+| **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai 2026-09-16 (E2E live per-alert menyusul) |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ⬜ Belum dimulai |
 | **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ⬜ Belum dimulai |
 | **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | ⬜ Belum dimulai |

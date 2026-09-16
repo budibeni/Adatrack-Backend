@@ -24,7 +24,7 @@ load_variant_env "${COMPOSE_VARIANT:-local}"
 LOG_DIR="$ROOT/logs"
 PID_DIR="$LOG_DIR/pids"
 TARGETS_FILE="$ROOT/monitoring/targets/services.json"
-SERVICES=(ingestion-tcp worker-live worker-persistence service-websocket)
+SERVICES=(ingestion-tcp worker-live worker-persistence worker-alert service-websocket api-vehicle)
 
 # Host-side overrides: published infra ports + loopback hosts.
 export POSTGRES_HOST=127.0.0.1
@@ -61,7 +61,9 @@ build_and_start() {
       ingestion-tcp)      addr="${INGESTION_METRICS_ADDR:-:8090}" ;;
       worker-live)        addr="${LIVE_METRICS_ADDR:-:8091}" ;;
       worker-persistence) addr="${PERSISTENCE_METRICS_ADDR:-:8092}" ;;
+      worker-alert)       addr="${ALERT_METRICS_ADDR:-:8094}" ;;
       service-websocket)  addr="${HTTP_ADDR:-:8082}" ;;
+      api-vehicle)        addr="${API_VEHICLE_HTTP_ADDR:-:8081}" ;;
     esac
     if [[ "$first" == true ]]; then first=false; else printf ',\n' >> "$TARGETS_FILE.tmp"; fi
     printf '  {"targets": ["127.0.0.1%s"], "labels": {"service": "%s", "env": "local"}}' "$addr" "$svc" >> "$TARGETS_FILE.tmp"

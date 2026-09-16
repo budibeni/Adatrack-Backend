@@ -63,6 +63,16 @@ func envDurationList(key string, def []time.Duration) []time.Duration {
 	return out
 }
 
+// envFloat parses a floating point env var, falling back to def.
+func envFloat(key string, def float64) float64 {
+	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			return f
+		}
+	}
+	return def
+}
+
 // EnvBoolDefault exposes envBool for services (e.g. GT06_DATE_BCD toggles).
 func EnvBoolDefault(key string, def bool) bool { return envBool(key, def) }
 

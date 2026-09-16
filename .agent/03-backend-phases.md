@@ -142,28 +142,41 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B3 — worker-alert + api-vehicle: Alerts, Geofence, Routes ⬜
+## Phase B3 — worker-alert + api-vehicle: Alerts, Geofence, Routes ✅ (selesai 2026-09-16 — E2E live per-alert menyusul saat infra tersedia)
 
 **Tujuan:** mesin alert real-time + API manajemen armada (CRUD + assignment).
 
 ### Tasks — alert engine (worker-alert)
-- [ ] Kerangka alert: dedup window, severity (low/medium/high/critical), life-cycle open→acknowledged→resolved, persist `th_alerts`.
-- [ ] GEOFENCE: circle (Haversine) & polygon (ray-casting), entry + exit, state Redis, multi-zone.
-- [ ] OVERSPEEDING: `tm_speed_configs` (vehicle-specific > global) + `grace_margin_percent`; critical > 1,5× limit.
-- [ ] SOS: trigger alarm GT06 0x26/0x27/0x19, severity critical, eskalasi otomatis (`SOS_ESCALATION_MINUTES`/`MAX`), catat TTA.
-- [ ] BATTERY_LOW (<20% default) & OFFLINE (stale > `OFFLINE_AFTER_MINUTES`).
-- [ ] ROUTE_DEVIATION: threshold 200 m, refresh 30 s, max deviation ter-update.
-- [ ] Notifikasi: `tm_notification_preferences` (per user/type/channel/min_severity), channel websocket fan-out + email/SMS/push via `td_notifications` (pending→sent/delivered→failed/skipped + reason), template per type, rate limit per company.
+- [x] Kerangka alert: dedup window, severity (low/medium/high/critical), life-cycle open→acknowledged→resolved, persist `th_alerts`.
+      → `services/worker-alert/`: konsumsi `telemetry.raw.>` (queue group `alert`) → evaluasi per tipe → insert `th_alerts` (`ON CONFLICT DO NOTHING` + partial unique index `uq_th_alerts_open_dedup` = satu OPEN per dedup key di level DB); dedup window in-memory `ALERT_DEDUP_WINDOW_SEC` (default 300 s). Life-cycle transition manual via api-vehicle (conditional UPDATE — hanya baris `status='open'` yang bisa di-acknowledge → TTA structurally write-once).
+- [x] GEOFENCE: circle (Haversine) & polygon (ray-casting), entry + exit, state Redis, multi-zone.
+      → `controllers/{geometry,geofence}.go`: `HaversineM` (circle), `PointInPolygon` (ray-casting, ring ditutup implisit), state per `(vehicle, zone)` (inside/outside) → event `entry`/`exit` sesuai flag `on_entry`/`on_exit`; multi-zone per tenant; severity mengikuti zone.
+- [x] OVERSPEEDING: `tm_speed_configs` (vehicle-specific > global) + `grace_margin_percent`; critical > 1,5× limit.
+      → `controllers/speed.go`: `effectiveSpeedConfig` (row vehicle menang, row disabled dilewati, global fallback) + band grace `limit×(1+grace%)`; eskalasi ke `critical` saat speed > 1,5×limit. Unit test: `engine_test.go` (precedence + grace math).
+- [x] SOS: trigger alarm GT06 0x26/0x27/0x19, severity critical, eskalasi otomatis (`SOS_ESCALATION_MINUTES`/`MAX`), catat TTA.
+      → `ingestion-tcp/models+gt06decode` menormalkan alarm 0x26/0x27/0x19 → `alarm_flag=SOS`; `worker-alert/controllers/sos.go` publish alert `sos` **critical** (`alert.sos.<IMEI>`), sweeper eskalasi `escalation_count` per `SOS_ESCALATION_MINUTES`/`SOS_ESCALATION_MAX`; TTA (`sos_time_to_acknowledge_seconds`) dihitung DB saat open→acknowledged pertama (sekali saja).
+- [x] BATTERY_LOW (<20% default) & OFFLINE (stale > `OFFLINE_AFTER_MINUTES`).
+      → `controllers/{battery,offline}.go`: threshold `BATTERY_LOW_PERCENT` (default 20), OFFLINE dari live-state sweeper (`OFFLINE_AFTER_MINUTES`); dedup per identitas; OFFLINE auto-resolve saat vehicle report lagi.
+- [x] ROUTE_DEVIATION: threshold 200 m, refresh 30 s, max deviation ter-update.
+      → `controllers/route.go`: jarak ke waypoint terdekat (`NearestWaypointM`) vs `ROUTE_DEVIATION_THRESHOLD_M` (default 200), refresh 30 s per vehicle-assignment, `deviation_meters` max ter-update di `th_route_assignments`.
+- [x] Notifikasi: `tm_notification_preferences` (per user/type/channel/min_severity), channel websocket fan-out + email/SMS/push via `td_notifications` (pending→sent/delivered→failed/skipped + reason), template per type, rate limit per company.
+      → `controllers/notify.go`: recipients = `tm_user_vehicles` ∪ Admin/Manager tenant; preferensi per user/type/channel/min_severity (default: websocket ON, eksternal OFF); websocket → publish `notify.alert.<vehicle_id>` (fan-out RBAC oleh service-websocket), email via SMTP, audit `td_notifications` (status + `error_reason`), rate limit 1 bucket/menit per company. Migrasi company `012_create_notification_preferences.sql`.
 
 ### Tasks — api-vehicle
-- [ ] CRUD vehicles (+`tm_vehicle_imei_map` sync, driver/device assignment), geofences (circle/polygon + mapping vehicles), routes + `th_route_assignments` + transisi status manual.
-- [ ] CRUD `tm_speed_configs`; soft delete + restore semua entitas (pola §6.0.1).
+- [x] CRUD vehicles (+`tm_vehicle_imei_map` sync, driver/device assignment), geofences (circle/polygon + mapping vehicles), routes + `th_route_assignments` + transisi status manual.
+      → `services/api-vehicle/` (`:8081`): `GET/POST/PATCH/DELETE /api/v1/vehicles` (+`/{id}/restore`), `/api/v1/geofences` (+validasi geometri circle/polygon + mapping `tm_geofence_vehicles`), `/api/v1/routes` + `/routes/{id}/assignments` (state machine `not_started→in_progress→completed|delayed`, `started_at`/`completed_at` otomatis). IMEI **immutable** via API (409); setiap create/update/restore menyinkronkan master `tm_vehicle_imei_map` (anti-spoof FR-1.4), soft delete menonaktifkan mapping.
+- [x] CRUD `tm_speed_configs`; soft delete + restore semua entitas (pola §6.0.1).
+      → `/api/v1/speed-configs` (vehicle_id null = default tenant; validasi vehicle ada). Soft delete semua entitas: `deleted_at/deleted_by/delete_reason`, `include_deleted=true` **Admin-only**, restore mengembalikan baris + IMEI map. Response/error envelope PRD §8.1, pagination §8.5, body limit 1 MiB, rate limit 100/menit/user, security headers + CORS allowlist.
 
 ### Acceptance
-- [ ] E2E per alert type: trigger → alert + persist + publish → notifikasi sesuai preference.
-- [ ] Dedup & eskalasi benar (SOS TTA tercatat sekali per alert).
-- [ ] RBAC row-level pada seluruh endpoint api-vehicle (403 non-assigned).
-- [ ] Unit test geometri (Haversine/ray-casting) + handler hijau.
+- [ ] E2E per alert type: trigger → alert + persist + publish → notifikasi sesuai preference. ⏳ *menunggu infra live (Docker daemon tidak tersedia di environment ini); jalankan setelah compose up.*
+- [ ] Dedup & eskalasi benar (SOS TTA tercatat sekali per alert). ⏳ *terverifikasi struktural (partial unique index + conditional UPDATE + unit test lifecycle ack); E2E live menyusul.*
+- [x] RBAC row-level pada seluruh endpoint api-vehicle (403 non-assigned).
+      → `controllers/{rbac,ratelimit_mw}.go`: identity di-resolve per-request (`tm_user_company_access.role_override` + `tm_user_vehicles`), `requireVehicleAccess` di semua `/:id` (grant kosong = nol kendaraan), `requireWrite` (Admin/Manager) + `requireAdmin` (delete/restore) + `requireTenantScope` + `requirePasswordRotated`; unit test: `TestRequireVehicleAccessRowLevelDenied`, `TestRequireAdminGuard`, `TestListVehiclesIncludeDeletedAdminOnly`.
+- [x] Unit test geometri (Haversine/ray-casting) + handler hijau.
+      → worker-alert `engine_test.go` (Haversine, ray-casting square+concave, nearest waypoint, effective config, grace math) + api-vehicle contract test (row-level 403, IMEI immutable 409, validasi geometri, acknowledge lifecycle, pagination, duplicate IMEI 409) — `scripts/test.sh` **exit 0 semua modul** (worker-alert & api-vehicle masuk daftar MODULES).
+- Migrasi company baru `008_create_geofences` · `009_create_speed_configs` · `010_create_routes` (+`th_route_assignments`) · `011_create_alerts` (+`td_notifications`) · `012_create_notification_preferences` — idempoten, ledger-audited.
+- `scripts/start-services.sh` + `.env.example` diperbarui (`worker-alert` :8094, `api-vehicle` :8081).
 
 ---
 

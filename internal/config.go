@@ -100,6 +100,50 @@ type Config struct {
 		MasterSchema  string
 		CompanyPrefix string
 	}
+
+	// Alert holds the worker-alert engine settings (B3, PRD §5.9/§7.2/§7.3).
+	Alert struct {
+		// MetricsAddr is the /healthz + /metrics listener (ALERT_METRICS_ADDR).
+		MetricsAddr string
+		// DedupWindow suppresses repeated alerts of the same dedup identity
+		// while an open alert exists + repeat window (ALERT_DEDUP_WINDOW_SEC).
+		DedupWindow time.Duration
+		// OfflineAfterMinutes is the OFFLINE staleness threshold (FR-2.2).
+		OfflineAfterMinutes int
+		// OfflineSweepInterval is the OFFLINE sweeper cadence.
+		OfflineSweepInterval time.Duration
+		// BatteryLowPercent is the BATTERY_LOW threshold (default 20).
+		BatteryLowPercent int
+		// RouteDeviationThresholdM is the ROUTE_DEVIATION distance threshold (200 m).
+		RouteDeviationThresholdM float64
+		// RouteDeviationRefresh is the route-assignment cache refresh cadence (30 s).
+		RouteDeviationRefresh time.Duration
+		// GeoFenceRefresh is the geofence/config cache refresh cadence (30 s).
+		GeoFenceRefresh time.Duration
+		// SOSEscalationMinutes: an open SOS older than this escalates.
+		SOSEscalationMinutes int
+		// SOSEscalationMax caps the escalation counter per alert.
+		SOSEscalationMax int
+		// SOSEscalationInterval is the escalation re-check cadence (30 s).
+		SOSEscalationInterval time.Duration
+		// SOSCooldownSeconds dedups repeated SOS triggers from one device.
+		SOSCooldownSeconds int
+		// NotifyRateLimitPerMin caps notifications per company per minute (0 = off).
+		NotifyRateLimitPerMin int
+		// NotifyRetryMax + NotifyRetryBackoff for external delivery.
+		NotifyRetryMax    int
+		NotifyRetryBackoff []time.Duration
+		// SMTP settings (§7.3) — empty host disables the email channel.
+		SMTP struct {
+			Host, Port, Username, Password, From string
+			TLS                                  bool
+		}
+		// SMS settings (§7.3) — provider "none" skips the sms channel.
+		SMS struct {
+			Provider string // none|twilio|aws_sns
+			AccountSID, AuthToken, From string
+		}
+	}
 }
 
 // Validate rejects configurations that cannot work, so a service fails at boot

@@ -95,6 +95,32 @@ func (c *RedisClient) Get(ctx context.Context, key string) (string, error) {
 	return val, err
 }
 
+// SetNX stores a value only when the key does not exist yet, returning whether
+// the write happened (worker-alert dedup fast path). A nil/empty TTL means no
+// expiry.
+func (c *RedisClient) SetNX(ctx context.Context, key string, value any, ttl time.Duration) (bool, error) {
+	start := time.Now()
+	ok, err := c.client.SetNX(ctx, key, value, ttl).Result()
+	c.record("SETNX", 1, time.Since(start), err)
+	return ok, err
+}
+
+// Incr increments a counter, returning the new value (rate limiters).
+func (c *RedisClient) Incr(ctx context.Context, key string) (int64, error) {
+	start := time.Now()
+	n, err := c.client.Incr(ctx, key).Result()
+	c.record("INCR", 1, time.Since(start), err)
+	return n, err
+}
+
+// Expire sets a TTL on an existing key.
+func (c *RedisClient) Expire(ctx context.Context, key string, ttl time.Duration) error {
+	start := time.Now()
+	err := c.client.Expire(ctx, key, ttl).Err()
+	c.record("EXPIRE", 1, time.Since(start), err)
+	return err
+}
+
 // Set stores a value with a TTL.
 func (c *RedisClient) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	start := time.Now()
