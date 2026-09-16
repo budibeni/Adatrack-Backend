@@ -23,7 +23,7 @@ func main() {
 	if err := dbclient.Connect(ctx, cfg); err != nil {
 		logger.Log.Error("FATAL Database", "err", err); os.Exit(1)
 	}
-	defer dbclient.Close()
+	defer dbclient.Pool.Close()
 
 	router := api.SetupRouter(cfg)
 

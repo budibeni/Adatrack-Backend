@@ -1,6 +1,5 @@
 package natsclient
 import (
-	"fmt"
 	"time"
 	"backend/internal/config"
 	"backend/internal/logger"

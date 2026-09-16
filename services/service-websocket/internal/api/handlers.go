@@ -130,7 +130,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	ttl := time.Until(claims.ExpiresAt.Time)
 	
-	redclient.RDB.Set(r.Context(), "denylist:"+tokenStr, "1", ttl)
+	redclient.Client.Set(r.Context(), "denylist:"+tokenStr, "1", ttl)
 	
 	h.auditLog(r.Context(), claims.CompanyCode, "LOGOUT", "success", claims.UserID, claims.Email, claims.Role, "User logged out")
 	
@@ -254,16 +254,16 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	_ = chi.URLParam(r, "id")
 	// Must check RBAC tm_user_vehicles logic here.
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
-		"data": map[string]interface{}{"id": id, "position": "live_data"},
+		"data": map[string]interface{}{"id": chi.URLParam(r, "id"), "position": "live_data"},
 	})
 }
 
 func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	_ = chi.URLParam(r, "id")
 	// Fetch from th_telemetry_logs
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",

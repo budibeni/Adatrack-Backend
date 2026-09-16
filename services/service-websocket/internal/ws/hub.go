@@ -2,7 +2,6 @@ package ws
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"github.com/nats-io/nats.go"
