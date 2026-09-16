@@ -14,6 +14,8 @@ type Config struct {
 	RedisAddr         string
 	RedisPassword     string
 	NatsURL           string
+	JWTSecret         string
+	PortWebsocket     string
 	
 	// GPS Protocol Ports
 	PortGT06      string
@@ -36,6 +38,8 @@ func Load() *Config {
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		NatsURL:       getEnv("NATS_URL", "nats://localhost:4222"),
+		JWTSecret:     getEnv("JWT_SECRET", "super-secret-key-change-me"),
+		PortWebsocket: getEnv("PORT_WEBSOCKET", "8080"),
 		
 		PortGT06:      getEnv("PORT_GT06", "15000"),
 		PortTeltonika: getEnv("PORT_TELTONIKA", "15001"),
