@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  postgres:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+  redis:
+    ports:
+      - "6379:6379"
+  nats:
+    ports:
+      - "4222:4222"
+      - "8222:8222"

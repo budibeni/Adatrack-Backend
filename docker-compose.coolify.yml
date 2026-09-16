@@ -1,0 +1,9 @@
+version: '3.8'
+# Deployment overrides for coolify
+services:
+  postgres:
+    restart: always
+  redis:
+    restart: always
+  nats:
+    restart: always
