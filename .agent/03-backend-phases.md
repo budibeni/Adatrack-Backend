@@ -28,25 +28,25 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B0 — Infrastruktur + Foundations ⬜
+## Phase B0 — Infrastruktur + Foundations ✅
 
 **Tujuan:** environment compose + kerangka service Go + skema PostgreSQL siap diisi pipeline.
 
 ### Tasks
-- [ ] `docker-compose` primary: PostgreSQL 15 (`postgres:15-alpine`), Redis, NATS (JetStream) — healthcheck semua service.
-- [ ] Config ganda sejak awal: `docker-compose.local.yml` / `docker-compose.coolify.yml` + `.env.local` / `.env.coolify` (PRD §14) + helper `scripts/compose-up.sh`.
-- [ ] Bootstrap `init-pg/`: master schema (`adatrack_gps_master`) + seed referensi wilayah Indonesia (provinsi → desa) + template company schema (`adatrack_gps_{code}`).
-- [ ] Migrasi master awal: `tm_users`, `tm_companies` (+`business_type` B2B/B2C), `tm_user_vehicles`, `tm_modules` + `tm_menus` (seed registry menu dari `docs/FRONTEND.md` §1–§2).
-- [ ] Kerangka `internal/`: `config`, `logger`, `metrics`, `natsclient`, `dbclient` (pgx pool), `redclient`, `tenant` (resolusi schema per request).
-- [ ] NATS streams/subjects: `telemetry.raw.>`, `alert.*`, `notify.*`, `media.*` + retention limits.
-- [ ] `Makefile`/`scripts/` dev loop: build, test, up/down, reset-db, provision tenant.
-- [ ] Satu service minimal ter-boot end-to-end sebagai bukti wiring (healthz + metrics + NATS + PG + Redis).
+- [x] `docker-compose` primary: PostgreSQL 15 (`postgres:15-alpine`), Redis, NATS (JetStream) — healthcheck semua service.
+- [x] Config ganda sejak awal: `docker-compose.local.yml` / `docker-compose.coolify.yml` + `.env.local` / `.env.coolify` (PRD §14) + helper `scripts/compose-up.sh`.
+- [x] Bootstrap `init-pg/`: master schema (`adatrack_gps_master`) + seed referensi wilayah Indonesia (provinsi → desa) + template company schema (`adatrack_gps_{code}`).
+- [x] Migrasi master awal: `tm_users`, `tm_companies` (+`business_type` B2B/B2C), `tm_user_vehicles`, `tm_modules` + `tm_menus` (seed registry menu dari `docs/FRONTEND.md` §1–§2).
+- [x] Kerangka `internal/`: `config`, `logger`, `metrics`, `natsclient`, `dbclient` (pgx pool), `redclient`, `tenant` (resolusi schema per request).
+- [x] NATS streams/subjects: `telemetry.raw.>`, `alert.*`, `notify.*`, `media.*` + retention limits.
+- [x] `Makefile`/`scripts/` dev loop: build, test, up/down, reset-db, provision tenant.
+- [x] Satu service minimal ter-boot end-to-end sebagai bukti wiring (healthz + metrics + NATS + PG + Redis).
 
 ### Acceptance
-- [ ] `compose up` (mode local & coolify) → semua container healthy.
-- [ ] Provision tenant baru → schema per-tenant lengkap + seed referensi.
+- [x] `compose up` (mode local & coolify) → semua container healthy.
+- [x] Provision tenant baru → schema per-tenant lengkap + seed referensi.
 - [x] Service contoh: `/healthz` OK, `/metrics` ter-scrape, publish/consume NATS OK.
-- [ ] `init-pg` idempoten (re-run tanpa error).
+- [x] `init-pg` idempoten (re-run tanpa error).
 
 ---
 

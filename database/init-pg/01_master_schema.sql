@@ -1,0 +1,119 @@
+-- 1. Create the master schema
+CREATE SCHEMA IF NOT EXISTS adatrack_gps_master;
+SET search_path TO adatrack_gps_master;
+
+-- 2. Reference Tables
+CREATE TABLE IF NOT EXISTS tm_countries (
+    code VARCHAR(10) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tm_provinces (
+    id SERIAL PRIMARY KEY,
+    country_code VARCHAR(10) REFERENCES tm_countries(code),
+    name VARCHAR(100) NOT NULL
+);
+
+-- 3. Core B2B & B2C Tables
+CREATE TABLE IF NOT EXISTS tm_companies (
+    code VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    legal_name VARCHAR(100),
+    tax_id VARCHAR(50),
+    country_code VARCHAR(10) REFERENCES tm_countries(code),
+    timezone VARCHAR(50) DEFAULT 'UTC',
+    address TEXT,
+    phone VARCHAR(20),
+    business_type VARCHAR(10) NOT NULL DEFAULT 'b2b' CHECK (business_type IN ('b2b', 'b2c')),
+    created_by INT,
+    updated_by INT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS tm_users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    global_role VARCHAR(50) NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    must_change_password BOOLEAN DEFAULT false,
+    password_changed_at TIMESTAMP WITH TIME ZONE,
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    deleted_by INT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tm_users_b2c (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    phone VARCHAR(20),
+    is_active BOOLEAN DEFAULT true,
+    must_change_password BOOLEAN DEFAULT false,
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. Frontend Menus & Registry
+CREATE TABLE IF NOT EXISTS tm_modules (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    app VARCHAR(20) NOT NULL CHECK (app IN ('business', 'personal')),
+    sort_order INT DEFAULT 0,
+    enabled BOOLEAN DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS tm_menus (
+    id SERIAL PRIMARY KEY,
+    module_id INT REFERENCES tm_modules(id),
+    code VARCHAR(100) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    path VARCHAR(200) NOT NULL,
+    parent_id INT REFERENCES tm_menus(id),
+    sort_order INT DEFAULT 0,
+    enabled BOOLEAN DEFAULT true
+);
+
+-- 5. Fleet / Telemetry Lookup
+CREATE TABLE IF NOT EXISTS tm_vehicle_imei_map (
+    imei VARCHAR(20) PRIMARY KEY,
+    company_code VARCHAR(50) NOT NULL REFERENCES tm_companies(code),
+    vehicle_id INT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_imei_map_company ON tm_vehicle_imei_map(company_code);
+
+-- 6. Audit & Migrations
+CREATE TABLE IF NOT EXISTS tm_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    action VARCHAR(100) NOT NULL,
+    outcome VARCHAR(50) NOT NULL,
+    actor_user_id INT,
+    actor_email VARCHAR(100),
+    actor_role VARCHAR(50),
+    company_code VARCHAR(50),
+    entity_type VARCHAR(50),
+    entity_id VARCHAR(50),
+    before_data JSONB,
+    after_data JSONB,
+    ip_address VARCHAR(50),
+    user_agent TEXT,
+    request_id VARCHAR(100),
+    reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_audit_logs_company ON tm_audit_logs(company_code, created_at);
+
+CREATE TABLE IF NOT EXISTS tm_schema_migrations (
+    version VARCHAR(50) PRIMARY KEY,
+    checksum VARCHAR(100) NOT NULL,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    success BOOLEAN NOT NULL,
+    duration_ms INT,
+    applied_by VARCHAR(100)
+);
