@@ -1,4 +1,4 @@
 #!/bin/bash
 MODE=${1:-local}
 echo "Starting infrastructure in $MODE mode..."
-docker-compose -f docker-compose.yml -f docker-compose.$MODE.yml up -d
+docker-compose --env-file .env.$MODE -f docker-compose.$MODE.yml up -d
