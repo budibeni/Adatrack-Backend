@@ -97,3 +97,32 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		RawData:     hex.EncodeToString(data),
 	}, nil
 }
+
+importbufio "bufio"
+importbinary "encoding/binary"
+
+func (d *Decoder) FrameSplitter() importbufio.SplitFunc {
+	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 { return 0, nil, nil }
+		if len(data) < 8 { return 0, nil, nil } // Wait for length bytes
+		
+		// Teltonika Login Check (starts with 2-byte IMEI length, e.g. 0x00 0x0F for 15)
+		imeiLen := int(importbinary.BigEndian.Uint16(data[0:2]))
+		if imeiLen > 10 && imeiLen < 25 && len(data) >= imeiLen+2 { // Looks like a login packet
+			return imeiLen + 2, data[:imeiLen+2], nil
+		}
+		
+		// Teltonika AVL Check (starts with 0x00 0x00 0x00 0x00)
+		if data[0] == 0 && data[1] == 0 && data[2] == 0 && data[3] == 0 {
+			dataLen := int(importbinary.BigEndian.Uint32(data[4:8]))
+			totalFrame := dataLen + 12
+			if len(data) < totalFrame {
+				return 0, nil, nil
+			}
+			return totalFrame, data[:totalFrame], nil
+		}
+		
+		// Unknown, advance 1
+		return 1, nil, nil
+	}
+}

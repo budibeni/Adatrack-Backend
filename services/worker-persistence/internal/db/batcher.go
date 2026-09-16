@@ -2,11 +2,13 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"backend/internal/dbclient"
 	"backend/internal/logger"
 	"backend/internal/models"
+	"backend/internal/natsclient"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -15,7 +17,6 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 		return nil
 	}
 
-	// Group by company to insert into specific schemas
 	grouped := make(map[string][]models.TelemetryPayload)
 	for _, p := range payloads {
 		grouped[p.CompanyCode] = append(grouped[p.CompanyCode], p)
@@ -41,15 +42,26 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 		}
 
 		br := dbclient.Pool.SendBatch(ctx, batch)
+		
+		var batchError error
 		for i := 0; i < len(items); i++ {
-			_, err := br.Exec()
-			if err != nil {
-				br.Close()
-				logger.Log.Error("Batch insert failed", "company", company, "err", err)
-				return err // Will cause NATS to redeliver
+			if _, err := br.Exec(); err != nil {
+				batchError = err
+				break
 			}
 		}
 		br.Close()
+		
+		if batchError != nil {
+			logger.Log.Error("Batch insert failed, routing to DLQ", "company", company, "err", batchError)
+			// Enterprise Hardening: Prevent Poison Pill by routing bad payloads to DLQ instead of blocking NATS worker
+			for _, item := range items {
+				data, _ := json.Marshal(item)
+				natsclient.PublishToDLQ("telemetry", data)
+			}
+		}
 	}
+	// We always return nil so the NATS message gets Ack()ed. 
+	// The bad rows are now safely stored in the DLQ Stream.
 	return nil
 }

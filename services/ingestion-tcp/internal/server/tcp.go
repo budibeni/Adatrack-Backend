@@ -1,8 +1,8 @@
 package server
 
 import (
+	"bufio"
 	"context"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -86,20 +86,24 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 	var tenant handler.TenantInfo
 	authenticated := false
 
-	buffer := make([]byte, 2048)
+	// Enterprise Hardening: Use bufio.Scanner to prevent TCP Sticky Packets / Fragmentation
+	scanner := bufio.NewScanner(conn)
+	scanner.Split(s.decoder.FrameSplitter())
+
+	// Buffered channel/timeout handling natively supported by setting read deadlines inside loop if needed
+	// but standard scanner loop blocks nicely.
 	for {
 		conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
-		n, err := conn.Read(buffer)
-		if err != nil {
-			if err != io.EOF {
-				logger.Log.Error("Read error", "ip", ip, "error", err)
+		if !scanner.Scan() {
+			err := scanner.Err()
+			if err != nil {
+				logger.Log.Error("TCP Scanner read error", "ip", ip, "err", err)
 			}
 			break
 		}
 
-		data := buffer[:n]
+		data := scanner.Bytes()
 		
-		// Attempt Login if not authenticated
 		if !authenticated {
 			deviceIMEI, response, err := s.decoder.DecodeLogin(data)
 			if err != nil {
@@ -121,14 +125,12 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		// Handle Heartbeat
 		if s.decoder.IsHeartbeat(data) {
 			resp := s.decoder.GenerateHeartbeatResponse(data)
 			if resp != nil { conn.Write(resp) }
 			continue
 		}
 
-		// Handle Telemetry Location
 		payload, err := s.decoder.DecodeLocation(data, imei, tenant.CompanyCode, tenant.VehicleID)
 		if err != nil {
 			logger.Log.Warn("Invalid location packet", "imei", imei, "err", err)

@@ -62,3 +62,20 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		RawData:     str,
 	}, nil
 }
+
+importbufio "bufio"
+importbytes "bytes"
+
+func (d *Decoder) FrameSplitter() importbufio.SplitFunc {
+	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 { return 0, nil, nil }
+		if i := importbytes.IndexByte(data, ';'); i >= 0 {
+			return i + 1, data[:i+1], nil
+		}
+		if i := importbytes.IndexByte(data, '\n'); i >= 0 {
+			return i + 1, data[:i+1], nil
+		}
+		if atEOF { return len(data), data, nil }
+		return 0, nil, nil
+	}
+}

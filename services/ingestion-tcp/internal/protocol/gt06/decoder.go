@@ -75,3 +75,27 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		Timestamp: timestamp, RawData: hex.EncodeToString(data),
 	}, nil
 }
+
+importbufio "bufio"
+
+func (d *Decoder) FrameSplitter() importbufio.SplitFunc {
+	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+		if atEOF && len(data) == 0 { return 0, nil, nil }
+		if len(data) < 4 { return 0, nil, nil } // Wait for more data
+		
+		// Ensure header matches GT06 (0x78 0x78 or 0x79 0x79)
+		if (data[0] != 0x78 || data[1] != 0x78) && (data[0] != 0x79 || data[1] != 0x79) {
+			// Corrupt bytes, advance 1 to recover
+			return 1, nil, nil 
+		}
+		
+		pktLength := int(data[2])
+		totalFrameLen := pktLength + 5
+		
+		if len(data) < totalFrameLen {
+			return 0, nil, nil // Need more data for full frame
+		}
+		
+		return totalFrameLen, data[:totalFrameLen], nil
+	}
+}
