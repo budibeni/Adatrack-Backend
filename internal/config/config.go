@@ -14,6 +14,13 @@ type Config struct {
 	RedisAddr         string
 	RedisPassword     string
 	NatsURL           string
+	
+	// GPS Protocol Ports
+	PortGT06      string
+	PortTeltonika string
+	PortCoban     string
+	PortMeitrack  string
+	PortH02       string
 }
 func Load() *Config {
 	maxConns, _ := strconv.Atoi(getEnv("DB_MAX_CONNS", "50"))
@@ -29,6 +36,12 @@ func Load() *Config {
 		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		NatsURL:       getEnv("NATS_URL", "nats://localhost:4222"),
+		
+		PortGT06:      getEnv("PORT_GT06", "15000"),
+		PortTeltonika: getEnv("PORT_TELTONIKA", "15001"),
+		PortCoban:     getEnv("PORT_COBAN", "15002"),
+		PortMeitrack:  getEnv("PORT_MEITRACK", "15003"),
+		PortH02:       getEnv("PORT_H02", "15004"),
 	}
 }
 func getEnv(key, fallback string) string {

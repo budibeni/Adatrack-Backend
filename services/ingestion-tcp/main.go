@@ -39,14 +39,14 @@ func main() {
 	healthServer := &http.Server{Addr: ":8081", Handler: mux}
 	go healthServer.ListenAndServe()
 
-	// Traccar-style Port Binding for Universal Protocol Support
+	// Traccar-style Port Binding using Dynamic Ports from ENV
 	var wg sync.WaitGroup
 	servers := []*server.TCPServer{
-		server.NewTCPServer(":9000", 5000, &gt06.Decoder{}),      // GT06, Concox, Jimilab
-		server.NewTCPServer(":9001", 5000, &teltonika.Decoder{}), // Teltonika Codec 8/8E
-		server.NewTCPServer(":9002", 5000, &coban.Decoder{}),     // Coban, TK103
-		server.NewTCPServer(":9003", 5000, &meitrack.Decoder{}),  // Meitrack
-		server.NewTCPServer(":9004", 5000, &h02.Decoder{}),       // H02, SinoTrack
+		server.NewTCPServer(":"+cfg.PortGT06, 5000, &gt06.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortTeltonika, 5000, &teltonika.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortCoban, 5000, &coban.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortMeitrack, 5000, &meitrack.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortH02, 5000, &h02.Decoder{}),
 	}
 
 	for _, srv := range servers {
