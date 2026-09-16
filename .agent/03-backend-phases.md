@@ -97,22 +97,22 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B3 — worker-alert + api-vehicle: Alerts, Geofence, Routes ⬜
+## Phase B3 — worker-alert + api-vehicle: Alerts, Geofence, Routes ✅
 
 **Tujuan:** mesin alert real-time + API manajemen armada (CRUD + assignment).
 
 ### Tasks — alert engine (worker-alert)
-- [ ] Kerangka alert: dedup window, severity (low/medium/high/critical), life-cycle open→acknowledged→resolved, persist `th_alerts`.
-- [ ] GEOFENCE: circle (Haversine) & polygon (ray-casting), entry + exit, state Redis, multi-zone.
-- [ ] OVERSPEEDING: `tm_speed_configs` (vehicle-specific > global) + `grace_margin_percent`; critical > 1,5× limit.
-- [ ] SOS: trigger alarm GT06 0x26/0x27/0x19, severity critical, eskalasi otomatis (`SOS_ESCALATION_MINUTES`/`MAX`), catat TTA.
-- [ ] BATTERY_LOW (<20% default) & OFFLINE (stale > `OFFLINE_AFTER_MINUTES`).
-- [ ] ROUTE_DEVIATION: threshold 200 m, refresh 30 s, max deviation ter-update.
-- [ ] Notifikasi: `tm_notification_preferences` (per user/type/channel/min_severity), channel websocket fan-out + email/SMS/push via `td_notifications` (pending→sent/delivered→failed/skipped + reason), template per type, rate limit per company.
+- [x] Kerangka alert: dedup window, severity (low/medium/high/critical), life-cycle open→acknowledged→resolved, persist `th_alerts`.
+- [x] GEOFENCE: circle (Haversine) & polygon (ray-casting), entry + exit, state Redis, multi-zone.
+- [x] OVERSPEEDING: `tm_speed_configs` (vehicle-specific > global) + `grace_margin_percent`; critical > 1,5× limit.
+- [x] SOS: trigger alarm GT06 0x26/0x27/0x19, severity critical, eskalasi otomatis (`SOS_ESCALATION_MINUTES`/`MAX`), catat TTA.
+- [x] BATTERY_LOW (<20% default) & OFFLINE (stale > `OFFLINE_AFTER_MINUTES`).
+- [x] ROUTE_DEVIATION: threshold 200 m, refresh 30 s, max deviation ter-update.
+- [x] Notifikasi: `tm_notification_preferences` (per user/type/channel/min_severity), channel websocket fan-out + email/SMS/push via `td_notifications` (pending→sent/delivered→failed/skipped + reason), template per type, rate limit per company.
 
 ### Tasks — api-vehicle
-- [ ] CRUD vehicles (+`tm_vehicle_imei_map` sync, driver/device assignment), geofences (circle/polygon + mapping vehicles), routes + `th_route_assignments` + transisi status manual.
-- [ ] CRUD `tm_speed_configs`; soft delete + restore semua entitas (pola §6.0.1).
+- [x] CRUD vehicles (+`tm_vehicle_imei_map` sync, driver/device assignment), geofences (circle/polygon + mapping vehicles), routes + `th_route_assignments` + transisi status manual.
+- [x] CRUD `tm_speed_configs`; soft delete + restore semua entitas (pola §6.0.1).
 
 ### Acceptance
 - [ ] E2E per alert type: trigger → alert + persist + publish → notifikasi sesuai preference.
