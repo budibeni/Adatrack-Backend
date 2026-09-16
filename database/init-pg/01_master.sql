@@ -36,3 +36,11 @@ CREATE TABLE IF NOT EXISTS tm_user_vehicles (
     vehicle_id INT,
     PRIMARY KEY(user_id, vehicle_id)
 );
+
+CREATE TABLE IF NOT EXISTS tm_vehicles (
+    id SERIAL PRIMARY KEY,
+    imei VARCHAR(20) UNIQUE NOT NULL,
+    plate_number VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP
+);
