@@ -39,6 +39,11 @@ var (
 		Help:    "End-to-end latency of one telemetry evaluation",
 		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5},
 	})
+
+	fuelReads = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "fuel_readings_total",
+		Help: "Fuel telemetry messages evaluated by the alert engine (B5a)",
+	}, []string{"company"})
 )
 
 // RegisterMetrics registers the worker-alert collectors.
@@ -47,5 +52,5 @@ func RegisterMetrics(reg prometheus.Registerer) {
 		return
 	}
 	reg.MustRegister(alertsRaised, alertsDeduped, alertsResolved, notificationsSent,
-		sosEscalations, alertPersistErrors, alertEngineLatency)
+		sosEscalations, alertPersistErrors, alertEngineLatency, fuelReads)
 }

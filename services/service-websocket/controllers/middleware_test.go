@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestAPIRateLimitPerUser enforces PRD §8.4 (100 requests / minute / user).

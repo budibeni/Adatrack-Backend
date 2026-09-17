@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"ajb_gps/internal"
+	"adatrack_gps/internal"
 )
 
 // MinJWTSecretLen mirrors service-websocket (fail-closed §9.1).

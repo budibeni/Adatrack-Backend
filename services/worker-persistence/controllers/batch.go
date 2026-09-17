@@ -9,8 +9,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-persistence/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-persistence/models"
 )
 
 // handleMessage decodes a payload and appends it to the batch buffer.
@@ -30,10 +30,25 @@ func (p *Persister) handleMessage(msg *nats.Msg) error {
 		p.publishError(t.IMEI, []byte("tenant:missing"))
 		return nil
 	}
+	if t.HasFuel() {
+		// B5a FR-7.4: every fuel-bearing packet (with or without position) is
+		// persisted to td_fuel_logs. Positioned rows keep flowing to
+		// th_telemetry_logs as well (below); fuel-only rows stop here.
+		p.mu.Lock()
+		p.fuelPending = append(p.fuelPending, models.ToFuelRow(t))
+		fuelSize := len(p.fuelPending)
+		p.mu.Unlock()
+		fuelRowsPending.Set(float64(fuelSize))
+		if fuelSize >= p.cfg.Persistence.BatchSize {
+			p.poke()
+		}
+	}
 	if models.Positionless(t) {
 		// Heartbeat/fuel-only packets carry no position: they belong to the live
-		// state (and, from B5a, th_fuel_logs) — not to th_telemetry_logs (FR-3.4).
-		positionlessRows.Inc()
+		// state and td_fuel_logs — not to th_telemetry_logs (FR-3.4).
+		if !t.HasFuel() {
+			positionlessRows.Inc()
+		}
 		return nil
 	}
 
@@ -50,23 +65,99 @@ func (p *Persister) handleMessage(msg *nats.Msg) error {
 	return nil
 }
 
-// flush snapshots the buffer and persists it per company.
+// flush snapshots both buffers and persists them per company.
 func (p *Persister) flush() {
 	p.mu.Lock()
-	if len(p.pending) == 0 {
+	if len(p.pending) == 0 && len(p.fuelPending) == 0 {
 		p.mu.Unlock()
 		return
 	}
 	rows := p.pending
 	p.pending = make([]models.Row, 0, p.cfg.Persistence.BatchSize)
 	pendingRows.Set(0)
+	fuel := p.fuelPending
+	p.fuelPending = nil
+	fuelRowsPending.Set(0)
 	p.mu.Unlock()
 
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
 		p.persist(companyGroups(rows))
+		if len(fuel) > 0 {
+			p.persistFuel(fuelGroups(fuel))
+		}
 	}()
+}
+
+// fuelGroups groups fuel rows by company code (one INSERT per tenant schema).
+func fuelGroups(rows []models.FuelRow) map[string][]models.FuelRow {
+	groups := make(map[string][]models.FuelRow)
+	for _, r := range rows {
+		groups[r.CompanyCode] = append(groups[r.CompanyCode], r)
+	}
+	return groups
+}
+
+// persistFuel writes every fuel company group with retry + backoff (FR-3.4).
+func (p *Persister) persistFuel(groups map[string][]models.FuelRow) {
+	for company, rows := range groups {
+		p.persistFuelCompany(company, rows)
+	}
+}
+
+// persistFuelCompany inserts one td_fuel_logs batch into the tenant schema.
+func (p *Persister) persistFuelCompany(company string, rows []models.FuelRow) {
+	routingStart := time.Now()
+	pool, err := p.resolveCompanyDB(company)
+	tenantRoutingDuration.Observe(float64(time.Since(routingStart).Microseconds()) / 1000.0)
+	if err != nil {
+		slog.Error("persistence: fuel tenant routing failed; rows dead-lettered",
+			"company", company, "rows", len(rows), "error", err)
+		batchInsertErrors.WithLabelValues(company).Inc()
+		for _, r := range rows {
+			deadLettered.Inc()
+			p.publishError(r.IMEI, []byte("tenant:routing"))
+		}
+		return
+	}
+
+	values := make([][]any, len(rows))
+	for i, r := range rows {
+		values[i] = r.Values()
+	}
+
+	backoff := p.cfg.Persistence.Backoff
+	maxRetries := p.cfg.Persistence.RetryMax
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+
+	err = internal.RetryWithBackoff(p.ctx, backoff, maxRetries, func(ctx context.Context) error {
+		attemptCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		_, ierr := internal.BatchInsert(attemptCtx, pool, models.FuelTableName, models.FuelInsertColumns, values)
+		if ierr != nil && internal.IsTransientError(ierr) {
+			retryAttempts.Inc()
+			slog.Warn("persistence: transient fuel insert failure, retrying",
+				"company", company, "rows", len(rows), "error", ierr)
+		}
+		return ierr
+	})
+	if err == nil {
+		batchInsertSize.Observe(float64(len(rows)))
+		messagesProcessed.WithLabelValues(company).Add(float64(len(rows)))
+		slog.Debug("persistence: fuel batch inserted", "company", company, "rows", len(rows))
+		return
+	}
+
+	batchInsertErrors.WithLabelValues(company).Inc()
+	slog.Error("persistence: fuel batch insert failed after retries",
+		"company", company, "rows", len(rows), "error", err)
+	for _, r := range rows {
+		deadLettered.Inc()
+		p.publishError(r.IMEI, []byte("fuel_batch:fail"))
+	}
 }
 
 // persist writes every company group with retry + backoff (FR-3.4 step 5) and

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestRequireAuthMatrix covers the PRD §3.1 acceptance "401/403 benar

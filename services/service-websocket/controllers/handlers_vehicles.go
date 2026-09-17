@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // handleListVehicles implements `GET /api/v1/vehicles` (PRD §8.2, FR-5.1): the

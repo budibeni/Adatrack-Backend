@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-live/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-live/models"
 )
 
 // testConfig builds a minimal config for the pure-logic tests.

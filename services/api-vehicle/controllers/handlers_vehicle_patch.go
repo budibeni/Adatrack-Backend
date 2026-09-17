@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // handleUpdateVehicle implements PATCH /api/v1/vehicles/:id. The IMEI is

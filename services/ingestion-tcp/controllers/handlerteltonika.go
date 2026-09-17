@@ -8,7 +8,7 @@ import (
 	"net"
 	"time"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
 // handleTeltonika serves one Teltonika (Codec 8/8E) device connection:

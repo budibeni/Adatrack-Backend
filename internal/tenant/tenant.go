@@ -13,7 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"ajb_gps/internal"
+	"adatrack_gps/internal"
 )
 
 // Errors returned by tenant resolution (anti-spoofing: FR-1.4).

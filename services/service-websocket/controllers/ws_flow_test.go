@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestWSPushEndToEndUnderOneSecond covers the acceptance criterion "WS push

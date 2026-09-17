@@ -3,14 +3,15 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/smtp"
 	"strings"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-alert/models"
 )
 
 // defaultChannels is applied when a user has NO preference row for a channel
@@ -102,9 +103,15 @@ func (e *Engine) Notify(ctx context.Context, a *models.Alert) error {
 					row.Status = models.NotifySent
 				}
 			case models.ChannelEmail:
-				row.Status, row.Reason, row.Response = e.sendEmail(r, a)
+				st, rs, resp := e.sendEmail(r, a)
+				row.Status = st
+				row.Reason = rs
+				row.ResponseJSON = marshalNotificationResponse(resp)
 			case models.ChannelSMS:
-				row.Status, row.Reason, row.Response = e.sendSMS(r, a)
+				st, rs, resp := e.sendSMS(r, a)
+				row.Status = st
+				row.Reason = rs
+				row.ResponseJSON = marshalNotificationResponse(resp)
 			case models.ChannelPush:
 				row.Status, row.Reason = models.NotifySkipped, "push_provider_not_configured"
 			}
@@ -160,6 +167,18 @@ func (e *Engine) channelAllowed(prefs []models.PrefRow, userID int64, channel, a
 		return true
 	}
 	return allowed
+}
+
+// marshalNotificationResponse renders a provider response for the audit row.
+func marshalNotificationResponse(resp map[string]any) []byte {
+	if resp == nil {
+		return nil
+	}
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // recordNotifications appends the delivery audit rows (never blocks alert flow).

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"ajb_gps/api-vehicle/models"
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/api-vehicle/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 // PostgresStore implements Store on top of the shared tenant manager (master

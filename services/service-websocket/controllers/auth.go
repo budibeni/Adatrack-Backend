@@ -16,7 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // Claims is the JWT payload (PRD §9.1): the SAME claims must work for

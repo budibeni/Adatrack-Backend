@@ -1,9 +1,9 @@
-module ajb_gps/worker-alert
+module adatrack_gps/worker-alert
 
 go 1.25.0
 
 require (
-	ajb_gps/internal v0.0.0
+	adatrack_gps/internal v0.0.0
 	github.com/nats-io/nats.go v1.53.1
 	github.com/prometheus/client_golang v1.20.0
 )
@@ -31,4 +31,4 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace ajb_gps/internal => ../../internal
+replace adatrack_gps/internal => ../../internal

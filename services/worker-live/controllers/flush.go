@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"ajb_gps/worker-live/models"
+	"adatrack_gps/worker-live/models"
 )
 
 // poke signals the flusher to run immediately (non-blocking).

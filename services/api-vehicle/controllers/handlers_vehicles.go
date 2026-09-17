@@ -3,7 +3,7 @@ package controllers
 import (
 	"github.com/gin-gonic/gin"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // deleteReasonRequest is the optional body of DELETE endpoints (PRD §6.0.1

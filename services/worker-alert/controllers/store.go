@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // Store is the persistence surface of worker-alert. Every statement is
@@ -67,4 +67,15 @@ type Store interface {
 	// ActiveVehicles lists active vehicles (id + IMEI) of one company — the
 	// input of the OFFLINE sweeper.
 	ActiveVehicles(ctx context.Context, company string) ([]VehicleRef, error)
+
+	// --- B5a fuel sensor (PRD Module 7, FR-7.2/FR-7.6) -------------------------
+	// FuelConfigs loads per-vehicle + tenant-wide fuel thresholds. A vehicle row
+	// wins over the global row; an empty set falls back to the global config (or
+	// the global defaults in Config.Fuel / FR-7.6 when even the global row is
+	// absent). Missing rows are never an alert failure.
+	FuelConfigs(ctx context.Context, company string) ([]models.FuelConfig, error)
+
+	// UpsertFuelConfig inserts/replaces one fuel config row (the vehicle_id
+	// column is nullable; null = tenant-wide default).
+	UpsertFuelConfig(ctx context.Context, company string, cfg *models.FuelConfig, by int64) error
 }

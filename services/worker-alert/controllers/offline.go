@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // offlineDedupKey is the DB dedup identity of the OFFLINE alert (one open alert

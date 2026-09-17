@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestCreateUserOnboarding covers FR-5.6: platform-only creation of a tenant

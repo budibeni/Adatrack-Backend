@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-alert/models"
 )
 
 // Alert subject categories (PRD §4.1 / .agent/01-global-rules.md §10).

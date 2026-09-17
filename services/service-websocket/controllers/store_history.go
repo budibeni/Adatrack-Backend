@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // VehicleHistory returns one page of `th_telemetry_logs` positions for a vehicle

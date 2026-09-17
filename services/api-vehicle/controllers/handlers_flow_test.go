@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // parseJSON decodes a JSON body (small helper so tests stay terse).

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // VehicleRef identifies one active vehicle of a company (offline sweep input).

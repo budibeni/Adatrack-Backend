@@ -9,8 +9,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 // checkResult is one wiring assertion.

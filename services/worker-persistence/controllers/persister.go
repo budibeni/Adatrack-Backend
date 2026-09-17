@@ -12,9 +12,9 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
-	"ajb_gps/worker-persistence/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/worker-persistence/models"
 )
 
 // Persister buffers inbound telemetry and flushes it in batches.
@@ -23,8 +23,9 @@ type Persister struct {
 	tenants *tenant.Manager
 	nats    *internal.NATSClient
 
-	mu      sync.Mutex
-	pending []models.Row
+	mu          sync.Mutex
+	pending     []models.Row
+	fuelPending []models.FuelRow
 
 	flushCh chan struct{}
 	wg      sync.WaitGroup
@@ -73,12 +74,16 @@ var (
 		Name: "persistence_pending_rows",
 		Help: "Rows currently buffered awaiting the next flush",
 	})
+	fuelRowsPending = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "persistence_fuel_pending_rows",
+		Help: "td_fuel_logs rows currently buffered awaiting the next flush (B5a)",
+	})
 )
 
 // RegisterMetrics registers the persistence collectors.
 func RegisterMetrics(reg *prometheus.Registry) {
 	reg.MustRegister(messagesProcessed, batchInsertSize, batchInsertErrors, retryAttempts,
-		tenantRoutingDuration, deadLettered, positionlessRows, pendingRows)
+		tenantRoutingDuration, deadLettered, positionlessRows, pendingRows, fuelRowsPending)
 }
 
 // New builds the persister.

@@ -73,11 +73,71 @@ func ToRow(t TelemetryMessage) Row {
 // TableName is the partition-per-month telemetry table (PRD §6.2, `th_` prefix).
 const TableName = "th_telemetry_logs"
 
+// FuelTableName is the partition-per-month fuel history (B5a FR-7.4, migration 014).
+const FuelTableName = "td_fuel_logs"
+
 // InsertColumns are the columns written for every batch (order matters for the
 // parameter binding in internal.BatchInsert).
 var InsertColumns = []string{
 	"vehicle_id", "imei", "company_code", "latitude", "longitude",
 	"speed", "heading", "altitude", "acc_status", "battery_level", "timestamp",
+}
+
+// FuelRow is one prepared `td_fuel_logs` insert (B5a FR-7.4).
+type FuelRow struct {
+	IMEI        string
+	CompanyCode string
+	VehicleID   int64
+	FuelLevel   *float64
+	FuelVolume  *float64
+	FuelTempC   *float64
+	Lat         float64
+	Lon         float64
+	ACC         bool
+	Timestamp   time.Time
+}
+
+// HasFuel reports whether the message carries any fuel reading (B5a).
+func (t TelemetryMessage) HasFuel() bool {
+	return t.FuelLevel != nil || t.FuelVolume != nil || t.FuelTempC != nil
+}
+
+// ToFuelRow converts a fuel-bearing message into a td_fuel_logs row (UTC).
+func ToFuelRow(t TelemetryMessage) FuelRow {
+	ts := t.Timestamp
+	if ts <= 0 {
+		ts = time.Now().Unix()
+	}
+	return FuelRow{
+		IMEI:        t.IMEI,
+		CompanyCode: t.CompanyCode,
+		VehicleID:   t.VehicleID,
+		FuelLevel:   t.FuelLevel,
+		FuelVolume:  t.FuelVolume,
+		FuelTempC:   t.FuelTempC,
+		Lat:         t.Lat,
+		Lon:         t.Lon,
+		ACC:         t.ACC,
+		Timestamp:   time.Unix(ts, 0).UTC(),
+	}
+}
+
+// FuelInsertColumns matches td_fuel_logs (migration 014). NULLs bind as nil.
+var FuelInsertColumns = []string{
+	"vehicle_id", "imei", "company_code", "fuel_level", "fuel_volume",
+	"fuel_temp_c", "latitude", "longitude", "acc_status", "timestamp",
+}
+
+// Values renders a fuel row as the parameter slice matching FuelInsertColumns.
+func (r FuelRow) Values() []any {
+	acc := 0
+	if r.ACC {
+		acc = 1
+	}
+	return []any{
+		r.VehicleID, r.IMEI, r.CompanyCode, r.FuelLevel, r.FuelVolume,
+		r.FuelTempC, r.Lat, r.Lon, acc, r.Timestamp,
+	}
 }
 
 // Values renders a row as the parameter slice matching InsertColumns.

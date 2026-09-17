@@ -85,6 +85,16 @@ func (s *Service) buildRouter() *gin.Engine {
 	speed.DELETE("/:id", s.requireAdmin(), s.handleDeleteSpeedConfig)
 	speed.POST("/:id/restore", s.requireAdmin(), s.handleRestoreSpeedConfig)
 
+	fuel := tenant.Group("/fuel-configs")
+	fuel.GET("", s.handleListFuelConfigs)
+	fuel.POST("", s.requireWrite(), s.handleCreateFuelConfig)
+	fuel.GET("/:id", s.handleFuelConfigDetail)
+	fuel.PATCH("/:id", s.requireWrite(), s.handleUpdateFuelConfig)
+	fuel.DELETE("/:id", s.requireAdmin(), s.handleDeleteFuelConfig)
+	fuel.POST("/:id/restore", s.requireAdmin(), s.handleRestoreFuelConfig)
+
+	vehicles.GET("/:id/fuel/history", s.requireVehicleAccess(), s.handleVehicleFuelHistory)
+
 	alerts := tenant.Group("/alerts")
 	alerts.GET("", s.handleListAlerts)
 	alerts.POST("/:id/acknowledge", s.handleAcknowledgeAlert)

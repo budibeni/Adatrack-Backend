@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // newTestService wires a Service with the fake store (auth is unused when the

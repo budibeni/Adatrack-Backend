@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // subKey identifies one tenant+vehicle fan-out bucket. Tenants are always part

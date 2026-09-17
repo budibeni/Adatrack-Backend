@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // parsePagination validates `page`/`limit` (PRD §8.5 rule 4).

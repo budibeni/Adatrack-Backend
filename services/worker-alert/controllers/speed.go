@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // effectiveSpeedConfig returns the config that applies to a vehicle:

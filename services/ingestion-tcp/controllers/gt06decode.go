@@ -2,9 +2,12 @@ package controllers
 
 import (
 	"encoding/binary"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
 // decodeLatLon converts the raw GT06 coordinate integer to decimal degrees.
@@ -146,20 +149,35 @@ func ParseLBSAlarm(_ []byte, imei, company string, vehicleID int64) models.Telem
 	}
 }
 
-// ParseInfoTransmit decodes the information transmission packet (0x94).
-// Information type 0x0D carries 1-Wire/fuel sensor values (v3.1 §10.1, B5a);
-// other types are reported as unsupported so the caller can log them.
+// ParseInfoTransmit decodes 0x94 subtype 0x0D: type + time(6) +
+// ASCII sensor sentence + serial(2). Other subtypes remain unsupported.
+// The v3.1 sensor reports centimetres, NOT percent or litres; keep the raw
+// height separate until a calibrated conversion is configured.
 func ParseInfoTransmit(data []byte) (models.TelemetryMessage, bool) {
 	var t models.TelemetryMessage
-	if len(data) < 2 {
+	if len(data) < 10 || data[0] != 0x0D {
 		return t, false
 	}
-	if data[0] != 0x0D {
+	ts, ok := ParseTime(data[1:7])
+	if !ok {
 		return t, false
 	}
-	// Payload: info type (1) + sensor count (1) + value bytes.
-	level := float64(binary.BigEndian.Uint16(data[len(data)-2:]))
-	t.FuelLevel = &level
-	t.Timestamp = time.Now().Unix()
+	fields := strings.Split(string(data[7:len(data)-2]), ",")
+	if len(fields) != 10 || (fields[0] != "!AIOIL" && fields[0] != "!AILOIL") {
+		return t, false
+	}
+	if _, err := strconv.ParseUint(fields[1], 10, 8); err != nil {
+		return t, false
+	}
+	height, err := strconv.ParseFloat(fields[2], 64)
+	if err != nil || math.IsNaN(height) || math.IsInf(height, 0) || height < 0 {
+		return t, false
+	}
+	temp, err := strconv.ParseFloat(fields[3], 64)
+	if err != nil || math.IsNaN(temp) || math.IsInf(temp, 0) {
+		return t, false
+	}
+	t.FuelHeightCM, t.FuelTempC = &height, &temp
+	t.Timestamp = ts.Unix()
 	return t, true
 }

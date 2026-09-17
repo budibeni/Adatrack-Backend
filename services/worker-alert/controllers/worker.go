@@ -10,8 +10,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-alert/models"
 )
 
 // Worker consumes `telemetry.raw.>` (queue group `alert`), runs the detectors
@@ -30,6 +30,23 @@ type Worker struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// fuelStash is the in-memory ring of recent fuel readings per vehicle
+	// (IMEI-based dedup across re-connects), used by the alert detector so a
+	// single device reconnect does not reset the sliding window.
+	fuelStashMu sync.Mutex
+	fuelStash   map[string]*fuelStash // key: company + ":" + imei
+}
+
+// fuelStash is the per-device fuel window used by the B5a detector.
+type fuelStash struct {
+	// history is the recent readings, oldest first. Only the last N are kept
+	// (EngineFuelWindow default 10) to keep the ring small.
+	history []models.TelemetryMessage
+	// lastAt is the timestamp of the most recent reading (used for freshness).
+	lastAt int64
+	// accHistory tracks recent ACC transitions within EngineFuelAccWindowSec.
+	accHistory []int64
 }
 
 // New builds the worker.
@@ -136,6 +153,9 @@ func (w *Worker) evaluate(ctx context.Context, t models.TelemetryMessage) {
 	w.detectBatteryLow(ctx, t, now)
 	w.detectRouteDeviation(ctx, t, now)
 	w.engine.resolveOffline(ctx, t)
+	if t.HasFuel() {
+		w.detFuel(ctx, t, now)
+	}
 }
 
 // rememberCompany tracks the tenants the sweepers must cover.
@@ -213,4 +233,151 @@ func (w *Worker) cacheRefreshLoop(ctx context.Context) {
 		w.cachedAssignments(ctx, company)
 		w.cachedVehicles(ctx, company)
 	}
+}
+
+// detFuel is the B5a fuel-sensor detector: it reads the vehicle's fuel config
+// (per-vehicle override or tenant-wide default), evaluates the FUEL_DROP / REFUEL
+// thresholds inside the sliding window, applies the ACC-gate (strict only when
+// FUEL_DROP_REQUIRE_ACC=true), and raises a deduped alert via the engine.
+func (w *Worker) detFuel(ctx context.Context, t models.TelemetryMessage, now time.Time) {
+	company := t.CompanyCode
+	vehicleID := t.VehicleID
+	imei := t.IMEI
+
+	configs, err := w.store.FuelConfigs(ctx, company)
+	if err != nil {
+		slog.Warn("worker-alert: fuel config load failed", "company", company, "error", err)
+		return
+	}
+	cfg := fuelConfigFor(configs, vehicleID)
+	if cfg == nil || !cfg.Enabled {
+		return
+	}
+
+	stashKey := company + ":" + imei
+	w.fuelStashMu.Lock()
+	stash, ok := w.fuelStash[stashKey]
+	if !ok {
+		stash = &fuelStash{}
+		w.fuelStash[stashKey] = stash
+	}
+	w.fuelStashMu.Unlock()
+
+	// Apply ACC-gate for FUEL_DROP (strict literal only when FUEL_DROP_REQUIRE_ACC=true).
+	if cfg.DropThresholdPct > 0 && w.cfg.Fuel.RequireACC {
+		if !t.ACC {
+			w.fuelStashMu.Lock()
+			stash.accHistory = append(stash.accHistory, now.Unix())
+			if len(stash.accHistory) > w.cfg.Fuel.ACCStaleSeconds {
+				stash.accHistory = stash.accHistory[1:]
+			}
+			w.fuelStashMu.Unlock()
+			return
+		}
+	}
+
+	// Update the in-memory ring of recent fuel readings (for the sliding window).
+	w.fuelStashMu.Lock()
+	stash.history = append(stash.history, t)
+	if len(stash.history) > 10 {
+		stash.history = stash.history[len(stash.history)-10:]
+	}
+	stash.lastAt = now.Unix()
+	w.fuelStashMu.Unlock()
+
+	// Evaluate the sliding window against config.WindowSeconds (FR-7.6).
+	window := time.Duration(cfg.WindowSeconds) * time.Second
+	if window <= 0 {
+		window = 5 * time.Minute
+	}
+	windowStart := now.Add(-window)
+
+	var dropDetected, refuelDetected bool
+	var minLevel, maxLevel float64
+	first := true
+	for i := range stash.history {
+		r := stash.history[i]
+		if r.Timestamp < windowStart.Unix() || r.Timestamp == t.Timestamp {
+			continue
+		}
+		lvl := 0.0
+		if r.FuelLevel != nil {
+			lvl = *r.FuelLevel
+		} else if r.FuelVolume != nil {
+			lvl = *r.FuelVolume
+		}
+		if first {
+			minLevel = lvl
+			maxLevel = lvl
+			first = false
+		} else {
+			if lvl < minLevel {
+				minLevel = lvl
+			}
+			if lvl > maxLevel {
+				maxLevel = lvl
+			}
+		}
+	}
+
+	if !first && cfg.DropThresholdPct > 0 {
+		dropPct := (maxLevel - minLevel) / maxLevel * 100
+		if dropPct >= float64(cfg.DropThresholdPct) {
+			dropDetected = true
+		}
+	}
+	if !first && cfg.RefuelThresholdPct > 0 {
+		refuelPct := (maxLevel - minLevel) / minLevel * 100
+		if refuelPct >= float64(cfg.RefuelThresholdPct) && minLevel > 0 {
+			refuelDetected = true
+		}
+	}
+
+	if dropDetected {
+		alert := &models.Alert{
+			Type:        models.AlertFuelDrop,
+			Severity:    w.cfg.Fuel.Severity,
+			VehicleID:   vehicleID,
+			IMEI:        imei,
+			CompanyCode: company,
+			DedupKey:    "fuel:drop:" + strconv.FormatInt(vehicleID, 10),
+			DetectedAt:  now,
+		}
+		if _, err := w.engine.RaiseAlert(ctx, alert); err != nil {
+			slog.Error("worker-alert: fuel drop alert failed", "vehicle_id", vehicleID, "error", err)
+		}
+	}
+	if refuelDetected {
+		alert := &models.Alert{
+			Type:        models.AlertRefuel,
+			Severity:    models.SeverityLow,
+			VehicleID:   vehicleID,
+			IMEI:        imei,
+			CompanyCode: company,
+			DedupKey:    "fuel:refuel:" + strconv.FormatInt(vehicleID, 10),
+			DetectedAt:  now,
+		}
+		if _, err := w.engine.RaiseAlert(ctx, alert); err != nil {
+			slog.Error("worker-alert: fuel refuel alert failed", "vehicle_id", vehicleID, "error", err)
+		}
+	}
+}
+
+// fuelConfigFor resolves the effective fuel config: vehicle-specific row wins,
+// otherwise the tenant-wide default (vehicle_id 0). Disabled rows are skipped.
+func fuelConfigFor(configs []models.FuelConfig, vehicleID int64) *models.FuelConfig {
+	var global *models.FuelConfig
+	for i := range configs {
+		c := &configs[i]
+		if !c.Enabled {
+			continue
+		}
+		if c.VehicleID == vehicleID {
+			return c
+		}
+		if c.VehicleID == 0 && global == nil {
+			global = c
+		}
+	}
+	return global
 }

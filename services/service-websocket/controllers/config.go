@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"ajb_gps/internal"
+	"adatrack_gps/internal"
 )
 
 // Settings holds the service-websocket specific configuration (PRD §7.2, §9).

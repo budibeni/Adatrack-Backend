@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
 // Teltonika Codec IDs (AVL family, PRD Module 1b — own protocol reference).

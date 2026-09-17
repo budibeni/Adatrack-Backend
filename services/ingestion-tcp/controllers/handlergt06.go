@@ -7,7 +7,7 @@ import (
 	"net"
 	"time"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
 // handleGT06 serves one GT06/Concox device connection: login (tenant resolution +

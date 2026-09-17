@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"ajb_gps/internal"
+	"adatrack_gps/internal"
 )
 
 // Deps are the collaborators of the service (production wiring in main.go).

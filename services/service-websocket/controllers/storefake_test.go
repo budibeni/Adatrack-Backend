@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/service-websocket/models"
 )
 
 // accessRow is one `tm_user_company_access` row in the fake store.

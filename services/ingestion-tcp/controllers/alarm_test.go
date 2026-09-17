@@ -50,20 +50,48 @@ func TestParseLBSAlarm(t *testing.T) {
 	}
 }
 
-// TestParseInfoTransmit decodes the 0x94 fuel information packet and rejects
-// unsupported information types.
+// TestParseInfoTransmit decodes the 0x94 subtype 0x0D fuel-sensor packet
+// (v3.1 §10.1): type + time(6) + ASCII sentence + serial(2). The sentence is
+// the doc example `!AIOIL,02,025.900,025.400,519J,0200,027.140,0,00,9F` —
+// centimetre height, NOT percent/litres (FR-7.8 keeps calibration out of core).
 func TestParseInfoTransmit(t *testing.T) {
-	msg, ok := ParseInfoTransmit([]byte{0x0D, 0x01, 0x00, 0x7B})
+	when := time.Date(2026, 9, 15, 3, 30, 0, 0, time.UTC)
+	payload := []byte{0x0D}
+	payload = append(payload,
+		byte(when.Year()-2000), byte(when.Month()), byte(when.Day()),
+		byte(when.Hour()), byte(when.Minute()), byte(when.Second()))
+	payload = append(payload, "!AIOIL,02,025.900,025.400,519J,0200,027.140,0,00,9F"...)
+	payload = append(payload, 0x00, 0x01) // information serial number
+
+	msg, ok := ParseInfoTransmit(payload)
 	if !ok {
-		t.Fatal("ParseInfoTransmit rejected information type 0x0D")
+		t.Fatal("ParseInfoTransmit rejected the 0x0D fuel-sensor payload")
 	}
-	if msg.FuelLevel == nil || *msg.FuelLevel != 123 {
-		t.Errorf("fuel_level = %v, want 123", msg.FuelLevel)
+	if msg.FuelHeightCM == nil || *msg.FuelHeightCM != 25.9 {
+		t.Errorf("fuel_height_cm = %v, want 25.9 (liquid level output, cm)", msg.FuelHeightCM)
 	}
+	if msg.FuelTempC == nil || *msg.FuelTempC != 25.4 {
+		t.Errorf("fuel_temp_c = %v, want 25.4", msg.FuelTempC)
+	}
+	if msg.FuelLevel != nil || msg.FuelVolume != nil {
+		t.Errorf("fuel_level/fuel_volume must stay absent (absent ≠ zero, FR-7.3): %v/%v",
+			msg.FuelLevel, msg.FuelVolume)
+	}
+	if msg.Timestamp != when.Unix() {
+		t.Errorf("timestamp = %d, want %d", msg.Timestamp, when.Unix())
+	}
+
+	// Negatives: unsupported information type, truncated payload, corrupted
+	// sentence header (no silent drop — the caller logs + counts these).
 	if _, ok := ParseInfoTransmit([]byte{0x01, 0x00}); ok {
 		t.Error("ParseInfoTransmit accepted an unsupported information type")
 	}
 	if _, ok := ParseInfoTransmit([]byte{0x0D}); ok {
 		t.Error("ParseInfoTransmit accepted a truncated payload")
+	}
+	bad := append([]byte(nil), payload...)
+	bad[7] = 'X' // "!AIOIL" → "XAIOIL"
+	if _, ok := ParseInfoTransmit(bad); ok {
+		t.Error("ParseInfoTransmit accepted a corrupted sensor sentence")
 	}
 }

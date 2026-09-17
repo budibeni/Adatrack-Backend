@@ -7,7 +7,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"ajb_gps/worker-live/models"
+	"adatrack_gps/worker-live/models"
 )
 
 // handleMessage decodes one telemetry message into the live-state buffer.

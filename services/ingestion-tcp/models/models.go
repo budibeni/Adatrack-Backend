@@ -104,4 +104,10 @@ type TelemetryMessage struct {
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
 	FuelVolume *float64 `json:"fuel_volume,omitempty"`
 	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
+	// FuelHeightCM is the RAW GT06 0x0D sensor height in centimetres (v3.1
+	// §8.2 "0D Fuel sensor data": `!AIOIL,<count>,<height_cm>,...`). It is kept
+	// separate from FuelVolume because the sentence reports a height, not litres;
+	// calibration (volt/cm → litres) is out of core scope (FR-7.8), so the raw
+	// height is published as-is and consumers derive their own scale.
+	FuelHeightCM *float64 `json:"fuel_height_cm,omitempty"`
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // wsDial opens a WebSocket against the harness (token via the documented query

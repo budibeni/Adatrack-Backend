@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestAccessTokenExpiry verifies the `exp` claim is enforced (with clock skew).

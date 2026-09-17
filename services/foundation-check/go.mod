@@ -1,9 +1,9 @@
-module ajb_gps/foundation-check
+module adatrack_gps/foundation-check
 
 go 1.25.0
 
 require (
-	ajb_gps/internal v0.0.0
+	adatrack_gps/internal v0.0.0
 	github.com/nats-io/nats.go v1.53.1
 )
 
@@ -31,4 +31,4 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace ajb_gps/internal => ../../internal
+replace adatrack_gps/internal => ../../internal

@@ -9,8 +9,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-persistence/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-persistence/models"
 )
 
 // newTestPersister builds a persister with stubbed routing/publishing so the

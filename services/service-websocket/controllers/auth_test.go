@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestLoginSuccessIssuesTokensAndAudits verifies FR-5.7/PRD §9.1: a valid

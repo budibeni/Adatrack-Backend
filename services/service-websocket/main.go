@@ -20,9 +20,9 @@ import (
 	"syscall"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/controllers"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/service-websocket/controllers"
 )
 
 func main() {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-persistence/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-persistence/models"
 )
 
 // TestCompanyGroupsSplitsByTenant documents tenant-scoped batching (one INSERT

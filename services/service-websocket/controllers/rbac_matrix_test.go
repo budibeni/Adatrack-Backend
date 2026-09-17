@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestRowLevelVehicleAccess asserts the tm_user_vehicles filter (PRD §9.2):

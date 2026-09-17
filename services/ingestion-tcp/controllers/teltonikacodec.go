@@ -4,20 +4,38 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
-// Fuel sensor IO IDs (B5a) — overridable through env in the fuel phase; kept in
-// the shared IO mapping so Codec 8/8E cannot drift apart.
+// Fuel sensor IO IDs (B5a, PRD FR-7.2) — the Teltonika AVL IO set is mapped
+// through env so FLS/CAN-bus sensors work without a code change: 86 = fuel level
+// (%), 87 = fuel used (L), 89 = fuel temperature (°C) by default.
 var (
-	fuelIOLevel = envInt("TELTONIKA_IO_FUEL_LEVEL", 0)
-	fuelIOUsed  = envInt("TELTONIKA_IO_FUEL_USED", 0)
-	fuelIOTemp  = envInt("TELTONIKA_IO_FUEL_TEMP", 0)
+	fuelIOLevel = envInt("TELTONIKA_IO_FUEL_LEVEL", 86)
+	fuelIOUsed  = envInt("TELTONIKA_IO_FUEL_USED", 87)
+	fuelIOTemp  = envInt("TELTONIKA_IO_FUEL_TEMP", 89)
 )
 
 // applyTeltonikaIO maps one Teltonika IO element onto the canonical payload.
 // Shared by Codec 8 (1-byte IDs) and Codec 8 Extended (2-byte IDs).
 func applyTeltonikaIO(t *models.TelemetryMessage, id uint16, val uint64) {
+	// Fuel IDs are resolved first: a deployment may remap them onto 66/67/239
+	// for a CAN-bus gateway, so the generic ACC interpretation must not win.
+	switch {
+	case fuelIOLevel != 0 && id == uint16(fuelIOLevel):
+		f := float64(val)
+		t.FuelLevel = &f
+		return
+	case fuelIOUsed != 0 && id == uint16(fuelIOUsed):
+		f := float64(val)
+		t.FuelVolume = &f
+		return
+	case fuelIOTemp != 0 && id == uint16(fuelIOTemp):
+		f := float64(int16(val))
+		t.FuelTempC = &f
+		return
+	}
+
 	switch id {
 	case 72: // battery voltage (V × 100)
 		t.Battery = uint8(val)
@@ -28,21 +46,6 @@ func applyTeltonikaIO(t *models.TelemetryMessage, id uint16, val uint64) {
 	case 24: // speed (km/h) fallback when the GPS element reports 0
 		if t.Speed == 0 {
 			t.Speed = float64(val)
-		}
-	default:
-		if fuelIOLevel != 0 && id == uint16(fuelIOLevel) {
-			f := float64(val)
-			t.FuelLevel = &f
-			return
-		}
-		if fuelIOUsed != 0 && id == uint16(fuelIOUsed) {
-			f := float64(val)
-			t.FuelVolume = &f
-			return
-		}
-		if fuelIOTemp != 0 && id == uint16(fuelIOTemp) {
-			f := float64(int16(val))
-			t.FuelTempC = &f
 		}
 	}
 }

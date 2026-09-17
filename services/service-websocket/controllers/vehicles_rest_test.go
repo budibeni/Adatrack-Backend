@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestVehicleListContract asserts the PRD §8.1 envelope + §8.2 pagination.

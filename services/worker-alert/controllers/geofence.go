@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // geofenceStateKey is the per-device entry/exit state map (PRD §5.9.1:

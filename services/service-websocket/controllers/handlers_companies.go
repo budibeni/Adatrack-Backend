@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/service-websocket/models"
 )
 
 // handleCreateCompany implements `POST /api/v1/companies` (FR-5.5, PRD §4.2.1):

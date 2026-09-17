@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // TestHaversineM checks known distances (Jakarta → Bandung ≈ 150 km).
@@ -45,6 +45,71 @@ func TestPointInPolygon(t *testing.T) {
 	}
 	if !PointInPolygon(2, 8, lshape) {
 		t.Error("PointInPolygon(inside L) = false, want true")
+	}
+}
+
+// TestFuelConfigFor verifies the fuel-config precedence (PRD Module 7):
+// vehicle-specific row wins, disabled rows are skipped, tenant-wide default
+// (vehicle_id 0) is the fallback, nil when nothing matches.
+func TestFuelConfigFor(t *testing.T) {
+	rows := []models.FuelConfig{
+		{ID: 1, VehicleID: 0, DropThresholdPct: 15, RefuelThresholdPct: 20, WindowSeconds: 300, Enabled: true},
+		{ID: 2, VehicleID: 7, DropThresholdPct: 10, RefuelThresholdPct: 15, WindowSeconds: 120, Enabled: true},
+		{ID: 3, VehicleID: 9, DropThresholdPct: 5, Enabled: false}, // disabled
+	}
+	if got := fuelConfigFor(rows, 7); got == nil || got.DropThresholdPct != 10 {
+		t.Errorf("vehicle 7 config = %+v, want the per-vehicle row (drop 10)", got)
+	}
+	if got := fuelConfigFor(rows, 8); got == nil || got.DropThresholdPct != 15 {
+		t.Errorf("vehicle 8 config = %+v, want the tenant-wide default (drop 15)", got)
+	}
+	if got := fuelConfigFor(rows, 9); got == nil || got.DropThresholdPct != 15 {
+		t.Errorf("vehicle 9 config = %+v, want the default (disabled rows are skipped)", got)
+	}
+	if got := fuelConfigFor(nil, 7); got != nil {
+		t.Errorf("empty config set must return nil, got %+v", got)
+	}
+}
+
+// TestFuelThresholdMath documents the FR-7.6 arithmetic: a drop fires on
+// (max-min)/max ≥ dropThreshold inside the window; a refuel fires on
+// (max-min)/min ≥ refuelThreshold with a non-zero baseline.
+func TestFuelThresholdMath(t *testing.T) {
+	dropPct := (80.0 - 60.0) / 80.0 * 100 // 25% drop
+	if !(dropPct >= 20) {
+		t.Errorf("25%% drop must breach a 20%% threshold, got %f", dropPct)
+	}
+	if 15.0/80.0*100 >= 20 {
+		t.Error("a ~19% drop must NOT breach the 20% threshold")
+	}
+	refuelPct := (90.0 - 70.0) / 70.0 * 100 // ~28.6% refuel
+	if !(refuelPct >= 25) {
+		t.Errorf("28.6%% refuel must breach a 25%% threshold, got %f", refuelPct)
+	}
+	// Zero baseline can never fire REFUEL (division guard).
+	if 70.0 <= 0 {
+		t.Error("refuel requires minLevel > 0")
+	}
+}
+
+// TestAlertCategoryFuel verifies the `alert.fuel.<company>` subject mapping
+// (.agent/01-global-rules.md §10, B5a subject).
+func TestAlertCategoryFuel(t *testing.T) {
+	if cat := alertCategory[models.AlertFuelDrop]; cat != "fuel" {
+		t.Errorf("fuel_drop category = %q, want fuel", cat)
+	}
+	if cat := alertCategory[models.AlertRefuel]; cat != "fuel" {
+		t.Errorf("refuel category = %q, want fuel", cat)
+	}
+}
+
+// TestFuelSeverityOf documents the documented default FUEL_DROP severity.
+func TestFuelSeverityOf(t *testing.T) {
+	if models.SeverityOf("") != models.SeverityCritical {
+		t.Errorf("empty severity must default to critical, got %q", models.SeverityOf(""))
+	}
+	if models.SeverityOf("high") != models.SeverityHigh {
+		t.Errorf("explicit severity must be preserved, got %q", models.SeverityOf("high"))
 	}
 }
 

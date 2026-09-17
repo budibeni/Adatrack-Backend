@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"ajb_gps/internal"
+	"adatrack_gps/internal"
 )
 
 // TestNormalizeCodeSanitizesInput validates the schema-name safety rule (PRD

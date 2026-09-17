@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 // ReadinessStore reports the persistence readiness of the backing store so

@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ajb_gps/ingestion-tcp/models"
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/ingestion-tcp/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 // Server owns the per-protocol accept loops, the connection budget and the

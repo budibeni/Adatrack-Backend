@@ -3,7 +3,7 @@ package controllers
 import (
 	"context"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // fakeStore satisfies Store; every unimplemented method panics via the embedded

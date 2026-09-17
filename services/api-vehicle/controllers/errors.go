@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // Error codes (PRD §8.1 + §3.1; superset of the service-websocket catalogue).
@@ -28,6 +28,7 @@ const (
 	CodeAssignmentNotFound   = "ASSIGNMENT_NOT_FOUND"
 	CodeInvalidTransition    = "INVALID_STATUS_TRANSITION"
 	CodeSpeedConfigNotFound  = "SPEED_CONFIG_NOT_FOUND"
+	CodeFuelConfigNotFound   = "FUEL_CONFIG_NOT_FOUND"
 	CodeAlertNotFound        = "ALERT_NOT_FOUND"
 	CodeConflict             = "CONFLICT"
 	CodeMethodNotAllowed     = "METHOD_NOT_ALLOWED"

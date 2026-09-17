@@ -20,8 +20,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-live/controllers"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-live/controllers"
 )
 
 func main() {

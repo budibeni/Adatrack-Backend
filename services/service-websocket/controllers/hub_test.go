@@ -3,7 +3,7 @@ package controllers
 import (
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestHubDropOldestWhenQueueFull asserts FR-5.4 ("queue 1.000 drop-oldest + log").

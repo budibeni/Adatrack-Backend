@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // vehicleColumns is the projection used by every vehicle read (additive columns

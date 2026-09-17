@@ -1,4 +1,4 @@
-module ajb_gps/internal
+module adatrack_gps/internal
 
 go 1.25.0
 

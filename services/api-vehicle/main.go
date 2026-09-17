@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"ajb_gps/api-vehicle/controllers"
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/api-vehicle/controllers"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 func main() {

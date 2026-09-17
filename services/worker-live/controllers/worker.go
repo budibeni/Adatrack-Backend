@@ -11,8 +11,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-live/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-live/models"
 )
 
 // Worker consumes telemetry and writes the Redis live state, fanning updates out

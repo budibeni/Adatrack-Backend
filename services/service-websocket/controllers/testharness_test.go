@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/bcrypt"
 
-	"ajb_gps/internal"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/service-websocket/models"
 )
 
 // bcryptHashForTest produces a real (but cheap) bcrypt hash for the fake users.

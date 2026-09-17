@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TenantAccess implements Store.

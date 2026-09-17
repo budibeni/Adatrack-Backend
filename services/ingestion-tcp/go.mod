@@ -1,9 +1,9 @@
-module ajb_gps/ingestion-tcp
+module adatrack_gps/ingestion-tcp
 
 go 1.25.0
 
 require (
-	ajb_gps/internal v0.0.0
+	adatrack_gps/internal v0.0.0
 	github.com/prometheus/client_golang v1.20.0
 )
 
@@ -31,4 +31,4 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace ajb_gps/internal => ../../internal
+replace adatrack_gps/internal => ../../internal

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/service-websocket/models"
 )
 
 // UserRecord is the master `tm_users` row the auth layer needs (never leaves the

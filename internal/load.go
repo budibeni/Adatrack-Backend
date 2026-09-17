@@ -11,6 +11,7 @@ func LoadConfig() *Config {
 	loadCoreConfig(c)
 	loadPipelineConfig(c)
 	loadAlertConfig(c)
+	loadFuelConfig(c)
 	return c
 }
 
@@ -86,6 +87,30 @@ func loadPipelineConfig(c *Config) {
 	c.Persistence.MaxPending = envInt("PERSISTENCE_MAX_PENDING", 5000)
 }
 
+// loadFuelConfig fills the B5a fuel-sensor settings (PRD Module 7 / §5.9.9).
+// The thresholds here are the GLOBAL fallback: a `tm_fuel_configs` row for the
+// vehicle (or the tenant-wide row) always wins inside worker-alert (FR-7.6).
+func loadFuelConfig(c *Config) {
+	// FR-7.2: the Teltonika IO → fuel mapping is resolved by the ingestion service
+	// from TELTONIKA_IO_FUEL_LEVEL / _USED / _TEMP (default 86 for the level
+	// channel), so an unset/zero value disables that specific fuel field.
+	//
+	// GT06 0x0D reports the sensor height in cm; a tank height converts it into
+	// the fuel_level percentage of FR-7.3. Without calibration the raw height is
+	// kept as the volume proxy and fuel_level stays absent (absent ≠ zero).
+	c.Fuel.TankHeightCM = envFloat("FUEL_TANK_HEIGHT_CM", 0)
+
+	c.Fuel.DropThresholdPercent = envInt("FUEL_DROP_THRESHOLD_PERCENT", 15)
+	c.Fuel.RefuelThresholdPercent = envInt("FUEL_REFUEL_THRESHOLD_PERCENT", 10)
+	c.Fuel.WindowSeconds = envInt("FUEL_WINDOW_SECONDS", 300)
+	c.Fuel.Severity = EnvOr("FUEL_DROP_SEVERITY", "critical")
+
+	// ACC-gate decision (2026-08-26): false = detection stays active (anti-siphon
+	// while parked); `=true` adds the strict literal ACC gate for FUEL_DROP.
+	c.Fuel.RequireACC = envBool("FUEL_DROP_REQUIRE_ACC", false)
+	c.Fuel.ACCStaleSeconds = envInt("FUEL_ACC_STALE_SECONDS", 600)
+}
+
 // loadAlertConfig fills the worker-alert engine settings (B3, PRD §5.9/§7.2).
 func loadAlertConfig(c *Config) {
 	c.Alert.MetricsAddr = EnvOr("ALERT_METRICS_ADDR", ":8094")
@@ -118,3 +143,6 @@ func loadAlertConfig(c *Config) {
 	c.Alert.SMS.AuthToken = EnvOr("SMS_AUTH_TOKEN", "")
 	c.Alert.SMS.From = EnvOr("SMS_FROM", "")
 }
+
+
+

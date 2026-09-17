@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // detectRouteDeviation evaluates in-progress route assignments: distance to the

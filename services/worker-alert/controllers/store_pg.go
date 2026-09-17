@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/worker-alert/models"
 )
 
 // PostgresStore implements Store on top of the shared tenant manager (master
@@ -279,8 +279,8 @@ func (s *PostgresStore) InsertNotifications(ctx context.Context, company string,
 	}
 	for _, r := range rows {
 		var resp any
-		if r.Response != nil {
-			if body, jerr := json.Marshal(r.Response); jerr == nil {
+		if r.ResponseJSON != nil {
+			if body, jerr := json.Marshal(r.ResponseJSON); jerr == nil {
 				resp = string(body)
 			}
 		}
@@ -410,6 +410,80 @@ WHERE a.status = 'in_progress' AND a.deleted_at IS NULL`)
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// FuelConfigs loads per-vehicle + tenant-wide fuel configs (vehicle_id 0 =
+// global) from tm_fuel_configs (migration 013).
+func (s *PostgresStore) FuelConfigs(ctx context.Context, company string) ([]models.FuelConfig, error) {
+	pool, err := s.tenantPool(company)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := pool.DB.QueryContext(ctx, `
+SELECT id, COALESCE(vehicle_id, 0), drop_threshold_percent, refuel_threshold_percent,
+       window_seconds, alert_severity, require_acc, acc_stale_seconds, enabled,
+       created_at, updated_at, deleted_at
+FROM tm_fuel_configs
+WHERE deleted_at IS NULL ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("store: fuel configs: %w", err)
+	}
+	defer rows.Close()
+	var out []models.FuelConfig
+	for rows.Next() {
+		var c models.FuelConfig
+		var vehicleID sql.NullInt64
+		var deletedAt sql.NullTime
+		if err := rows.Scan(&c.ID, &vehicleID, &c.DropThresholdPct, &c.RefuelThresholdPct,
+			&c.WindowSeconds, &c.Severity, &c.RequireACC, &c.ACCStaleSeconds, &c.Enabled,
+			&c.CreatedAt, &c.UpdatedAt, &deletedAt); err != nil {
+			return nil, err
+		}
+		if vehicleID.Valid {
+			c.VehicleID = vehicleID.Int64
+		}
+		if deletedAt.Valid {
+			t := deletedAt.Time
+			c.DeletedAt = &t
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// UpsertFuelConfig inserts or updates the config row of one scope: the
+// tenant-wide default when cfg.VehicleID is 0, otherwise the vehicle override
+// (the partial unique indexes of migration 013 make the conflict target exact).
+func (s *PostgresStore) UpsertFuelConfig(ctx context.Context, company string, cfg *models.FuelConfig, by int64) error {
+	pool, err := s.tenantPool(company)
+	if err != nil {
+		return err
+	}
+	var vehicleID any
+	if cfg.VehicleID != 0 {
+		vehicleID = cfg.VehicleID
+	}
+	_, err = pool.DB.ExecContext(ctx, `
+INSERT INTO tm_fuel_configs (vehicle_id, drop_threshold_percent, refuel_threshold_percent,
+                             window_seconds, alert_severity, require_acc, acc_stale_seconds,
+                             enabled, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (vehicle_id) WHERE deleted_at IS NULL
+DO UPDATE SET drop_threshold_percent = EXCLUDED.drop_threshold_percent,
+              refuel_threshold_percent = EXCLUDED.refuel_threshold_percent,
+              window_seconds = EXCLUDED.window_seconds,
+              alert_severity = EXCLUDED.alert_severity,
+              require_acc = EXCLUDED.require_acc,
+              acc_stale_seconds = EXCLUDED.acc_stale_seconds,
+              enabled = EXCLUDED.enabled,
+              updated_by = EXCLUDED.created_by,
+              updated_at = CURRENT_TIMESTAMP`,
+		vehicleID, cfg.DropThresholdPct, cfg.RefuelThresholdPct, cfg.WindowSeconds,
+		cfg.Severity, cfg.RequireACC, cfg.ACCStaleSeconds, cfg.Enabled, by)
+	if err != nil {
+		return fmt.Errorf("store: upsert fuel config: %w", err)
+	}
+	return nil
 }
 
 // ActiveVehicles lists active vehicles (id + IMEI) of one company.

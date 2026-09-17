@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // TestCreateCompanyAutoProvision covers FR-5.5/PRD §4.2.1: platform-only

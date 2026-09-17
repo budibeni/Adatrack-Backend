@@ -20,10 +20,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"ajb_gps/ingestion-tcp/controllers"
-	"ajb_gps/ingestion-tcp/models"
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/ingestion-tcp/controllers"
+	"adatrack_gps/ingestion-tcp/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 func main() {

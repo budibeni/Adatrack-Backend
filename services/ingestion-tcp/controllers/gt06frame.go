@@ -8,7 +8,7 @@ import (
 	"io"
 	"time"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
 // Packet is a decoded GT06 frame: Protocol is the protocol number and Data the

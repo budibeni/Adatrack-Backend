@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"testing"
 
-	"ajb_gps/ingestion-tcp/models"
+	"adatrack_gps/ingestion-tcp/models"
 )
 
 // TestParseCodec8ExtendedPacket decodes a Codec 8 Extended record (0x8E): base

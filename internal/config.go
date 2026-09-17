@@ -144,6 +144,30 @@ type Config struct {
 			AccountSID, AuthToken, From string
 		}
 	}
+
+	// Fuel holds the B5a fuel-sensor settings (PRD Module 7 / §5.9.9). Per-vehicle
+	// thresholds live in `tm_fuel_configs`; the values here are the global
+	// fallback applied when no config row matches, plus the ACC-gate and the tank
+	// calibration knobs of FR-7.6/FR-7.8.
+	Fuel struct {
+		// TankHeightCM calibrates the GT06 0x0D sensor height (cm) into a
+		// percentage. 0 = uncalibrated: the raw height is kept and fuel_level
+		// stays absent (FR-7.3 absent ≠ zero, FR-7.8 calibration out of scope).
+		TankHeightCM float64
+		// DropThresholdPercent / RefuelThresholdPercent are the global defaults
+		// (percent of the observed level) evaluated inside WindowSeconds.
+		DropThresholdPercent   int
+		RefuelThresholdPercent int
+		// WindowSeconds is the sliding window of the delta evaluation.
+		WindowSeconds int
+		// RequireACC enables the strict literal ACC gate (FUEL_DROP_REQUIRE_ACC).
+		// Default false: the drop detector always runs (anti-siphon while parked).
+		RequireACC bool
+		// ACCStaleSeconds is the staleness window of the ACC gate (600 s).
+		ACCStaleSeconds int
+		// Severity is the default FUEL_DROP severity (REFUEL is always `low`).
+		Severity string
+	}
 }
 
 // Validate rejects configurations that cannot work, so a service fails at boot

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"ajb_gps/internal"
+	"adatrack_gps/internal"
 )
 
 // Audit actions (PRD §9.4 catalogue — the API only ever writes these values).

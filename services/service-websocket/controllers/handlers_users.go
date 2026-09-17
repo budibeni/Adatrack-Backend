@@ -7,8 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal/tenant"
+	"adatrack_gps/service-websocket/models"
 )
 
 // handleCreateUser implements `POST /api/v1/users` (FR-5.6): platform-only

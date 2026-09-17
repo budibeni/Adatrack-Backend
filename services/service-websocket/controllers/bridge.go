@@ -8,8 +8,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"ajb_gps/internal"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/service-websocket/models"
 )
 
 // bridgeEvents counts the live updates consumed from NATS (per subject kind).

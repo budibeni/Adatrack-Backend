@@ -1,4 +1,4 @@
-module ajb_gps/tools/e2ews
+module adatrack_gps/tools/e2ews
 
 go 1.25.0
 

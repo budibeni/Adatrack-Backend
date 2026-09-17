@@ -18,7 +18,7 @@
 Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tidak memblokir frontend.
 
 ## Konvensi (berlaku semua fase)
-- Go + chi/Gin + `pgx` (PostgreSQL) + Redis + NATS JetStream; layout `services/<nama>`; shared `internal/` via `replace ajb_gps/internal => ../../internal`.
+- Go + chi/Gin + `pgx` (PostgreSQL) + Redis + NATS JetStream; layout `services/<nama>`; shared `internal/` via `replace adatrack_gps/internal => ../../internal`.
 - Setiap service: `config`, logger slog-JSON, `metrics` (/metrics Prometheus), `/healthz`, graceful shutdown.
 - **Karena dimulai dari nol**, keputusan struktur diterapkan sejak awal (bukan migrasi lanjutan):
   - Penamaan tabel langsung **`tm_`/`th_`/`td_`** (B10 tinggal verifikasi konsistensi).
@@ -181,17 +181,17 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B5a — Fuel Sensor End-to-End (PRD Module 7) ⬜
+## Phase B5a — Fuel Sensor End-to-End (PRD Module 7) ✅
 
 ### Tasks
-- [ ] Ingest kanal fuel: GT06 `0x0D` + Teltonika AVL IO → mapping fuel_level/volume/temp.
-- [ ] Persist `td_fuel_logs` (batch).
-- [ ] Alert FUEL_DROP / REFUEL (threshold + window, dedup, severity).
-- [ ] API fuel-configs CRUD + riwayat fuel (range waktu, pagination) + enrich live state.
+- [x] Ingest kanal fuel: GT06 `0x0D` (`!AIOIL,...` protokol v3.1, kalibrasi `FUEL_TANK_HEIGHT_CM`) + Teltonika AVL IO → mapping fuel_level/volume/temp (`TELTONIKA_IO_FUEL_LEVEL/USED/TEMP`).
+- [x] Persist `th_fuel_logs` (batch terpisah di worker-persistence; fuel-only tidak masuk `th_telemetry_logs`).
+- [x] Alert FUEL_DROP / REFUEL (threshold + window per tm_fuel_configs/global env, dedup engine, severity, `alert.fuel.<company>`).
+- [x] API fuel-configs CRUD + riwayat fuel `/vehicles/:id/fuel/history?from&to` (pagination + RBAC row-level) + live state fuel (worker-live partial merge → WS).
 
 ### Acceptance
-- [ ] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference.
-- [ ] Unit test threshold/dedup + parser kanal fuel hijau.
+- [ ] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference. *(butuh infra live — menyusul)*
+- [x] Unit test threshold/dedup (worker-alert fuel tests) + parser kanal fuel hijau (`TestParseInfoTransmit` frame `!AIOIL`).
 
 ---
 

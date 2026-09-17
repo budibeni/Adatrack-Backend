@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // sosDedupKeyPrefix is the Redis namespace of the per-device SOS cooldown

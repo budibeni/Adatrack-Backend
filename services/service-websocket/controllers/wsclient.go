@@ -9,7 +9,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/service-websocket/models"
 )
 
 // Client is one authenticated WebSocket connection (PRD §8.3, FR-5.4).

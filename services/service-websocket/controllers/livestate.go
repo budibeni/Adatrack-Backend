@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
-	"ajb_gps/internal"
-	"ajb_gps/service-websocket/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/service-websocket/models"
 )
 
 // liveStateErrors counts Redis read failures while enriching REST responses /

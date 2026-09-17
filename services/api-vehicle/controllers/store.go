@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"ajb_gps/api-vehicle/models"
+	"adatrack_gps/api-vehicle/models"
 )
 
 // UserRecord is the master `tm_users` row the auth layer needs.
@@ -112,6 +112,15 @@ type Store interface {
 	UpdateSpeedConfig(ctx context.Context, company string, sc *models.SpeedConfig, updatedBy int64) error
 	SoftDeleteSpeedConfig(ctx context.Context, company string, id, by int64, reason string) error
 	RestoreSpeedConfig(ctx context.Context, company string, id int64) error
+
+	// --- fuel configs + history (B5a, PRD Module 7 / FR-7.6/FR-7.7) ------------
+	ListFuelConfigs(ctx context.Context, company string, includeDeleted bool) ([]models.FuelConfig, error)
+	FuelConfigByID(ctx context.Context, company string, id int64, includeDeleted bool) (*models.FuelConfig, error)
+	CreateFuelConfig(ctx context.Context, company string, fc *models.FuelConfig, createdBy int64) (int64, error)
+	UpdateFuelConfig(ctx context.Context, company string, fc *models.FuelConfig, updatedBy int64) error
+	SoftDeleteFuelConfig(ctx context.Context, company string, id, by int64, reason string) error
+	RestoreFuelConfig(ctx context.Context, company string, id int64) error
+	ListFuelHistory(ctx context.Context, company string, vehicleID int64, from, to time.Time, page, limit int) ([]models.FuelLog, int64, error)
 
 	// --- alerts (read + life-cycle) --------------------------------------------
 	ListAlerts(ctx context.Context, q AlertQuery) ([]models.Alert, int64, error)

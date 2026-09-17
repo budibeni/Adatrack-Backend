@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"ajb_gps/worker-alert/models"
+	"adatrack_gps/worker-alert/models"
 )
 
 // detectBatteryLow raises BATTERY_LOW when the device battery falls below the

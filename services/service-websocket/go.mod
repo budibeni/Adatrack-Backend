@@ -1,9 +1,9 @@
-module ajb_gps/service-websocket
+module adatrack_gps/service-websocket
 
 go 1.25.0
 
 require (
-	ajb_gps/internal v0.0.0
+	adatrack_gps/internal v0.0.0
 	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-playground/validator/v10 v10.30.1
@@ -61,4 +61,4 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 )
 
-replace ajb_gps/internal => ../../internal
+replace adatrack_gps/internal => ../../internal

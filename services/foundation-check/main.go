@@ -24,8 +24,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 )
 
 func main() {

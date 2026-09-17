@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/worker-live/models"
+	"adatrack_gps/internal"
+	"adatrack_gps/worker-live/models"
 )
 
 // sweepInterval is how often the staleness sweeper inspects live states; it is
