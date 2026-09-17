@@ -20,6 +20,8 @@ type TelemetryPayload struct {
 	RawData     string    `json:"raw_data,omitempty"` // Hex representation for debugging
 	EventCode   int       `json:"event_code,omitempty"`
 	Status      string    `json:"status,omitempty"` // ONLINE, IDLE, OFFLINE
+	OdometerKM  float64   `json:"odometer_km,omitempty"`
+	EngineHours float64   `json:"engine_hours,omitempty"`
 
 	// Fuel sensor data
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`

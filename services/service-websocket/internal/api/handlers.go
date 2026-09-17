@@ -23,6 +23,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/redclient"
 	"backend/internal/tenant"
+	"backend/internal/utils"
 	"backend/service-websocket/internal/ws"
 )
 
@@ -662,6 +663,33 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&item.ID, &item.VehicleID, &item.IMEI, &item.Lat, &item.Lon, &item.Speed, &item.Heading, &item.Altitude, &item.ACCStatus, &item.BatteryLevel, &item.Satellites, &item.GSMSignal, &item.Timestamp); err == nil {
 			history = append(history, item)
 		}
+	}
+
+	useRdp := r.URL.Query().Get("rdp") == "true"
+	if useRdp && len(history) > 2 {
+		epsilonStr := r.URL.Query().Get("epsilon")
+		epsilon := 0.0001 // default roughly 10 meters
+		if e, err := strconv.ParseFloat(epsilonStr, 64); err == nil && e > 0 {
+			epsilon = e
+		}
+
+		// Convert to points
+		var points []utils.Point
+		for _, h := range history {
+			points = append(points, utils.Point{X: h.Lat, Y: h.Lon})
+		}
+		reduced := utils.RamerDouglasPeucker(points, epsilon)
+
+		// Map back to history items (matching by lat/lon since order is preserved)
+		var reducedHistory []TelemetryHistoryItem
+		pIdx := 0
+		for _, h := range history {
+			if pIdx < len(reduced) && h.Lat == reduced[pIdx].X && h.Lon == reduced[pIdx].Y {
+				reducedHistory = append(reducedHistory, h)
+				pIdx++
+			}
+		}
+		history = reducedHistory
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{

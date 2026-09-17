@@ -22,7 +22,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ✅ Selesai (Zero-Gap Audited 2026-09-18) |
 | **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | ✅ Selesai (Executed & Audited 2026-09-18) |
 | **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` | ⬜ Belum dimulai |
-| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ⬜ Belum dimulai |
+| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ✅ Selesai |
 | **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert` | ⬜ Planned |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ⬜ Planned |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ⬜ Planned |

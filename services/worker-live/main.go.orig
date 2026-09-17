@@ -10,7 +10,6 @@ import (
 
 	"backend/internal/config"
 	"backend/internal/logger"
-	"backend/internal/dbclient"
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
 	"backend/worker-live/internal/consumer"
@@ -25,9 +24,6 @@ func main() {
 
 	if err := redclient.Connect(ctx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
-	}
-	if err := dbclient.Connect(ctx, cfg); err != nil {
-		logger.Log.Error("FATAL DB", "err", err); os.Exit(1)
 	}
 	if err := natsclient.Connect(cfg); err != nil {
 		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
@@ -56,7 +52,6 @@ func main() {
 	defer shutdownCancel()
 	healthServer.Shutdown(shutdownCtx)
 	
-	dbclient.Close()
 	natsclient.NC.Close()
 	logger.Log.Info("Shutdown complete")
 }

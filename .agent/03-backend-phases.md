@@ -181,27 +181,27 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B7 — Fleet Management Core ⬜ (sub-fase)
+## Phase B7 — Fleet Management Core ✅ (sub-fase)
 
-### B7.1 Odometer & Engine Hours ⬜
-- [ ] Migrasi company `016_create_odometer_engine_hours.sql` (`company_pg/016`): kolom `odometer_km`, `engine_hours`.
-- [ ] Engine akumulasi odometer/engine-hours di worker-live (state machine, anti-rollback, persist berkala).
-- [ ] Unit test + live E2E (migrasi di-apply saat init tenant).
+### B7.1 Odometer & Engine Hours ✅
+- [x] Migrasi company `016_create_odometer_engine_hours.sql` (`company_pg/016`): kolom `odometer_km`, `engine_hours`.
+- [x] Engine akumulasi odometer/engine-hours di worker-live (state machine, anti-rollback, persist berkala).
+- [x] Unit test + live E2E (migrasi di-apply saat init tenant).
 
-### B7.2 Trip & Stop Detection ⬜
-- [ ] Migrasi company `017_create_vehicle_trips.sql` (`company_pg/017`): `vehicle_trips` & `vehicle_stops`; init-pg `03_company_setup.sql` apply 017.
-- [ ] Deteksi trip/stop (start/end, distance, max/avg speed, stop_count, duration) + persist.
-- [ ] Unit test + live E2E.
+### B7.2 Trip & Stop Detection ✅
+- [x] Migrasi company `017_create_vehicle_trips.sql` (`company_pg/017`): `vehicle_trips` & `vehicle_stops`; init-pg `03_company_setup.sql` apply 017.
+- [x] Deteksi trip/stop (start/end, distance, max/avg speed, stop_count, duration) + persist.
+- [x] Unit test + live E2E.
 
-### B7.3 Reverse Geocoding ⬜
-- [ ] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + fallback).
+### B7.3 Reverse Geocoding ✅
+- [x] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + fallback).
 
-### B7.4 Point Reduction ⬜
-- [ ] Ramer-Douglas-Peucker untuk history playback (endpoint playback memakai hasil reduksi).
+### B7.4 Point Reduction ✅
+- [x] Ramer-Douglas-Peucker untuk history playback (endpoint playback memakai hasil reduksi).
 
 ### Acceptance
-- [ ] B7.1–B7.2 live E2E: odometer/engine-hours/trip/stop tercatat benar saat device jalan.
-- [ ] Playback menampilkan alamat & titik tereduksi tanpa kehilangan bentuk rute.
+- [x] B7.1–B7.2 live E2E: odometer/engine-hours/trip/stop tercatat benar saat device jalan.
+- [x] Playback menampilkan alamat & titik tereduksi tanpa kehilangan bentuk rute.
 
 ---
 

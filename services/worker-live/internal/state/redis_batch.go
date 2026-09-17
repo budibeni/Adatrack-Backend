@@ -10,6 +10,7 @@ import (
 	"backend/internal/models"
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
+	"backend/internal/utils"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -27,12 +28,57 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 		return nil
 	}
 
+	// MGET previous states to calculate Odometer & Engine Hours
+	keys := make([]string, len(payloads))
+	for i, p := range payloads {
+		keys[i] = fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", p.CompanyCode, p.IMEI)
+	}
+	prevStatesInter, _ := redclient.Client.MGet(ctx, keys...).Result()
+
 	pipe := redclient.Client.Pipeline()
 	now := float64(time.Now().Unix())
-	for _, p := range payloads {
+	for i, p := range payloads {
 		p.Status = DetermineStatus(p.ACCStatus)
 
-		key := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", p.CompanyCode, p.IMEI)
+		// Parse previous state
+		var prev models.TelemetryPayload
+		if prevStatesInter[i] != nil {
+			if str, ok := prevStatesInter[i].(string); ok {
+				json.Unmarshal([]byte(str), &prev)
+			}
+		}
+
+		// Handle Odometer & Engine Hours
+		if prev.IMEI != "" {
+			// Calculate distance
+			dist := utils.CalculateDistance(prev.Latitude, prev.Longitude, p.Latitude, p.Longitude)
+			// Guard: skip if distance is > 5km (GPS jump)
+			if dist > 0 && dist < 5.0 {
+				p.OdometerKM = prev.OdometerKM + dist
+			} else {
+				p.OdometerKM = prev.OdometerKM
+			}
+
+			// Calculate engine hours
+			if p.ACCStatus == 1 && prev.ACCStatus == 1 {
+				diffHours := p.Timestamp.Sub(prev.Timestamp).Hours()
+				if diffHours > 0 && diffHours < 1.0 { // max 1 hour interval
+					p.EngineHours = prev.EngineHours + diffHours
+				} else {
+					p.EngineHours = prev.EngineHours
+				}
+			} else {
+				p.EngineHours = prev.EngineHours
+			}
+		}
+
+		// Process Trip & Stop machine
+		ProcessTripAndStop(ctx, &p, &prev)
+		
+		// Reassign to payloads slice so WebSocket gets the updated struct
+		payloads[i] = p
+
+		key := keys[i]
 		val, _ := json.Marshal(p)
 		pipe.Set(ctx, key, val, 5*time.Minute) 
 		
