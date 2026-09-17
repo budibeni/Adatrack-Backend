@@ -1,4 +1,4 @@
-.PHONY: dev down migrate
+.PHONY: dev down migrate build test provision-tenant
 
 dev:
 	./scripts/compose-up.sh local
@@ -8,3 +8,12 @@ down:
 
 migrate:
 	./scripts/migrate.sh
+
+build:
+	go build -o bin/ ./services/...
+
+test:
+	go test -v ./...
+
+provision-tenant:
+	@echo "Use POST /api/v1/companies endpoint to provision a tenant as SuperAdmin."

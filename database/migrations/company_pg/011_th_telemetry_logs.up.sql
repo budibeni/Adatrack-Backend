@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS th_telemetry_logs (
     altitude FLOAT,
     acc_status SMALLINT NOT NULL,
     battery_level FLOAT,
+    satellites INT DEFAULT 0,
+    gsm_signal INT DEFAULT 0,
     timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(id, timestamp)

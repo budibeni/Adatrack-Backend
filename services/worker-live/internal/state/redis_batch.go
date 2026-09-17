@@ -20,10 +20,21 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 	}
 
 	pipe := redclient.Client.Pipeline()
+	now := float64(time.Now().Unix())
 	for _, p := range payloads {
+		if p.ACCStatus == 1 && p.Speed > 0 {
+			p.Status = "ONLINE"
+		} else {
+			p.Status = "IDLE" // ACC OFF or Speed 0 is IDLE
+		}
+
 		key := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", p.CompanyCode, p.IMEI)
 		val, _ := json.Marshal(p)
-		pipe.Set(ctx, key, val, 5*time.Minute) // TTL 5 mins (OFFLINE if expired)
+		pipe.Set(ctx, key, val, 5*time.Minute) 
+		
+		// Update ZSET for sweeper
+		member := fmt.Sprintf("%s:%s", p.CompanyCode, p.IMEI)
+		pipe.ZAdd(ctx, "adatrack_gps:last_updates", redis.Z{Score: now, Member: member})
 	}
 
 	_, err := pipe.Exec(ctx)

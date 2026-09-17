@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"backend/internal/dbclient"
 	"backend/internal/logger"
@@ -27,8 +28,8 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 		schema := fmt.Sprintf("adatrack_gps_%s", company)
 		query := fmt.Sprintf(`
 			INSERT INTO %s.th_telemetry_logs 
-			(vehicle_id, imei, company_code, lat, lon, speed, heading, altitude, acc_status, battery_level, timestamp) 
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			(vehicle_id, imei, company_code, lat, lon, speed, heading, altitude, acc_status, battery_level, satellites, gsm_signal, timestamp) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT DO NOTHING
 		`, schema)
 
@@ -45,7 +46,7 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 				item.VehicleID, item.IMEI, item.CompanyCode, 
 				item.Latitude, item.Longitude, item.Speed, 
 				item.Heading, item.Altitude, item.ACCStatus, 
-				item.Battery, item.Timestamp,
+				item.Battery, item.Satellites, item.GSMSignal, item.Timestamp,
 			)
 			expectedExecs++
 			
@@ -58,19 +59,30 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 			}
 		}
 
-		br := dbclient.Pool.SendBatch(ctx, batch)
-		
 		var batchError error
-		for i := 0; i < expectedExecs; i++ {
-			if _, err := br.Exec(); err != nil {
-				batchError = err
+		
+		// Retry with backoff up to 3 times
+		for attempt := 0; attempt < 3; attempt++ {
+			batchError = nil
+			br := dbclient.Pool.SendBatch(ctx, batch)
+			for i := 0; i < expectedExecs; i++ {
+				if _, err := br.Exec(); err != nil {
+					batchError = err
+					break
+				}
+			}
+			br.Close()
+			
+			if batchError == nil {
 				break
 			}
+			
+			// Backoff
+			time.Sleep(time.Duration(attempt+1) * time.Second)
 		}
-		br.Close()
 		
 		if batchError != nil {
-			logger.Log.Error("Batch insert failed, routing to DLQ", "company", company, "err", batchError)
+			logger.Log.Error("Batch insert failed after retries, routing to DLQ", "company", company, "err", batchError)
 			// Enterprise Hardening: Prevent Poison Pill by routing bad payloads to DLQ instead of blocking NATS worker
 			for _, item := range items {
 				data, _ := json.Marshal(item)

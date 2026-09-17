@@ -59,8 +59,8 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 
 	// Codec ID is at byte 8
 	codec := data[8]
-	if codec != 0x08 {
-		return models.TelemetryPayload{}, errors.New("unsupported codec, only 0x08 for now")
+	if codec != 0x08 && codec != 0x8E {
+		return models.TelemetryPayload{}, errors.New("unsupported codec, only 0x08 and 0x8E supported")
 	}
 
 	// Number of Data records at byte 9

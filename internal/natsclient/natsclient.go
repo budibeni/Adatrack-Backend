@@ -39,6 +39,14 @@ func ProvisionStreams() error {
 			Name: "ALERT", Subjects: []string{"alert.*"},
 			MaxAge: 48 * time.Hour, MaxBytes: 4 * 1024 * 1024 * 1024,
 		},
+		{
+			Name: "NOTIFY", Subjects: []string{"notify.*"},
+			MaxAge: 48 * time.Hour, MaxBytes: 1 * 1024 * 1024 * 1024,
+		},
+		{
+			Name: "MEDIA", Subjects: []string{"media.*"},
+			MaxAge: 168 * time.Hour, MaxBytes: 10 * 1024 * 1024 * 1024,
+		},
 	}
 	for _, cfg := range streamConfigs {
 		_, err := JS.AddStream(&cfg)

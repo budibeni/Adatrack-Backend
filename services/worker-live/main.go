@@ -13,6 +13,7 @@ import (
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
 	"backend/worker-live/internal/consumer"
+	"backend/worker-live/internal/state"
 )
 
 func main() {
@@ -35,6 +36,11 @@ func main() {
 
 	worker := consumer.NewWorker()
 	worker.Start()
+	
+	// Start offline sweeper
+	sweeperCtx, sweeperCancel := context.WithCancel(context.Background())
+	defer sweeperCancel()
+	go state.StartOfflineSweeper(sweeperCtx)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

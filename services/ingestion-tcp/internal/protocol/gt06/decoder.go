@@ -97,9 +97,15 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		return models.TelemetryPayload{}, errors.New("location packet too short for 0x12")
 	}
 
+	satellites := int(data[10] & 0x0F)
 	lat := float64(binary.BigEndian.Uint32(data[11:15])) / 1800000.0
 	lon := float64(binary.BigEndian.Uint32(data[15:19])) / 1800000.0
 	speed := float64(data[19])
+	
+	courseStatus := binary.BigEndian.Uint16(data[20:22])
+	heading := float64(courseStatus)
+	// course is technically bit 0-9 (Wait, GT06 docs say course is 10 bits. Actually it's just courseStatus & 0x3FF)
+	heading = float64(courseStatus & 0x03FF)
 
 	accStatus := int16(0)
 	if len(data) >= 32 {
@@ -112,6 +118,8 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	payload.Latitude = lat
 	payload.Longitude = lon
 	payload.Speed = speed
+	payload.Heading = heading
+	payload.Satellites = satellites
 	payload.ACCStatus = accStatus
 
 	return payload, nil

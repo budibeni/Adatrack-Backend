@@ -14,9 +14,12 @@ type TelemetryPayload struct {
 	Altitude    float64   `json:"altitude"`
 	ACCStatus   int16     `json:"acc_status"` // 0: OFF, 1: ON
 	Battery     float64   `json:"battery_level"`
+	Satellites  int       `json:"satellites"`
+	GSMSignal   int       `json:"gsm_signal"`
 	Timestamp   time.Time `json:"timestamp"`
 	RawData     string    `json:"raw_data,omitempty"` // Hex representation for debugging
 	EventCode   int       `json:"event_code,omitempty"`
+	Status      string    `json:"status,omitempty"` // ONLINE, IDLE, OFFLINE
 
 	// Fuel sensor data
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
