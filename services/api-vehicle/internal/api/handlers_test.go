@@ -14,7 +14,7 @@ import (
 
 func TestApiVehicle_AuthRequired(t *testing.T) {
 	cfg := &config.Config{JWTSecret: "test_secret"}
-	router := SetupRouter(cfg)
+	router := SetupRouter(cfg, nil)
 
 	endpoints := []struct {
 		method string
@@ -45,7 +45,7 @@ func TestApiVehicle_AuthRequired(t *testing.T) {
 
 func TestApiVehicle_Validation(t *testing.T) {
 	cfg := &config.Config{JWTSecret: "test_secret"}
-	router := SetupRouter(cfg)
+	router := SetupRouter(cfg, nil)
 
 	token, _ := auth.GenerateToken(cfg, 1, "admin@test.local", "DEFAULT", "Admin", 1*time.Hour)
 
@@ -91,7 +91,7 @@ func TestApiVehicle_Validation(t *testing.T) {
 
 func TestApiVehicle_RBACForbidden(t *testing.T) {
 	cfg := &config.Config{JWTSecret: "test_secret"}
-	router := SetupRouter(cfg)
+	router := SetupRouter(cfg, nil)
 
 	// Driver user trying to create vehicle (requires Admin/Manager)
 	driverToken, _ := auth.GenerateToken(cfg, 99, "driver@test.local", "DEFAULT", "Driver", 1*time.Hour)
@@ -109,7 +109,7 @@ func TestApiVehicle_RBACForbidden(t *testing.T) {
 
 func TestApiVehicle_Healthz(t *testing.T) {
 	cfg := &config.Config{JWTSecret: "test_secret"}
-	router := SetupRouter(cfg)
+	router := SetupRouter(cfg, nil)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	w := httptest.NewRecorder()

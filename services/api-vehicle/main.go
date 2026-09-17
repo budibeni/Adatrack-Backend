@@ -12,7 +12,6 @@ import (
 	"backend/internal/logger"
 	"backend/internal/dbclient"
 	"backend/internal/redclient"
-	"backend/internal/tenant"
 	"backend/internal/storage"
 	"backend/api-vehicle/internal/api"
 )
@@ -28,7 +27,7 @@ func main() {
 	}
 	defer dbclient.Pool.Close()
 
-	if err := redclient.InitRedis(cfg); err != nil {
+	if err := redclient.Connect(ctx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
 	}
 

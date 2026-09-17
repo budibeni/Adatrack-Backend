@@ -136,8 +136,6 @@ func (h *Handler) GetMediaURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.store.GetPresignedURL(r.Context(), claims.CompanyCode, "", "", "") // We already have the full key, but store.GetPresignedURL uses parts. Let's fix GetPresignedURL to accept full key or reconstruct parts.
-	
 	// Since GetPresignedURL rebuilds it, let's just use the client directly:
 	urlDirect, err := h.store.Client().PresignedGetObject(r.Context(), h.cfg.S3BucketName, key, time.Hour, nil)
 	if err != nil {
