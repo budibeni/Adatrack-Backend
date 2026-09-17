@@ -107,6 +107,18 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 			fuelIOID = v
 		}
 	}
+	fuelVolumeIOID := -1
+	if envVal := os.Getenv("TELTONIKA_IO_FUEL_VOLUME"); envVal != "" {
+		if v, err := strconv.Atoi(envVal); err == nil {
+			fuelVolumeIOID = v
+		}
+	}
+	fuelTempIOID := -1
+	if envVal := os.Getenv("TELTONIKA_IO_FUEL_TEMP"); envVal != "" {
+		if v, err := strconv.Atoi(envVal); err == nil {
+			fuelTempIOID = v
+		}
+	}
 
 	offset := 34
 	if offset+2 <= len(data) {
@@ -115,17 +127,29 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		_ = int(data[offset])
 		offset++
 
+		processIO := func(id int, val float64) {
+			if id == fuelIOID {
+				fVal := val
+				payload.FuelLevel = &fVal
+			}
+			if id == fuelVolumeIOID {
+				fVal := val
+				payload.FuelVolume = &fVal
+			}
+			if id == fuelTempIOID {
+				fVal := val
+				payload.FuelTempC = &fVal
+			}
+		}
+
 		// 1-byte IOs
 		if offset < len(data) {
 			n1 := int(data[offset])
 			offset++
 			for i := 0; i < n1 && offset+1 < len(data); i++ {
 				id := int(data[offset])
-				val := int(data[offset+1])
-				if id == fuelIOID {
-					fVal := float64(val)
-					payload.FuelLevel = &fVal
-				}
+				val := float64(data[offset+1])
+				processIO(id, val)
 				offset += 2
 			}
 		}
@@ -135,11 +159,8 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 			offset++
 			for i := 0; i < n2 && offset+2 < len(data); i++ {
 				id := int(data[offset])
-				val := int(binary.BigEndian.Uint16(data[offset+1 : offset+3]))
-				if id == fuelIOID {
-					fVal := float64(val)
-					payload.FuelLevel = &fVal
-				}
+				val := float64(binary.BigEndian.Uint16(data[offset+1 : offset+3]))
+				processIO(id, val)
 				offset += 3
 			}
 		}
@@ -149,11 +170,8 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 			offset++
 			for i := 0; i < n4 && offset+4 < len(data); i++ {
 				id := int(data[offset])
-				val := int(binary.BigEndian.Uint32(data[offset+1 : offset+5]))
-				if id == fuelIOID {
-					fVal := float64(val)
-					payload.FuelLevel = &fVal
-				}
+				val := float64(binary.BigEndian.Uint32(data[offset+1 : offset+5]))
+				processIO(id, val)
 				offset += 5
 			}
 		}
@@ -163,11 +181,8 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 			offset++
 			for i := 0; i < n8 && offset+8 < len(data); i++ {
 				id := int(data[offset])
-				val := binary.BigEndian.Uint64(data[offset+1 : offset+9])
-				if id == fuelIOID {
-					fVal := float64(val)
-					payload.FuelLevel = &fVal
-				}
+				val := float64(binary.BigEndian.Uint64(data[offset+1 : offset+9]))
+				processIO(id, val)
 				offset += 9
 			}
 		}

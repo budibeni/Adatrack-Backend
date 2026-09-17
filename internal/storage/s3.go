@@ -32,6 +32,10 @@ func NewS3Store(endpoint, accessKey, secretKey, bucketName, region string, useSS
 	}, nil
 }
 
+func (s *S3Store) Client() *minio.Client {
+	return s.client
+}
+
 func (s *S3Store) buildKey(companyCode, vehicleID, yyyyMM, uuid string) string {
 	return fmt.Sprintf("%s/%s/%s/%s", companyCode, vehicleID, yyyyMM, uuid)
 }

@@ -1,0 +1,88 @@
+--- services/api-vehicle/internal/api/handlers.go
++++ services/api-vehicle/internal/api/handlers.go
+@@ -10,6 +10,8 @@
+ 
+ 	"backend/internal/auth"
+ 	"backend/internal/config"
+ 	"backend/internal/dbclient"
+ 	"backend/internal/logger"
++	"backend/internal/redclient"
++	"backend/internal/models"
+ 	"backend/internal/storage"
+ )
+@@ -176,14 +178,28 @@
+ 		var imei, plate, make, model, status string
+ 		var odo, hrs float64
+ 		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs); err == nil {
+-			vehicles = append(vehicles, map[string]interface{}{
++			vData := map[string]interface{}{
+ 				"id":           id,
+ 				"imei":         imei,
+ 				"plate_number": plate,
+ 				"make":         make,
+ 				"model":        model,
+ 				"status":       status,
+ 				"odometer_km":  odo,
+ 				"engine_hours": hrs,
+-			})
++			}
++			
++			// Enrich from Redis
++			redisKey := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", claims.CompanyCode, imei)
++			if val, err := redclient.Client.Get(r.Context(), redisKey).Result(); err == nil && val != "" {
++				var state models.TelemetryPayload
++				if err := json.Unmarshal([]byte(val), &state); err == nil {
++					vData["lat"] = state.Latitude
++					vData["lon"] = state.Longitude
++					vData["speed"] = state.Speed
++					vData["acc_status"] = state.ACCStatus
++					vData["fuel_level"] = state.FuelLevel
++					vData["fuel_volume"] = state.FuelVolume
++					vData["fuel_temp_c"] = state.FuelTempC
++					vData["satellites"] = state.Satellites
++					vData["altitude"] = state.Altitude
++					vData["gsm_signal"] = state.GSMSignal
++				}
++			}
++			vehicles = append(vehicles, vData)
+ 		}
+ 	}
+@@ -212,6 +228,16 @@
+ 		EngineHours float64 `json:"engine_hours"`
++		Lat         *float64 `json:"lat,omitempty"`
++		Lon         *float64 `json:"lon,omitempty"`
++		Speed       *float64 `json:"speed,omitempty"`
++		ACCStatus   *int16   `json:"acc_status,omitempty"`
++		FuelLevel   *float64 `json:"fuel_level,omitempty"`
++		FuelVolume  *float64 `json:"fuel_volume,omitempty"`
++		FuelTempC   *float64 `json:"fuel_temp_c,omitempty"`
++		Satellites  *int     `json:"satellites,omitempty"`
++		Altitude    *float64 `json:"altitude,omitempty"`
++		GSMSignal   *int     `json:"gsm_signal,omitempty"`
+ 	}
+ 
+ 	query := fmt.Sprintf(`
+@@ -226,6 +252,24 @@
+ 		return
+ 	}
++
++	// Enrich from Redis
++	redisKey := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", claims.CompanyCode, v.IMEI)
++	if val, err := redclient.Client.Get(r.Context(), redisKey).Result(); err == nil && val != "" {
++		var state models.TelemetryPayload
++		if err := json.Unmarshal([]byte(val), &state); err == nil {
++			v.Lat = &state.Latitude
++			v.Lon = &state.Longitude
++			v.Speed = &state.Speed
++			v.ACCStatus = &state.ACCStatus
++			v.FuelLevel = state.FuelLevel
++			v.FuelVolume = state.FuelVolume
++			v.FuelTempC = state.FuelTempC
++			v.Satellites = &state.Satellites
++			v.Altitude = &state.Altitude
++			v.GSMSignal = &state.GSMSignal
++		}
++	}
+ 
+ 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+ 		"status": "success",

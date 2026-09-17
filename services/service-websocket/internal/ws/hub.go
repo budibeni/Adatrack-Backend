@@ -90,10 +90,20 @@ func (h *Hub) StartConsumer(ctx context.Context) {
 		logger.Log.Error("Failed to subscribe to alerts", "err", err)
 	}
 
+	mediaSub, err := natsclient.NC.Subscribe("media.event.>", func(m *nats.Msg) {
+		h.broadcast <- m
+	})
+	if err != nil {
+		logger.Log.Error("Failed to subscribe to media events", "err", err)
+	}
+
 	<-ctx.Done()
 	sub.Unsubscribe()
 	if alertSub != nil {
 		alertSub.Unsubscribe()
+	}
+	if mediaSub != nil {
+		mediaSub.Unsubscribe()
 	}
 }
 

@@ -122,7 +122,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B5a — Fuel Sensor End-to-End (PRD Module 7) ✅
+## Phase B5a — Fuel Sensor End-to-End (PRD Module 7) ✅ (Zero-Gap Audited 2026-09-18)
 
 ### Tasks
 - [x] Ingest kanal fuel: GT06 `0x0D` + Teltonika AVL IO → mapping fuel_level/volume/temp.
@@ -136,7 +136,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B5b — Dashcam Event Media — Scope A (PRD Module 8) ✅
+## Phase B5b — Dashcam Event Media — Scope A (PRD Module 8) ✅ (Zero-Gap Audited 2026-09-18)
 
 ### Tasks
 - [x] MinIO/S3 (bucket + policy) + storage layer `internal/storage`.
@@ -150,7 +150,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B4 — Performance, Monitoring, Testing, Hardening ✅
+## Phase B4 — Performance, Monitoring, Testing, Hardening ✅ (Executed & Audited 2026-09-18)
 
 ### Tasks
 - [x] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).

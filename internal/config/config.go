@@ -23,10 +23,19 @@ type Config struct {
 	PortCoban     string
 	PortMeitrack  string
 	PortH02       string
+
+	// S3 Config
+	S3Endpoint    string
+	S3AccessKey   string
+	S3SecretKey   string
+	S3BucketName  string
+	S3Region      string
+	S3UseSSL      bool
 }
 func Load() *Config {
 	maxConns, _ := strconv.Atoi(getEnv("DB_MAX_CONNS", "50"))
 	minConns, _ := strconv.Atoi(getEnv("DB_MIN_CONNS", "5"))
+	useSSL, _ := strconv.ParseBool(getEnv("S3_USE_SSL", "false"))
 	return &Config{
 		DBUser:        getEnv("DB_USER", "adatrack_local"),
 		DBPass:        getEnv("DB_PASSWORD", "local_password"),
@@ -46,6 +55,13 @@ func Load() *Config {
 		PortCoban:     getEnv("PORT_COBAN", "15002"),
 		PortMeitrack:  getEnv("PORT_MEITRACK", "15003"),
 		PortH02:       getEnv("PORT_H02", "15004"),
+
+		S3Endpoint:    getEnv("S3_ENDPOINT", "localhost:9000"),
+		S3AccessKey:   getEnv("S3_ACCESS_KEY", "minioadmin"),
+		S3SecretKey:   getEnv("S3_SECRET_KEY", "minioadmin"),
+		S3BucketName:  getEnv("S3_BUCKET_NAME", "adatrack-media"),
+		S3Region:      getEnv("S3_REGION", "us-east-1"),
+		S3UseSSL:      useSSL,
 	}
 }
 func getEnv(key, fallback string) string {

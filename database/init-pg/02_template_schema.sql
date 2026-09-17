@@ -68,8 +68,9 @@ CREATE TABLE IF NOT EXISTS tm_speed_configs (
 CREATE TABLE IF NOT EXISTS tm_fuel_configs (
     id SERIAL PRIMARY KEY,
     vehicle_id INT REFERENCES tm_vehicles(id),
-    drop_threshold_percent FLOAT NOT NULL,
-    refuel_threshold_percent FLOAT NOT NULL,
+    max_volume_liters FLOAT NOT NULL,
+    drop_threshold_liters FLOAT NOT NULL,
+    refuel_threshold_liters FLOAT NOT NULL,
     enabled BOOLEAN DEFAULT true,
     deleted_at TIMESTAMP WITH TIME ZONE
 );
@@ -154,7 +155,8 @@ CREATE TABLE IF NOT EXISTS th_media_events (
     size_bytes BIGINT,
     uploaded_at TIMESTAMP WITH TIME ZONE,
     expires_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE
 );
 CREATE TABLE IF NOT EXISTS th_vehicle_trips (
     id BIGSERIAL PRIMARY KEY,

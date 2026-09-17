@@ -1,0 +1,20 @@
+groups:
+- name: adatrack_alerts
+  rules:
+  - alert: HighErrorRate
+    expr: rate(http_requests_total{status=~"5.."}[5m]) > 5
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: High HTTP error rate on {{ $labels.instance }}
+      description: "{{ $labels.instance }} is returning more than 5 errors per second over the last 5 minutes."
+
+  - alert: WorkerLag
+    expr: (sum(rate(nats_messages_published_total[5m])) - sum(rate(nats_messages_consumed_total[5m]))) > 1000
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: NATS Consumer Lag
+      description: "Worker consumption is lagging behind ingestion by more than 1000 msgs/s."

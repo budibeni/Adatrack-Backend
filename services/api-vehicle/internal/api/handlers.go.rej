@@ -1,0 +1,11 @@
+--- handlers.go
++++ handlers.go
+@@ -10,6 +10,8 @@
+ 
+ 	"backend/internal/auth"
+ 	"backend/internal/config"
+ 	"backend/internal/dbclient"
+ 	"backend/internal/logger"
++	"backend/internal/redclient"
++	"backend/internal/models"
+ 	"backend/internal/storage"

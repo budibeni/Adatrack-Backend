@@ -11,6 +11,8 @@ import (
 	"backend/internal/config"
 	"backend/internal/logger"
 	"backend/internal/dbclient"
+	"backend/internal/redclient"
+	"backend/internal/storage"
 	"backend/api-vehicle/internal/api"
 )
 
@@ -25,7 +27,18 @@ func main() {
 	}
 	defer dbclient.Pool.Close()
 
-	router := api.SetupRouter(cfg)
+	if err := redclient.InitRedis(cfg); err != nil {
+		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
+	}
+
+	store, err := storage.NewS3Store(cfg.S3Endpoint, cfg.S3AccessKey, cfg.S3SecretKey, cfg.S3BucketName, cfg.S3Region, cfg.S3UseSSL)
+	if err != nil {
+		logger.Log.Error("FATAL S3 Store", "err", err); os.Exit(1)
+	}
+
+	api.StartRetentionJob(context.Background(), cfg, store)
+
+	router := api.SetupRouter(cfg, store)
 
 	server := &http.Server{
 		Addr:    ":8084",

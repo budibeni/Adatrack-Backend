@@ -35,7 +35,7 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 
 		fuelQuery := fmt.Sprintf(`
 			INSERT INTO %s.th_fuel_logs 
-			(vehicle_id, imei, company_code, fuel_level, fuel_volume, fuel_temp_c, timestamp)
+			(vehicle_id, fuel_level, volume_liters, temperature_c, lat, lon, timestamp)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT DO NOTHING
 		`, schema)
@@ -52,8 +52,8 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 			
 			if item.FuelLevel != nil || item.FuelVolume != nil || item.FuelTempC != nil {
 				batch.Queue(fuelQuery,
-					item.VehicleID, item.IMEI, item.CompanyCode,
-					item.FuelLevel, item.FuelVolume, item.FuelTempC, item.Timestamp,
+					item.VehicleID, item.FuelLevel, item.FuelVolume, item.FuelTempC,
+					item.Latitude, item.Longitude, item.Timestamp,
 				)
 				expectedExecs++
 			}

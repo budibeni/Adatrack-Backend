@@ -9,9 +9,10 @@ import (
 
 	"backend/internal/auth"
 	"backend/internal/config"
+	"backend/internal/storage"
 )
 
-func SetupRouter(cfg *config.Config) *chi.Mux {
+func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -33,7 +34,7 @@ func SetupRouter(cfg *config.Config) *chi.Mux {
 		w.Write([]byte("OK"))
 	})
 
-	h := NewHandler(cfg)
+	h := NewHandler(cfg, store)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(auth.AuthMiddleware(cfg))
@@ -78,12 +79,13 @@ func SetupRouter(cfg *config.Config) *chi.Mux {
 		r.Post("/alerts/{id}/acknowledge", h.AcknowledgeAlert)
 		r.Post("/alerts/{id}/resolve", h.ResolveAlert)
 
-		// Fuel
+		// Fuel Config
 		r.Post("/fuel-configs", h.CreateFuelConfig)
 		r.Put("/fuel-configs/{id}", h.UpdateFuelConfig)
 		r.Get("/vehicles/{id}/fuel/history", h.GetFuelHistory)
+		r.Get("/vehicles/{id}/media", h.ListMediaEvents)
 
-		// Media Events (Scope A)
+		// Media
 		r.Post("/media/events", h.CreateMediaEvent)
 		r.Post("/media/events/{id}/complete", h.CompleteMediaEvent)
 		r.Get("/media/{id}/url", h.GetMediaURL)
