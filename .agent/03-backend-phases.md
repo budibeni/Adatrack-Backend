@@ -168,16 +168,16 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B6 — Real-Time Data Hardening (Audit Fix) ⬜
+## Phase B6 — Real-Time Data Hardening (Audit Fix) ✅
 
 ### Tasks
-- [ ] ACC status live: pakai data asli device (`Acc` telemetry), bukan inferensi `Speed > 0`.
-- [ ] DTO `VehicleUpdateData` lengkap: fuel_level/fuel_volume/fuel_temp_c, satellites, altitude, gsm_signal.
-- [ ] REST enrich live-state: overlay fuel_level & acc dari Redis.
-- [ ] Unit test bridge/parsing/enrich hijau.
+- [x] ACC status live: pakai data asli device (`Acc` telemetry), bukan inferensi `Speed > 0`.
+- [x] DTO `VehicleUpdateData` lengkap: fuel_level/fuel_volume/fuel_temp_c, satellites, altitude, gsm_signal.
+- [x] REST enrich live-state: overlay fuel_level & acc dari Redis.
+- [x] Unit test bridge/parsing/enrich hijau.
 
 ### Acceptance
-- [ ] Perubahan ACC tercermin real-time di WS & REST sesuai data device.
+- [x] Perubahan ACC tercermin real-time di WS & REST sesuai data device.
 
 ---
 

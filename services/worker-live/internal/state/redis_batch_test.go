@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"testing"
-	"time"
 
 	"backend/internal/models"
 )
@@ -16,16 +15,12 @@ func TestProcessBatchEmpty(t *testing.T) {
 	}
 }
 
-func TestStatusComputation(t *testing.T) {
-	// Since ProcessBatch requires Redis to be connected to test fully,
-	// we just test the logic that determines status before Marshal (if we had it separate)
-	// Here we can at least assert that the code compiles and empty slice works.
-	payload := models.TelemetryPayload{
-		IMEI: "123",
-		CompanyCode: "TEST",
-		Speed: 10,
-		ACCStatus: 1,
-		Timestamp: time.Now(),
+func TestDetermineStatus(t *testing.T) {
+	if s := DetermineStatus(1); s != "ONLINE" {
+		t.Errorf("Expected ONLINE for ACC 1, got %s", s)
 	}
-	_ = payload
+	
+	if s := DetermineStatus(0); s != "IDLE" {
+		t.Errorf("Expected IDLE for ACC 0, got %s", s)
+	}
 }

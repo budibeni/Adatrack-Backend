@@ -13,6 +13,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// DetermineStatus computes vehicle state based on ACC
+func DetermineStatus(accStatus int16) string {
+	if accStatus == 1 {
+		return "ONLINE"
+	}
+	return "IDLE"
+}
+
 // ProcessBatch takes a batch of telemetry payloads, MSETs to Redis, and publishes to live websocket topic
 func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error {
 	if len(payloads) == 0 {
@@ -22,11 +30,7 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 	pipe := redclient.Client.Pipeline()
 	now := float64(time.Now().Unix())
 	for _, p := range payloads {
-		if p.ACCStatus == 1 && p.Speed > 0 {
-			p.Status = "ONLINE"
-		} else {
-			p.Status = "IDLE" // ACC OFF or Speed 0 is IDLE
-		}
+		p.Status = DetermineStatus(p.ACCStatus)
 
 		key := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", p.CompanyCode, p.IMEI)
 		val, _ := json.Marshal(p)

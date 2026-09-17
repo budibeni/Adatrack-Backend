@@ -1691,7 +1691,7 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ✅ Selesai |
 | **B5b** | Dashcam Event Media Scope A (Module 8) | ✅ Selesai |
 | **B4** | Performance, Monitoring, Testing, Hardening | ✅ Selesai |
-| **B6** | Real-Time Data Hardening (Audit Fix) | ⬜ Belum dimulai |
+| **B6** | Real-Time Data Hardening (Audit Fix) | ✅ Selesai |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⬜ Belum dimulai |
 | **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ⬜ Planned |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | ⬜ Planned |
