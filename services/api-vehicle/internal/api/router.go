@@ -67,6 +67,7 @@ func SetupRouter(cfg *config.Config) *chi.Mux {
 		r.Get("/speed-configs", h.ListSpeedConfigs)
 		r.Post("/speed-configs", h.CreateSpeedConfig)
 		r.Delete("/speed-configs/{id}", h.SoftDeleteSpeedConfig)
+		r.Post("/speed-configs/{id}/restore", h.RestoreSpeedConfig)
 
 		// Notification Preferences
 		r.Get("/notification-preferences", h.GetNotificationPreferences)

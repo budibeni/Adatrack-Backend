@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 type Worker struct {
 	sub         *nats.Subscription
+	offlineSub  *nats.Subscription
 	speedCache  sync.Map // cacheKey -> SpeedConfig
 	dedupCache  sync.Map // cacheKey -> time.Time
 	refreshStop chan struct{}
@@ -37,6 +39,23 @@ func (w *Worker) Start() {
 	})
 	if err != nil {
 		logger.Log.Error("Failed to subscribe in worker-alert", "err", err)
+	}
+	w.offlineSub, err = natsclient.NC.Subscribe("alert.internal.offline", func(m *nats.Msg) {
+		var payload models.TelemetryPayload
+		if err := json.Unmarshal(m.Data, &payload); err == nil {
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, "OFFLINE", 30*time.Minute) {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				schema := "adatrack_gps_" + payload.CompanyCode
+				w.createAlert(ctx, schema, "OFFLINE", "medium", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"status": "OFFLINE",
+					"last_seen": payload.Timestamp,
+				})
+			}
+		}
+	})
+	if err != nil {
+		logger.Log.Error("Failed to subscribe offline alerts in worker-alert", "err", err)
 	}
 }
 
@@ -285,7 +304,8 @@ func (w *Worker) evaluateRouteDeviation(ctx context.Context, schema string, payl
 
 		dist := geo.DistanceToPolyline(point, waypoints)
 		if dist > threshold {
-			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, fmt.Sprintf("ROUTE_DEVIATION_%d", routeID), 3*time.Minute) {
+			isDup := w.isDuplicate(payload.CompanyCode, payload.VehicleID, fmt.Sprintf("ROUTE_DEVIATION_%d", routeID), 3*time.Minute)
+			if !isDup {
 				w.createAlert(ctx, schema, "ROUTE_DEVIATION", "high", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
 					"route_id":             routeID,
 					"route_name":           routeName,
@@ -293,6 +313,14 @@ func (w *Worker) evaluateRouteDeviation(ctx context.Context, schema string, payl
 					"threshold_meters":     threshold,
 					"max_deviation_meters": dist,
 				})
+			} else {
+				// Update max_deviation_meters of open alert
+				dbclient.Pool.Exec(ctx, fmt.Sprintf(`
+					UPDATE %s.th_alerts 
+					SET metadata = jsonb_set(metadata::jsonb, '{max_deviation_meters}', to_jsonb($1::numeric)) 
+					WHERE vehicle_id = $2 AND type = 'ROUTE_DEVIATION' AND status = 'open' 
+					AND (metadata->>'route_id')::int = $3 AND (metadata->>'max_deviation_meters')::numeric < $1
+				`, schema), dist, payload.VehicleID, routeID)
 			}
 		}
 	}
@@ -387,17 +415,20 @@ func (w *Worker) createAlert(ctx context.Context, schema, alertType, severity st
 	// 1. Dispatch to Notification Preferences
 	w.dispatchNotifications(ctx, schema, alertID, alertType, severity, metadata)
 
+	companyCode := strings.TrimPrefix(schema, "adatrack_gps_")
+
 	// 2. Publish to NATS for real-time WebSocket fanout
 	eventPayload := map[string]interface{}{
-		"alert_id":   alertID,
-		"type":       alertType,
-		"severity":   severity,
-		"vehicle_id": vehicleID,
-		"lat":        lat,
-		"lon":        lon,
-		"metadata":   metadata,
-		"status":     "open",
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"alert_id":     alertID,
+		"type":         alertType,
+		"severity":     severity,
+		"vehicle_id":   vehicleID,
+		"lat":          lat,
+		"lon":          lon,
+		"metadata":     metadata,
+		"status":       "open",
+		"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		"company_code": companyCode,
 	}
 	data, _ := json.Marshal(eventPayload)
 	natsclient.NC.Publish(fmt.Sprintf("alert.%s", alertType), data)
@@ -444,5 +475,8 @@ func (w *Worker) dispatchNotifications(ctx context.Context, schema string, alert
 func (w *Worker) Stop() {
 	if w.sub != nil {
 		w.sub.Unsubscribe()
+	}
+	if w.offlineSub != nil {
+		w.offlineSub.Unsubscribe()
 	}
 }

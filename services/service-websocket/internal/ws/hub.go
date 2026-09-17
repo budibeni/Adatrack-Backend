@@ -82,8 +82,19 @@ func (h *Hub) StartConsumer(ctx context.Context) {
 		logger.Log.Error("Failed to subscribe to live telemetry", "err", err)
 		return
 	}
+	
+	alertSub, err := natsclient.NC.Subscribe("alert.all", func(m *nats.Msg) {
+		h.broadcast <- m
+	})
+	if err != nil {
+		logger.Log.Error("Failed to subscribe to alerts", "err", err)
+	}
+
 	<-ctx.Done()
 	sub.Unsubscribe()
+	if alertSub != nil {
+		alertSub.Unsubscribe()
+	}
 }
 
 func (h *Hub) Stop() {

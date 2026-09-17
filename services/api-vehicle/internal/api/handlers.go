@@ -860,6 +860,25 @@ func (h *Handler) SoftDeleteSpeedConfig(w http.ResponseWriter, r *http.Request) 
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to delete speed config")
 		return
 	}
+	h.auditLog(r.Context(), claims.CompanyCode, "SPEED_CONFIG_DELETED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Speed config %d soft deleted", id))
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
+}
+
+func (h *Handler) RestoreSpeedConfig(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	id, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+
+	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`UPDATE %s.tm_speed_configs SET deleted_at = NULL WHERE id = $1`, schema), id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to restore speed config")
+		return
+	}
+	h.auditLog(r.Context(), claims.CompanyCode, "SPEED_CONFIG_RESTORED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Speed config %d restored", id))
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
 }
 

@@ -54,14 +54,26 @@ func sweepOffline(ctx context.Context) {
 			companyCode := parts[0]
 			imei := parts[1]
 			
-			// Publish OFFLINE status
-			p := models.TelemetryPayload{
-				IMEI:        imei,
-				CompanyCode: companyCode,
-				Status:      "OFFLINE",
-				Timestamp:   time.Now(),
+			// Get last known state
+			key := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", companyCode, imei)
+			valStr, err := ops.Get(ctx, key).Result()
+			
+			var p models.TelemetryPayload
+			if err == nil && valStr != "" {
+				json.Unmarshal([]byte(valStr), &p)
+			} else {
+				p.IMEI = imei
+				p.CompanyCode = companyCode
 			}
+
+			// Publish OFFLINE status
+			p.Status = "OFFLINE"
+			p.Timestamp = time.Now()
+			
 			val, _ := json.Marshal(p)
+			
+			// Update Redis with OFFLINE status
+			ops.Set(ctx, key, val, 5*time.Minute)
 			
 			if companyCode != "" {
 				wsTenantSubject := fmt.Sprintf("telemetry.live.%s.%s", companyCode, imei)
@@ -69,6 +81,9 @@ func sweepOffline(ctx context.Context) {
 			}
 			wsSubject := fmt.Sprintf("telemetry.live.%s", imei)
 			natsclient.NC.Publish(wsSubject, val)
+			
+			// Publish to internal alert queue for worker-alert to generate OFFLINE alert
+			natsclient.NC.Publish("alert.internal.offline", val)
 			
 			// Remove from ZSET so we don't spam
 			ops.ZRem(ctx, "adatrack_gps:last_updates", member)

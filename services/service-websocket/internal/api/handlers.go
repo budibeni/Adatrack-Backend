@@ -500,6 +500,8 @@ type TelemetryHistoryItem struct {
 	Altitude     *float64  `json:"altitude,omitempty"`
 	ACCStatus    int16     `json:"acc_status"`
 	BatteryLevel *float64  `json:"battery_level,omitempty"`
+	Satellites   int       `json:"satellites"`
+	GSMSignal    int       `json:"gsm_signal"`
 	Timestamp    time.Time `json:"timestamp"`
 }
 
@@ -556,7 +558,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 			args = append(args, startTime, endTime)
 			countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.th_telemetry_logs WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3", schema)
 			query = fmt.Sprintf(`
-				SELECT id, vehicle_id, imei, lat, lon, speed, heading, altitude, acc_status, battery_level, timestamp
+				SELECT id, vehicle_id, imei, lat, lon, speed, heading, altitude, acc_status, battery_level, satellites, gsm_signal, timestamp
 				FROM %s.th_telemetry_logs
 				WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3
 				ORDER BY timestamp DESC
@@ -569,7 +571,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.th_telemetry_logs WHERE vehicle_id = $1", schema)
 		query = fmt.Sprintf(`
-			SELECT id, vehicle_id, imei, lat, lon, speed, heading, altitude, acc_status, battery_level, timestamp
+			SELECT id, vehicle_id, imei, lat, lon, speed, heading, altitude, acc_status, battery_level, satellites, gsm_signal, timestamp
 			FROM %s.th_telemetry_logs
 			WHERE vehicle_id = $1
 			ORDER BY timestamp DESC
@@ -598,7 +600,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	history := make([]TelemetryHistoryItem, 0)
 	for rows.Next() {
 		var item TelemetryHistoryItem
-		if err := rows.Scan(&item.ID, &item.VehicleID, &item.IMEI, &item.Lat, &item.Lon, &item.Speed, &item.Heading, &item.Altitude, &item.ACCStatus, &item.BatteryLevel, &item.Timestamp); err == nil {
+		if err := rows.Scan(&item.ID, &item.VehicleID, &item.IMEI, &item.Lat, &item.Lon, &item.Speed, &item.Heading, &item.Altitude, &item.ACCStatus, &item.BatteryLevel, &item.Satellites, &item.GSMSignal, &item.Timestamp); err == nil {
 			history = append(history, item)
 		}
 	}
