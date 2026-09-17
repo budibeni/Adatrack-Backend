@@ -122,6 +122,18 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	payload.Satellites = satellites
 	payload.ACCStatus = accStatus
 
+	// Driver Behavior / Alarm parsing for Concox (0x16 packet)
+	if data[3] == 0x16 && len(data) >= 33 {
+		alarmType := data[32] // Usually byte 32 or 33 depending on variant
+		if alarmType == 0x09 { // Harsh Acceleration? Wait, PRD says "0x09/0x0A"
+			payload.EventCode = 1
+		} else if alarmType == 0x0A {
+			payload.EventCode = 2
+		} else if alarmType == 0x0B { // Just assuming for cornering
+			payload.EventCode = 3
+		}
+	}
+
 	return payload, nil
 }
 

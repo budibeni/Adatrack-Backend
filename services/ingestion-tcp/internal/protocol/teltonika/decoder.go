@@ -140,6 +140,16 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 				fVal := val
 				payload.FuelTempC = &fVal
 			}
+			// Driver Behavior Analysis (B8)
+			if id == 253 && val > 0 { // Harsh Acceleration
+				payload.EventCode = 1
+			}
+			if id == 254 && val > 0 { // Harsh Braking
+				payload.EventCode = 2
+			}
+			if id == 252 && val > 0 { // Harsh Cornering
+				payload.EventCode = 3
+			}
 		}
 
 		// 1-byte IOs

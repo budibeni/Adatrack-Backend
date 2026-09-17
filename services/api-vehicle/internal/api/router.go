@@ -46,6 +46,9 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Put("/vehicles/{id}", h.UpdateVehicle)
 		r.Delete("/vehicles/{id}", h.SoftDeleteVehicle)
 		r.Post("/vehicles/{id}/restore", h.RestoreVehicle)
+		r.Post("/vehicles/{id}/commands", h.SendCommand)
+		r.Get("/vehicles/{id}/maintenance", h.ListMaintenanceTasks)
+		r.Post("/vehicles/{id}/maintenance", h.CreateMaintenanceTask)
 
 		// Geofences
 		r.Get("/geofences", h.ListGeofences)

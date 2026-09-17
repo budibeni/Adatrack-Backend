@@ -755,7 +755,7 @@ default; restore tersedia via `POST /api/v1/media/{id}/restore` (Admin) + audit 
 | 1.2 Master — **Pengemudi (Drivers)** · **Grup (Groups)** | master data pengemudi & pengelompokan vehicle/driver + mapping | ⬜ B12 |
 | 1.3 Akses — **Personel** · **Kartu (Card/RFID)** · **Log** (riwayat akses) | identitas personel, kartu akses/RFID, riwayat akses kontrol | ⬜ B12 |
 | 1.4 Aset — **Assets** · **Maintenance** | registry aset; jadwal servis + reminder odometer/engine-hours | ⬜ B12 (maintenance menyambung B8) |
-| 1.5 Keamanan — **Safety** (skor mengemudi) · **Incidents** | skor mengemudi (driver behavior B8) + katalog insiden/pelanggaran | ⬜ B8/B12 |
+| 1.5 Keamanan — **Safety** (skor mengemudi) · **Incidents** | skor mengemudi (driver behavior B8) + katalog insiden/pelanggaran | ✅ B8/B12 |
 | 1.6 Analisis — **Reports** · **Analytics** | laporan terjadwal & dashboard tren (trip/violation summary, export PDF/Excel) | ⬜ F4/B12 |
 | 1.7 Industry Specific — Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site | modul vertikal per model bisnis (per-tenant, flag lisensi di `tm_companies`) | ⬜ B12+ (bertahap) |
 | 1.8 Administrasi — Users Access (RBAC) · GPS Devices | users/RBAC (B2) · inventaris device (`tm_vehicle_imei_map`) | ⬜ parsial (B2/B3) |
@@ -1693,7 +1693,7 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | **B4** | Performance, Monitoring, Testing, Hardening | ✅ Selesai |
 | **B6** | Real-Time Data Hardening (Audit Fix) | ✅ Selesai |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⬜ Belum dimulai |
-| **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ⬜ Planned |
+| **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ✅ Selesai |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | ⬜ Planned |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | ⬜ Planned |
 | **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant password `Admin@123` (FR-5.5), migrasi DB otomatis di Coolify (§14.5), dukungan protokol universal (Module 1c) | ⬜ Planned |

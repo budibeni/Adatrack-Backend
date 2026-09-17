@@ -19,6 +19,8 @@ import (
 	"backend/internal/dbclient"
 	"backend/internal/logger"
 	"backend/internal/natsclient"
+
+	"github.com/nats-io/nats.go"
 )
 
 func main() {
@@ -38,6 +40,18 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	healthServer := &http.Server{Addr: ":8081", Handler: mux}
 	go healthServer.ListenAndServe()
+
+	natsclient.NC.Subscribe("downlink.commands.*", func(m *nats.Msg) {
+		subject := m.Subject
+		// subject is downlink.commands.{imei}
+		imei := subject[len("downlink.commands."):]
+		success := server.SendCommand(imei, m.Data)
+		if success {
+			logger.Log.Info("Command sent", "imei", imei, "cmd_len", len(m.Data))
+		} else {
+			logger.Log.Warn("Device offline or cmd failed", "imei", imei)
+		}
+	})
 
 	// Traccar-style Port Binding using Dynamic Ports from ENV
 	var wg sync.WaitGroup

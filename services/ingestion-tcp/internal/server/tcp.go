@@ -128,6 +128,9 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			if err != nil {
 				logger.Log.Error("TCP Scanner read error", "ip", ip, "err", err)
 			}
+			if authenticated {
+				UnregisterConnection(imei)
+			}
 			break
 		}
 
@@ -150,6 +153,7 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			imei = deviceIMEI
 			tenant = tenantData
 			authenticated = true
+			RegisterConnection(imei, conn)
 			if response != nil { conn.Write(response) }
 			logger.Log.Info("Device authenticated", "imei", imei, "protocol", s.decoder.ProtocolName())
 			continue
