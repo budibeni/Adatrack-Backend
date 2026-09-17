@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -17,8 +19,24 @@ func main() {
 		dbURL = "postgres://adatrack_local:local_password@localhost:5432/adatrack_gps_master?sslmode=disable"
 	}
 
-	runMigrate("file://../../database/migrations/master_pg", dbURL, "master_pg")
-	runMigrate("file://../../database/migrations/company_pg", dbURL, "company_pg")
+	// Ensure master schema exists before migrations run
+	db, err := sql.Open("postgres", dbURL)
+	if err == nil {
+		db.Exec("CREATE SCHEMA IF NOT EXISTS adatrack_gps_master")
+		db.Close()
+	}
+
+	masterPath, err := filepath.Abs("../../database/migrations/master_pg")
+	if err != nil {
+		log.Fatalf("Failed to get abs path for master: %v", err)
+	}
+	companyPath, err := filepath.Abs("../../database/migrations/company_pg")
+	if err != nil {
+		log.Fatalf("Failed to get abs path for company: %v", err)
+	}
+
+	runMigrate("file://"+masterPath, dbURL, "master_pg")
+	runMigrate("file://"+companyPath, dbURL, "company_pg")
 }
 
 func runMigrate(sourceURL, dbURL, name string) {

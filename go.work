@@ -8,4 +8,5 @@ use (
 	./services/worker-alert
 	./services/worker-live
 	./services/worker-persistence
+	./tools/migrate
 )

@@ -28,16 +28,20 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 			claims, err := ValidateToken(cfg, tokenStr)
 			if err != nil {
-				logger.Log.Warn("Invalid token", "err", err)
+				if logger.Log != nil {
+					logger.Log.Warn("Invalid token", "err", err)
+				}
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
-			// Check revocation (denylist)
-			isRevoked, _ := redclient.Client.Exists(context.Background(), "denylist:"+tokenStr).Result()
-			if isRevoked > 0 {
-				http.Error(w, "Token Revoked", http.StatusUnauthorized)
-				return
+			// Check revocation (denylist) if redis is configured
+			if redclient.Client != nil {
+				isRevoked, err := redclient.Client.Exists(r.Context(), "denylist:"+tokenStr).Result()
+				if err == nil && isRevoked > 0 {
+					http.Error(w, "Token Revoked", http.StatusUnauthorized)
+					return
+				}
 			}
 
 			ctx := context.WithValue(r.Context(), ClaimsKey, claims)

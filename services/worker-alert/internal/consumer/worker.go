@@ -2,22 +2,25 @@ package consumer
 
 import (
 	"context"
-	"sync"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
 	"backend/internal/dbclient"
 	"backend/internal/logger"
-	"backend/worker-alert/internal/geo"
+	"backend/internal/models"
 	"backend/internal/natsclient"
+	"backend/internal/redclient"
+	"backend/worker-alert/internal/geo"
 )
 
 type Worker struct {
 	sub         *nats.Subscription
-	speedCache  sync.Map
+	speedCache  sync.Map // cacheKey -> SpeedConfig
+	dedupCache  sync.Map // cacheKey -> time.Time
 	refreshStop chan struct{}
 }
 
@@ -35,163 +38,407 @@ func (w *Worker) Start() {
 	if err != nil {
 		logger.Log.Error("Failed to subscribe in worker-alert", "err", err)
 	}
-	go w.cacheRefresher()
 }
 
-func (w *Worker) cacheRefresher() {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			// In production, you'd iterate over all companies to refresh. 
-			// For simplicity in B3, we rely on a pull-through cache in processTelemetry if missing,
-			// or just let it query if not in cache (less optimal but works).
-			// Better: let's do a pull-through cache approach instead of a background refresher to keep it simple.
-		case <-w.refreshStop:
-			return
+type SpeedConfig struct {
+	MaxSpeed    float64
+	GraceMargin float64
+	Severity    string
+}
+
+func (w *Worker) isDuplicate(companyCode string, vehicleID int, alertType string, window time.Duration) bool {
+	cacheKey := fmt.Sprintf("dedup:%s:%d:%s", companyCode, vehicleID, alertType)
+	now := time.Now()
+
+	// Check in-memory sync.Map first
+	if val, ok := w.dedupCache.Load(cacheKey); ok {
+		lastTime := val.(time.Time)
+		if now.Sub(lastTime) < window {
+			return true
 		}
 	}
-}
+	w.dedupCache.Store(cacheKey, now)
 
+	// Also check Redis if available for multi-instance worker dedup
+	if redclient.Client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		set, err := redclient.Client.SetNX(ctx, "alert:"+cacheKey, "1", window).Result()
+		if err == nil && !set {
+			return true
+		}
+	}
 
-type TelemetryPayload struct {
-	IMEI        string   `json:"imei"`
-	CompanyCode string   `json:"company_code"`
-	VehicleID   int      `json:"vehicle_id"`
-	Lat         float64  `json:"lat"`
-	Lon         float64  `json:"lon"`
-	Speed       float64  `json:"speed"`
-	EventCode   int      `json:"event_code"`
-	FuelLevel   *float64 `json:"fuel_level,omitempty"`
-	FuelVolume  *float64 `json:"fuel_volume,omitempty"`
-	FuelTempC   *float64 `json:"fuel_temp_c,omitempty"`
+	return false
 }
 
 func (w *Worker) processTelemetry(m *nats.Msg) {
-	var payload TelemetryPayload
+	var payload models.TelemetryPayload
 	if err := json.Unmarshal(m.Data, &payload); err != nil {
-		logger.Log.Error("Failed to decode telemetry", "err", err)
+		logger.Log.Error("Failed to decode telemetry in worker-alert", "err", err)
 		return
 	}
-	
+
+	if payload.CompanyCode == "" || payload.VehicleID == 0 {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	schema := "adatrack_gps_" + payload.CompanyCode
+	point := geo.Point{Lat: payload.Latitude, Lon: payload.Longitude}
 
-	// 1. OVERSPEEDING LOGIC (With sync.Map Cache)
-	cacheKey := fmt.Sprintf("%s:%d", payload.CompanyCode, payload.VehicleID)
-	var maxSpeed float64
-	val, ok := w.speedCache.Load(cacheKey)
-	if !ok {
-		err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf("SELECT max_speed_kmh FROM %s.tm_speed_configs WHERE vehicle_id = $1 AND enabled = true", schema), payload.VehicleID).Scan(&maxSpeed)
-		if err == nil {
-			w.speedCache.Store(cacheKey, maxSpeed)
-		} else {
-			w.speedCache.Store(cacheKey, float64(0)) // Store 0 to prevent re-querying if not found
-		}
-	} else {
-		maxSpeed = val.(float64)
-	}
-
-	if maxSpeed > 0 && payload.Speed > maxSpeed {
-		w.createAlert(ctx, schema, "OVERSPEEDING", "high", payload.VehicleID, payload.Lat, payload.Lon, map[string]interface{}{"speed": payload.Speed, "limit": maxSpeed})
-	}
+	// 1. OVERSPEEDING LOGIC
+	w.evaluateOverspeed(ctx, schema, payload)
 
 	// 2. SOS LOGIC
 	if payload.EventCode == 0x26 || payload.EventCode == 0x27 || payload.EventCode == 0x19 {
-		w.createAlert(ctx, schema, "SOS", "critical", payload.VehicleID, payload.Lat, payload.Lon, map[string]interface{}{"event_code": payload.EventCode})
+		if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, "SOS", 3*time.Minute) {
+			meta := map[string]interface{}{
+				"event_code":         payload.EventCode,
+				"escalation_minutes": 5,
+				"escalation_max":     3,
+				"escalation_level":   0,
+				"speed":              payload.Speed,
+			}
+			w.createAlert(ctx, schema, "SOS", "critical", payload.VehicleID, payload.Latitude, payload.Longitude, meta)
+		}
 	}
-	
-	// 3. GEOFENCE LOGIC
-	// We'll query geofences from DB for this company (in production we'd cache this in sync.Map too)
-	// Querying DB directly here for simplicity of the PoC, caching can be added identically to speed configs.
-	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf("SELECT id, name, area_type, coordinates, radius_meters, boundary_points FROM %s.tm_geofences WHERE deleted_at IS NULL", schema))
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var id int
-			var name, areaType string
-			var coordsJSON, boundsJSON []byte
-			var radius float64
-			rows.Scan(&id, &name, &areaType, &coordsJSON, &radius, &boundsJSON)
 
-			point := geo.Point{Lat: payload.Lat, Lon: payload.Lon}
-			isInside := false
-			
-			if areaType == "circle" {
-				var center geo.Point
-				json.Unmarshal(coordsJSON, &center)
+	// 3. BATTERY LOW LOGIC (< 20% default, < 10% critical)
+	if payload.Battery > 0 && payload.Battery < 20 {
+		severity := "high"
+		if payload.Battery < 10 {
+			severity = "critical"
+		}
+		if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, "BATTERY_LOW", 15*time.Minute) {
+			w.createAlert(ctx, schema, "BATTERY_LOW", severity, payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+				"battery_level": payload.Battery,
+			})
+		}
+	}
+
+	// 4. GEOFENCE EVALUATION (Circle + Polygon, Entry + Exit)
+	w.evaluateGeofences(ctx, schema, payload, point)
+
+	// 5. ROUTE DEVIATION EVALUATION
+	w.evaluateRouteDeviation(ctx, schema, payload, point)
+
+	// 6. FUEL EVALUATION
+	w.evaluateFuel(ctx, schema, payload)
+}
+
+func (w *Worker) evaluateOverspeed(ctx context.Context, schema string, payload models.TelemetryPayload) {
+	cacheKey := fmt.Sprintf("%s:%d", payload.CompanyCode, payload.VehicleID)
+	var config SpeedConfig
+	val, ok := w.speedCache.Load(cacheKey)
+	if !ok {
+		// 1. Query vehicle-specific config
+		err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+			SELECT max_speed_kmh, COALESCE(grace_margin_percent, 0), COALESCE(alert_severity, 'medium')
+			FROM %s.tm_speed_configs 
+			WHERE vehicle_id = $1 AND enabled = true AND deleted_at IS NULL
+		`, schema), payload.VehicleID).Scan(&config.MaxSpeed, &config.GraceMargin, &config.Severity)
+
+		// 2. Fallback to global config (vehicle_id IS NULL)
+		if err != nil {
+			err = dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+				SELECT max_speed_kmh, COALESCE(grace_margin_percent, 0), COALESCE(alert_severity, 'medium')
+				FROM %s.tm_speed_configs 
+				WHERE vehicle_id IS NULL AND enabled = true AND deleted_at IS NULL
+			`, schema)).Scan(&config.MaxSpeed, &config.GraceMargin, &config.Severity)
+		}
+
+		if err == nil {
+			w.speedCache.Store(cacheKey, config)
+		} else {
+			w.speedCache.Store(cacheKey, SpeedConfig{MaxSpeed: 0})
+		}
+	} else {
+		config = val.(SpeedConfig)
+	}
+
+	if config.MaxSpeed > 0 {
+		effectiveLimit := config.MaxSpeed * (1.0 + config.GraceMargin/100.0)
+		if payload.Speed > effectiveLimit {
+			severity := config.Severity
+			if severity == "" {
+				severity = "high"
+			}
+			// Critical tier if > 1.5x limit
+			if payload.Speed >= config.MaxSpeed*1.5 {
+				severity = "critical"
+			}
+
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, "OVERSPEEDING", 2*time.Minute) {
+				w.createAlert(ctx, schema, "OVERSPEEDING", severity, payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"speed":           payload.Speed,
+					"limit":           config.MaxSpeed,
+					"effective_limit": effectiveLimit,
+					"grace_margin":    config.GraceMargin,
+				})
+			}
+		}
+	}
+}
+
+func (w *Worker) evaluateGeofences(ctx context.Context, schema string, payload models.TelemetryPayload, point geo.Point) {
+	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf(`
+		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points
+		FROM %s.tm_geofences g
+		LEFT JOIN %s.tm_geofence_vehicles gv ON g.id = gv.geofence_id
+		WHERE g.deleted_at IS NULL AND (gv.vehicle_id IS NULL OR gv.vehicle_id = $1)
+	`, schema, schema), payload.VehicleID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var gid int
+		var name, areaType string
+		var coordsJSON, boundsJSON []byte
+		var radius float64
+
+		if err := rows.Scan(&gid, &name, &areaType, &coordsJSON, &radius, &boundsJSON); err != nil {
+			continue
+		}
+
+		isInside := false
+		if areaType == "circle" {
+			var center geo.Point
+			if err := json.Unmarshal(coordsJSON, &center); err == nil {
 				dist := geo.Haversine(point, center)
 				if dist <= radius {
 					isInside = true
 				}
-			} else if areaType == "polygon" {
-				var polygon []geo.Point
-				json.Unmarshal(boundsJSON, &polygon)
+			}
+		} else if areaType == "polygon" {
+			var polygon []geo.Point
+			if err := json.Unmarshal(boundsJSON, &polygon); err == nil {
 				isInside = geo.RayCasting(point, polygon)
 			}
-			
-			// If inside, we might trigger a GEOFENCE_ENTRY alert if they weren't inside before
-			// For this MVP, we just log it or trigger a generic GEOFENCE_VIOLATION if it's a restricted zone.
-			if isInside {
-				// Note: typically we track entry/exit state in Redis.
-				// redclient.Client.Set(...)
+		}
+
+		// State tracking in Redis
+		stateKey := fmt.Sprintf("geofence:state:%s:%d:%d", payload.CompanyCode, gid, payload.VehicleID)
+		prevState := ""
+		if redclient.Client != nil {
+			prevState, _ = redclient.Client.Get(ctx, stateKey).Result()
+		}
+
+		if isInside && prevState != "inside" {
+			// Trigger ENTRY
+			if redclient.Client != nil {
+				redclient.Client.Set(ctx, stateKey, "inside", 24*time.Hour)
+			}
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, fmt.Sprintf("GEOFENCE_ENTRY_%d", gid), 5*time.Minute) {
+				w.createAlert(ctx, schema, "GEOFENCE_ENTRY", "medium", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"geofence_id":   gid,
+					"geofence_name": name,
+					"transition":    "entry",
+				})
+			}
+		} else if !isInside && prevState == "inside" {
+			// Trigger EXIT
+			if redclient.Client != nil {
+				redclient.Client.Set(ctx, stateKey, "outside", 24*time.Hour)
+			}
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, fmt.Sprintf("GEOFENCE_EXIT_%d", gid), 5*time.Minute) {
+				w.createAlert(ctx, schema, "GEOFENCE_EXIT", "medium", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"geofence_id":   gid,
+					"geofence_name": name,
+					"transition":    "exit",
+				})
+			}
+		}
+	}
+}
+
+func (w *Worker) evaluateRouteDeviation(ctx context.Context, schema string, payload models.TelemetryPayload, point geo.Point) {
+	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf(`
+		SELECT r.id, r.name, r.waypoints, COALESCE(r.deviation_threshold_meters, 200)
+		FROM %s.th_route_assignments ra
+		JOIN %s.tm_routes r ON ra.route_id = r.id
+		WHERE ra.vehicle_id = $1 AND ra.status IN ('assigned', 'in_progress') AND r.deleted_at IS NULL
+	`, schema, schema), payload.VehicleID)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var routeID int
+		var routeName string
+		var waypointsJSON []byte
+		var threshold float64
+
+		if err := rows.Scan(&routeID, &routeName, &waypointsJSON, &threshold); err != nil {
+			continue
+		}
+
+		var waypoints []geo.Point
+		if err := json.Unmarshal(waypointsJSON, &waypoints); err != nil || len(waypoints) < 2 {
+			continue
+		}
+
+		dist := geo.DistanceToPolyline(point, waypoints)
+		if dist > threshold {
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, fmt.Sprintf("ROUTE_DEVIATION_%d", routeID), 3*time.Minute) {
+				w.createAlert(ctx, schema, "ROUTE_DEVIATION", "high", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"route_id":             routeID,
+					"route_name":           routeName,
+					"deviation_meters":     dist,
+					"threshold_meters":     threshold,
+					"max_deviation_meters": dist,
+				})
+			}
+		}
+	}
+}
+
+func (w *Worker) evaluateFuel(ctx context.Context, schema string, payload models.TelemetryPayload) {
+	if payload.FuelLevel == nil && payload.FuelVolume == nil {
+		return
+	}
+
+	type FuelConfig struct {
+		MaxVolume       float64
+		RefuelThreshold float64
+		DropThreshold   float64
+	}
+
+	var config FuelConfig
+	err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT max_volume_liters, refuel_threshold_liters, drop_threshold_liters 
+		FROM %s.tm_fuel_configs 
+		WHERE vehicle_id = $1 AND enabled = true
+	`, schema), payload.VehicleID).Scan(&config.MaxVolume, &config.RefuelThreshold, &config.DropThreshold)
+
+	if err != nil {
+		return
+	}
+
+	var currentVol float64
+	if payload.FuelVolume != nil {
+		currentVol = *payload.FuelVolume
+	} else if payload.FuelLevel != nil {
+		currentVol = (*payload.FuelLevel / 100.0) * config.MaxVolume
+	}
+
+	fuelKey := fmt.Sprintf("fuel:%s:%d", payload.CompanyCode, payload.VehicleID)
+	lastVolRaw, ok := w.speedCache.Load(fuelKey)
+	if ok {
+		lastVol := lastVolRaw.(float64)
+		diff := currentVol - lastVol
+
+		if diff < 0 && (-diff) >= config.DropThreshold {
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, "FUEL_DROP", 5*time.Minute) {
+				w.createAlert(ctx, schema, "FUEL_DROP", "high", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"drop_volume":     -diff,
+					"current_volume":  currentVol,
+					"previous_volume": lastVol,
+				})
+			}
+		} else if diff > 0 && diff >= config.RefuelThreshold {
+			if !w.isDuplicate(payload.CompanyCode, payload.VehicleID, "REFUEL", 5*time.Minute) {
+				w.createAlert(ctx, schema, "REFUEL", "low", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+					"refuel_volume":   diff,
+					"current_volume":  currentVol,
+					"previous_volume": lastVol,
+				})
 			}
 		}
 	}
 
-	// 4. FUEL LOGIC
-	if payload.FuelLevel != nil || payload.FuelVolume != nil {
-		type FuelConfig struct {
-			MaxVolume float64
-			RefuelThreshold float64
-			DropThreshold float64
-		}
-		
-		// Note: normally we'd cache this in another sync.Map
-		var config FuelConfig
-		err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf("SELECT max_volume_liters, refuel_threshold_liters, drop_threshold_liters FROM %s.tm_fuel_configs WHERE vehicle_id = $1 AND enabled = true", schema), payload.VehicleID).Scan(&config.MaxVolume, &config.RefuelThreshold, &config.DropThreshold)
-		
-		if err == nil {
-			// Calculate volume if only level provided
-			var currentVol float64
-			if payload.FuelVolume != nil {
-				currentVol = *payload.FuelVolume
-			} else if payload.FuelLevel != nil {
-				currentVol = (*payload.FuelLevel / 100.0) * config.MaxVolume
-			}
-			
-			lastVolRaw, ok := w.speedCache.Load(fmt.Sprintf("fuel:%s:%d", payload.CompanyCode, payload.VehicleID))
-			if ok {
-				lastVol := lastVolRaw.(float64)
-				diff := currentVol - lastVol
-				
-				if diff < 0 && (-diff) >= config.DropThreshold {
-					w.createAlert(ctx, schema, "FUEL_DROP", "high", payload.VehicleID, payload.Lat, payload.Lon, map[string]interface{}{"drop_volume": -diff, "current_volume": currentVol, "previous_volume": lastVol})
-				} else if diff > 0 && diff >= config.RefuelThreshold {
-					w.createAlert(ctx, schema, "REFUEL", "info", payload.VehicleID, payload.Lat, payload.Lon, map[string]interface{}{"refuel_volume": diff, "current_volume": currentVol, "previous_volume": lastVol})
-				}
-			}
-			
-			w.speedCache.Store(fmt.Sprintf("fuel:%s:%d", payload.CompanyCode, payload.VehicleID), currentVol)
-		}
+	w.speedCache.Store(fuelKey, currentVol)
+}
+
+func severityRank(s string) int {
+	switch s {
+	case "low", "info":
+		return 1
+	case "medium":
+		return 2
+	case "high":
+		return 3
+	case "critical":
+		return 4
+	default:
+		return 1
 	}
 }
 
 func (w *Worker) createAlert(ctx context.Context, schema, alertType, severity string, vehicleID int, lat, lon float64, metadata map[string]interface{}) {
 	metaJSON, _ := json.Marshal(metadata)
-	query := fmt.Sprintf(`INSERT INTO %s.th_alerts (type, severity, vehicle_id, lat, lon, metadata) VALUES ($1, $2, $3, $4, $5, $6)`, schema)
-	
-	_, err := dbclient.Pool.Exec(ctx, query, alertType, severity, vehicleID, lat, lon, metaJSON)
+	query := fmt.Sprintf(`
+		INSERT INTO %s.th_alerts (type, severity, vehicle_id, lat, lon, metadata, status, created_at) 
+		VALUES ($1, $2, $3, $4, $5, $6, 'open', NOW()) RETURNING id
+	`, schema)
+
+	var alertID int64
+	err := dbclient.Pool.QueryRow(ctx, query, alertType, severity, vehicleID, lat, lon, metaJSON).Scan(&alertID)
 	if err != nil {
 		logger.Log.Error("Failed to persist alert", "type", alertType, "err", err)
 		return
 	}
-	
-	// Publish notification to websocket fanout channel
-	natsclient.NC.Publish(fmt.Sprintf("alert.%s", alertType), metaJSON)
+
+	// 1. Dispatch to Notification Preferences
+	w.dispatchNotifications(ctx, schema, alertID, alertType, severity, metadata)
+
+	// 2. Publish to NATS for real-time WebSocket fanout
+	eventPayload := map[string]interface{}{
+		"alert_id":   alertID,
+		"type":       alertType,
+		"severity":   severity,
+		"vehicle_id": vehicleID,
+		"lat":        lat,
+		"lon":        lon,
+		"metadata":   metadata,
+		"status":     "open",
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+	}
+	data, _ := json.Marshal(eventPayload)
+	natsclient.NC.Publish(fmt.Sprintf("alert.%s", alertType), data)
+	natsclient.NC.Publish("alert.all", data)
+}
+
+func (w *Worker) dispatchNotifications(ctx context.Context, schema string, alertID int64, alertType, severity string, metadata map[string]interface{}) {
+	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf(`
+		SELECT user_id, channel, min_severity 
+		FROM %s.tm_notification_preferences 
+		WHERE alert_type = $1 AND enabled = true
+	`, schema), alertType)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	alertRank := severityRank(severity)
+	for rows.Next() {
+		var userID int
+		var channel, minSev string
+		if err := rows.Scan(&userID, &channel, &minSev); err != nil {
+			continue
+		}
+
+		if alertRank >= severityRank(minSev) {
+			// Record pending notification in td_notifications
+			metaBytes, _ := json.Marshal(map[string]interface{}{
+				"alert_id":   alertID,
+				"alert_type": alertType,
+				"severity":   severity,
+			})
+			dbclient.Pool.Exec(ctx, fmt.Sprintf(`
+				INSERT INTO %s.td_notifications (alert_id, user_id, channel, status, provider_response, created_at)
+				VALUES ($1, $2, $3, 'pending', $4, NOW())
+			`, schema), alertID, userID, channel, metaBytes)
+
+			// Publish notification channel message
+			natsclient.NC.Publish(fmt.Sprintf("notify.%s.%d", channel, userID), metaBytes)
+		}
+	}
 }
 
 func (w *Worker) Stop() {

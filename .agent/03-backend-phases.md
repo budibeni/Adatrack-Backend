@@ -90,10 +90,10 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Audit akses & mutasi awal (`tm_audit_logs`, append-only, fail-closed untuk aksi sensitif).
 
 ### Acceptance
-- [ ] 401/403 benar (tanpa token, cross-tenant, tanpa hak vehicle).
-- [ ] WS push end-to-end <1 s dari ingest; reconnect + resubscribe aman.
-- [ ] REST sesuai kontrak PRD §8.2 (pagination, error_code).
-- [ ] Unit/integration test handler + middleware hijau.
+- [x] 401/403 benar (tanpa token, cross-tenant, tanpa hak vehicle).
+- [x] WS push end-to-end <1 s dari ingest; reconnect + resubscribe aman (routing topic tenant-scoped + payload extraction).
+- [x] REST sesuai kontrak PRD §8.2 (pagination, error_code, standard response wrapper).
+- [x] Unit/integration test handler + middleware hijau.
 
 ---
 
@@ -115,10 +115,10 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] CRUD `tm_speed_configs`; soft delete + restore semua entitas (pola §6.0.1).
 
 ### Acceptance
-- [ ] E2E per alert type: trigger → alert + persist + publish → notifikasi sesuai preference.
-- [ ] Dedup & eskalasi benar (SOS TTA tercatat sekali per alert).
-- [ ] RBAC row-level pada seluruh endpoint api-vehicle (403 non-assigned).
-- [ ] Unit test geometri (Haversine/ray-casting) + handler hijau.
+- [x] E2E per alert type: trigger → alert + persist + publish → notifikasi sesuai preference (`td_notifications`).
+- [x] Dedup & eskalasi benar (SOS TTA tercatat sekali per alert, dedup window terverifikasi).
+- [x] RBAC row-level pada seluruh endpoint api-vehicle (403 non-assigned / non-admin).
+- [x] Unit test geometri (Haversine/ray-casting/DistanceToPolyline) + handler hijau.
 
 ---
 

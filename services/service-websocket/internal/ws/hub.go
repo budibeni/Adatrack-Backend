@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/nats-io/nats.go"
@@ -42,16 +43,23 @@ func (h *Hub) Run() {
 				close(client.send)
 			}
 		case msg := <-h.broadcast:
-			// Parse routing key (telemetry.live.<tenant>.<imei> perhaps?)
-			// We will broadcast to clients of the same tenant.
 			subjectParts := strings.Split(msg.Subject, ".")
 			var companyCode string
-			if len(subjectParts) >= 3 {
-				companyCode = subjectParts[2] // Assuming telemetry.live.{companyCode}.{imei}
+			if len(subjectParts) >= 4 {
+				companyCode = subjectParts[2] // telemetry.live.{companyCode}.{imei}
+			} else {
+				var payload struct {
+					CompanyCode string `json:"company_code"`
+				}
+				if err := json.Unmarshal(msg.Data, &payload); err == nil {
+					companyCode = payload.CompanyCode
+				}
+			}
+			if companyCode == "" {
+				continue
 			}
 			for client := range h.clients {
-				// Only send if the client belongs to the company, or if they are SuperAdmin of the platform (but usually SuperAdmins shouldn't get all live data, but let's assume strict tenant isolation for WS).
-				if client.claims.CompanyCode == companyCode {
+				if client.claims != nil && (client.claims.CompanyCode == companyCode || (client.claims.Role == "SuperAdmin" && client.claims.CompanyCode == "DEFAULT")) {
 					select {
 					case client.send <- msg.Data:
 					default:

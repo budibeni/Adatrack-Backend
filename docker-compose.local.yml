@@ -2,7 +2,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: adatrack_postgres_local
+    container_name: adatrack_postgres
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -10,7 +10,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata_local:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
@@ -19,12 +19,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: adatrack_redis_local
+    container_name: adatrack_redis
     command: redis-server --requirepass ""
     ports:
       - "6379:6379"
     volumes:
-      - redisdata_local:/data
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -33,23 +33,18 @@ services:
 
   nats:
     image: nats:2.10-alpine
-    container_name: adatrack_nats_local
+    container_name: adatrack_nats
     command: ["-js"]
     ports:
       - "4222:4222"
       - "8222:8222"
     volumes:
-      - natsdata_local:/data
+      - natsdata:/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-volumes:
-  pgdata_local:
-  redisdata_local:
-  natsdata_local:
 
   prometheus:
     image: prom/prometheus:v2.45.0
@@ -69,3 +64,8 @@ volumes:
     volumes:
       - ./deployments/grafana/provisioning:/etc/grafana/provisioning
       - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:

@@ -34,8 +34,12 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 
 	// Publish to Websocket live topic (Fire and forget, since Websocket is ephemeral)
 	for _, p := range payloads {
-		wsSubject := fmt.Sprintf("telemetry.live.%s", p.IMEI)
 		val, _ := json.Marshal(p)
+		if p.CompanyCode != "" {
+			wsTenantSubject := fmt.Sprintf("telemetry.live.%s.%s", p.CompanyCode, p.IMEI)
+			natsclient.NC.Publish(wsTenantSubject, val)
+		}
+		wsSubject := fmt.Sprintf("telemetry.live.%s", p.IMEI)
 		natsclient.NC.Publish(wsSubject, val)
 	}
 
