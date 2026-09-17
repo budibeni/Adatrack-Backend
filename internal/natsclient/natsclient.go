@@ -25,31 +25,35 @@ func Connect(cfg *config.Config) error {
 	return nil
 }
 
-func ProvisionStreams() error {
+func ProvisionStreams(cfg *config.Config) error {
+	maxAge := time.Duration(cfg.JetstreamMaxAgeHours) * time.Hour
+	maxBytes := cfg.JetstreamMaxBytes
+
 	streamConfigs := []nats.StreamConfig{
 		{
 			Name: "TELEMETRY", Subjects: []string{"telemetry.raw.>"},
-			MaxAge: 48 * time.Hour, MaxBytes: 4 * 1024 * 1024 * 1024,
+			MaxAge: maxAge, MaxBytes: maxBytes, Discard: nats.DiscardOld,
 		},
 		{
 			Name: "DEADLETTER", Subjects: []string{"dlq.>"},
 			MaxAge: 168 * time.Hour, // 7 days retention for debugging DLQ
+			Discard: nats.DiscardOld,
 		},
 		{
 			Name: "ALERT", Subjects: []string{"alert.*"},
-			MaxAge: 48 * time.Hour, MaxBytes: 4 * 1024 * 1024 * 1024,
+			MaxAge: maxAge, MaxBytes: maxBytes, Discard: nats.DiscardOld,
 		},
 		{
 			Name: "NOTIFY", Subjects: []string{"notify.*"},
-			MaxAge: 48 * time.Hour, MaxBytes: 1 * 1024 * 1024 * 1024,
+			MaxAge: maxAge, MaxBytes: maxBytes, Discard: nats.DiscardOld,
 		},
 		{
 			Name: "MEDIA", Subjects: []string{"media.*"},
-			MaxAge: 168 * time.Hour, MaxBytes: 10 * 1024 * 1024 * 1024,
+			MaxAge: 168 * time.Hour, MaxBytes: 10 * 1024 * 1024 * 1024, Discard: nats.DiscardOld,
 		},
 	}
-	for _, cfg := range streamConfigs {
-		_, err := JS.AddStream(&cfg)
+	for _, scfg := range streamConfigs {
+		_, err := JS.AddStream(&scfg)
 		if err != nil { return err }
 	}
 	return nil

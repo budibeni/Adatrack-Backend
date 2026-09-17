@@ -31,11 +31,17 @@ type Config struct {
 	S3BucketName  string
 	S3Region      string
 	S3UseSSL      bool
+
+	// JetStream Config
+	JetstreamMaxAgeHours int
+	JetstreamMaxBytes    int64
 }
 func Load() *Config {
 	maxConns, _ := strconv.Atoi(getEnv("DB_MAX_CONNS", "50"))
 	minConns, _ := strconv.Atoi(getEnv("DB_MIN_CONNS", "5"))
 	useSSL, _ := strconv.ParseBool(getEnv("S3_USE_SSL", "false"))
+	jsMaxAge, _ := strconv.Atoi(getEnv("JETSTREAM_MAX_AGE_HOURS", "48"))
+	jsMaxBytes, _ := strconv.ParseInt(getEnv("JETSTREAM_MAX_BYTES", "4294967296"), 10, 64) // 4 GiB
 	return &Config{
 		DBUser:        getEnv("DB_USER", "adatrack_local"),
 		DBPass:        getEnv("DB_PASSWORD", "local_password"),
@@ -62,6 +68,9 @@ func Load() *Config {
 		S3BucketName:  getEnv("S3_BUCKET_NAME", "adatrack-media"),
 		S3Region:      getEnv("S3_REGION", "us-east-1"),
 		S3UseSSL:      useSSL,
+
+		JetstreamMaxAgeHours: jsMaxAge,
+		JetstreamMaxBytes:    jsMaxBytes,
 	}
 }
 func getEnv(key, fallback string) string {

@@ -13,6 +13,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
+	"backend/internal/tenant"
 )
 
 func main() {
@@ -27,10 +28,11 @@ func main() {
 	if err := redclient.Connect(ctx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
 	}
+	tenant.InitManager(cfg)
 	if err := natsclient.Connect(cfg); err != nil {
 		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
 	}
-	if err := natsclient.ProvisionStreams(); err != nil {
+	if err := natsclient.ProvisionStreams(cfg); err != nil {
 		logger.Log.Error("FATAL Stream", "err", err); os.Exit(1)
 	}
 

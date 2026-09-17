@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,6 +22,7 @@ import (
 	"backend/internal/dbclient"
 	"backend/internal/logger"
 	"backend/internal/redclient"
+	"backend/internal/tenant"
 	"backend/service-websocket/internal/ws"
 )
 
@@ -140,10 +143,17 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "TOKEN_GENERATION_FAILED", "Failed to generate access token")
 		return
 	}
-	refreshToken, err := auth.GenerateToken(h.cfg, userID, req.Email, req.CompanyCode, role, 7*24*time.Hour)
-	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "TOKEN_GENERATION_FAILED", "Failed to generate refresh token")
-		return
+	rb := make([]byte, 32)
+	rand.Read(rb)
+	refreshToken := hex.EncodeToString(rb)
+	if redclient.Client != nil {
+		claimsData, _ := json.Marshal(map[string]interface{}{
+			"user_id":      userID,
+			"email":        req.Email,
+			"company_code": req.CompanyCode,
+			"role":         role,
+		})
+		redclient.Client.Set(r.Context(), "refresh_token:"+refreshToken, string(claimsData), 7*24*time.Hour)
 	}
 
 	h.auditLog(r.Context(), req.CompanyCode, "LOGIN_SUCCESS", "success", userID, req.Email, role, "Login successful")
@@ -161,42 +171,86 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
-	if !ok {
-		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid authentication claims")
+	var req map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
 
-	accessToken, err := auth.GenerateToken(h.cfg, claims.UserID, claims.Email, claims.CompanyCode, claims.Role, 24*time.Hour)
+	refreshToken := req["refresh_token"]
+	if refreshToken == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "refresh_token is required")
+		return
+	}
+
+	if redclient.Client == nil {
+		h.writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Redis not configured")
+		return
+	}
+
+	val, err := redclient.Client.Get(r.Context(), "refresh_token:"+refreshToken).Result()
+	if err != nil || val == "" {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or expired refresh token")
+		return
+	}
+
+	// Invalidate old refresh token (rotate)
+	redclient.Client.Del(r.Context(), "refresh_token:"+refreshToken)
+
+	var claimsData struct {
+		UserID      int64  `json:"user_id"`
+		Email       string `json:"email"`
+		CompanyCode string `json:"company_code"`
+		Role        string `json:"role"`
+	}
+	if err := json.Unmarshal([]byte(val), &claimsData); err != nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid token data")
+		return
+	}
+
+	accessToken, err := auth.GenerateToken(h.cfg, claimsData.UserID, claimsData.Email, claimsData.CompanyCode, claimsData.Role, 24*time.Hour)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "TOKEN_GENERATION_FAILED", "Failed to generate access token")
 		return
 	}
 
+	rb := make([]byte, 32)
+	rand.Read(rb)
+	newRefreshToken := hex.EncodeToString(rb)
+	claimsBytes, _ := json.Marshal(claimsData)
+	redclient.Client.Set(r.Context(), "refresh_token:"+newRefreshToken, string(claimsBytes), 7*24*time.Hour)
+
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "success",
 		"data": map[string]string{
-			"access_token": accessToken,
+			"access_token":  accessToken,
+			"refresh_token": newRefreshToken,
 		},
 	})
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	authHeader := r.Header.Get("Authorization")
-	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-
 	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
 	if !ok {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid authentication claims")
 		return
 	}
+	
 	ttl := time.Until(claims.ExpiresAt.Time)
 	if ttl <= 0 {
 		ttl = 1 * time.Hour
 	}
 
 	if redclient.Client != nil {
-		redclient.Client.Set(r.Context(), "denylist:"+tokenStr, "1", ttl)
+		if claims.ID != "" {
+			redclient.Client.Set(r.Context(), "denylist:"+claims.ID, "1", ttl)
+		}
+		
+		// If client also sends refresh_token, revoke it
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req["refresh_token"] != "" {
+			redclient.Client.Del(r.Context(), "refresh_token:"+req["refresh_token"])
+		}
 	}
 
 	h.auditLog(r.Context(), claims.CompanyCode, "LOGOUT", "success", claims.UserID, claims.Email, claims.Role, "User logged out")
@@ -383,13 +437,14 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		args = append(args, claims.UserID, limit, offset)
 	}
 
+	router := tenant.NewReadRouter(claims.CompanyCode)
 	if claims.Role == "Admin" || claims.Role == "SuperAdmin" || claims.Role == "Manager" {
-		_ = dbclient.Pool.QueryRow(r.Context(), countQuery).Scan(&total)
+		_ = router.QueryRow(r.Context(), countQuery).Scan(&total)
 	} else {
-		_ = dbclient.Pool.QueryRow(r.Context(), countQuery, claims.UserID).Scan(&total)
+		_ = router.QueryRow(r.Context(), countQuery, claims.UserID).Scan(&total)
 	}
 
-	rows, err := dbclient.Pool.Query(r.Context(), query, args...)
+	rows, err := router.Query(r.Context(), query, args...)
 	if err != nil {
 		logger.Log.Error("Failed to query vehicles", "err", err)
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to retrieve vehicles")
@@ -451,7 +506,8 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 	// RBAC row-level: non-admin must have vehicle assigned
 	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
 		var exists bool
-		err := dbclient.Pool.QueryRow(r.Context(),
+		router := tenant.NewReadRouter(claims.CompanyCode)
+		err := router.QueryRow(r.Context(),
 			fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s.tm_user_vehicles WHERE user_id = $1 AND vehicle_id = $2)", schema),
 			claims.UserID, vehicleID).Scan(&exists)
 		if err != nil || !exists {
@@ -461,7 +517,8 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var v VehicleItem
-	err = dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
+	router := tenant.NewReadRouter(claims.CompanyCode)
+	err = router.QueryRow(r.Context(), fmt.Sprintf(`
 		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0)
 		FROM %s.tm_vehicles
 		WHERE id = $1 AND deleted_at IS NULL
@@ -524,7 +581,8 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	// RBAC row-level
 	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
 		var exists bool
-		err := dbclient.Pool.QueryRow(r.Context(),
+		router := tenant.NewReadRouter(claims.CompanyCode)
+		err := router.QueryRow(r.Context(),
 			fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s.tm_user_vehicles WHERE user_id = $1 AND vehicle_id = $2)", schema),
 			claims.UserID, vehicleID).Scan(&exists)
 		if err != nil || !exists {
@@ -581,15 +639,16 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var total int
+	router := tenant.NewReadRouter(claims.CompanyCode)
 	if countQuery != "" {
 		if len(args) == 3 {
-			_ = dbclient.Pool.QueryRow(r.Context(), countQuery, vehicleID).Scan(&total)
+			_ = router.QueryRow(r.Context(), countQuery, vehicleID).Scan(&total)
 		} else if len(args) == 5 {
-			_ = dbclient.Pool.QueryRow(r.Context(), countQuery, args[0], args[1], args[2]).Scan(&total)
+			_ = router.QueryRow(r.Context(), countQuery, args[0], args[1], args[2]).Scan(&total)
 		}
 	}
 
-	rows, err := dbclient.Pool.Query(r.Context(), query, args...)
+	rows, err := router.Query(r.Context(), query, args...)
 	if err != nil {
 		logger.Log.Error("Failed to query vehicle history", "err", err)
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to retrieve telemetry history")

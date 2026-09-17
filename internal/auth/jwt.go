@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"backend/internal/config"
 )
 
@@ -16,14 +17,17 @@ type Claims struct {
 }
 
 func GenerateToken(cfg *config.Config, userID int64, email string, companyCode string, role string, expiry time.Duration) (string, error) {
+	now := time.Now()
 	claims := Claims{
 		UserID:      userID,
 		Email:       email,
 		CompanyCode: companyCode,
 		Role:        role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ID:        uuid.New().String(),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

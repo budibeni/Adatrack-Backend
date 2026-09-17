@@ -12,6 +12,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
+	"backend/internal/tenant"
 	"backend/internal/dbclient"
 	"backend/worker-alert/internal/consumer"
 )
@@ -29,6 +30,7 @@ func main() {
 
 	if err := redclient.Connect(ctx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
+	tenant.InitManager(cfg)
 	}
 	
 	if err := natsclient.Connect(cfg); err != nil {

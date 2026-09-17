@@ -14,6 +14,7 @@ import (
 	"backend/internal/config"
 	"backend/internal/dbclient"
 	"backend/internal/logger"
+	"backend/internal/tenant"
 	"backend/internal/models"
 	"backend/internal/redclient"
 	"backend/internal/storage"
@@ -161,7 +162,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		FROM %s.tm_vehicles WHERE deleted_at IS NULL ORDER BY id ASC
 	`, schema)
 
-	rows, err := dbclient.Pool.Query(r.Context(), query)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list vehicles")
 		return
@@ -241,7 +242,7 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 		GSMSignal   *int     `json:"gsm_signal,omitempty"`
 	}
 
-	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
+	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
 		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0)
 		FROM %s.tm_vehicles WHERE id = $1 AND deleted_at IS NULL
 	`, schema), id).Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours)
@@ -429,7 +430,7 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 	}
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
-	rows, err := dbclient.Pool.Query(r.Context(), fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
 		SELECT id, name, area_type, coordinates, radius_meters, boundary_points, created_by 
 		FROM %s.tm_geofences WHERE deleted_at IS NULL ORDER BY id ASC
 	`, schema))
@@ -483,7 +484,7 @@ func (h *Handler) GetGeofence(w http.ResponseWriter, r *http.Request) {
 		CreatedBy      int             `json:"created_by"`
 	}
 
-	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
+	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
 		SELECT id, name, area_type, coordinates, radius_meters, boundary_points, created_by 
 		FROM %s.tm_geofences WHERE id = $1 AND deleted_at IS NULL
 	`, schema), id).Scan(&g.ID, &g.Name, &g.AreaType, &g.Coordinates, &g.RadiusMeters, &g.BoundaryPoints, &g.CreatedBy)
@@ -637,7 +638,7 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
-	rows, err := dbclient.Pool.Query(r.Context(), fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
 		SELECT id, name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters
 		FROM %s.tm_routes WHERE deleted_at IS NULL ORDER BY id ASC
 	`, schema))
@@ -692,7 +693,7 @@ func (h *Handler) GetRoute(w http.ResponseWriter, r *http.Request) {
 		DeviationThresholdMeters float64         `json:"deviation_threshold_meters"`
 	}
 
-	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
+	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
 		SELECT id, name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters
 		FROM %s.tm_routes WHERE id = $1 AND deleted_at IS NULL
 	`, schema), id).Scan(&route.ID, &route.Name, &route.Waypoints, &route.DriverUserID, &route.VehicleID, &route.Status, &route.DeviationThresholdMeters)
@@ -859,7 +860,7 @@ func (h *Handler) ListSpeedConfigs(w http.ResponseWriter, r *http.Request) {
 	}
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
-	rows, err := dbclient.Pool.Query(r.Context(), fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
 		SELECT id, vehicle_id, max_speed_kmh, grace_margin_percent, alert_severity, enabled
 		FROM %s.tm_speed_configs WHERE deleted_at IS NULL ORDER BY id ASC
 	`, schema))
@@ -949,7 +950,7 @@ func (h *Handler) GetNotificationPreferences(w http.ResponseWriter, r *http.Requ
 	}
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
-	rows, err := dbclient.Pool.Query(r.Context(), fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
 		SELECT id, alert_type, channel, enabled, min_severity 
 		FROM %s.tm_notification_preferences WHERE user_id = $1
 	`, schema), claims.UserID)
@@ -1040,7 +1041,7 @@ func (h *Handler) ListAlerts(w http.ResponseWriter, r *http.Request) {
 		`, schema)
 	}
 
-	rows, err := dbclient.Pool.Query(r.Context(), query, args...)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, args...)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list alerts")
 		return
@@ -1208,7 +1209,7 @@ func (h *Handler) GetFuelHistory(w http.ResponseWriter, r *http.Request) {
 		ORDER BY timestamp DESC LIMIT 1000
 	`, schema)
 
-	rows, err := dbclient.Pool.Query(r.Context(), query, vid, start, end)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, vid, start, end)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch fuel logs")
 		return

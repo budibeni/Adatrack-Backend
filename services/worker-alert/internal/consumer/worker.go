@@ -14,6 +14,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/models"
 	"backend/internal/natsclient"
+	"backend/internal/tenant"
 	"backend/internal/redclient"
 	"backend/worker-alert/internal/geo"
 )
@@ -154,7 +155,7 @@ func (w *Worker) evaluateOverspeed(ctx context.Context, schema string, payload m
 	val, ok := w.speedCache.Load(cacheKey)
 	if !ok {
 		// 1. Query vehicle-specific config
-		err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+		err := tenant.NewReadRouter(payload.CompanyCode).QueryRow(ctx, fmt.Sprintf(`
 			SELECT max_speed_kmh, COALESCE(grace_margin_percent, 0), COALESCE(alert_severity, 'medium')
 			FROM %s.tm_speed_configs 
 			WHERE vehicle_id = $1 AND enabled = true AND deleted_at IS NULL
@@ -162,7 +163,7 @@ func (w *Worker) evaluateOverspeed(ctx context.Context, schema string, payload m
 
 		// 2. Fallback to global config (vehicle_id IS NULL)
 		if err != nil {
-			err = dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+			err = tenant.NewReadRouter(payload.CompanyCode).QueryRow(ctx, fmt.Sprintf(`
 				SELECT max_speed_kmh, COALESCE(grace_margin_percent, 0), COALESCE(alert_severity, 'medium')
 				FROM %s.tm_speed_configs 
 				WHERE vehicle_id IS NULL AND enabled = true AND deleted_at IS NULL
@@ -203,7 +204,7 @@ func (w *Worker) evaluateOverspeed(ctx context.Context, schema string, payload m
 }
 
 func (w *Worker) evaluateGeofences(ctx context.Context, schema string, payload models.TelemetryPayload, point geo.Point) {
-	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(strings.TrimPrefix(schema, "adatrack_gps_")).Query(ctx, fmt.Sprintf(`
 		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points
 		FROM %s.tm_geofences g
 		LEFT JOIN %s.tm_geofence_vehicles gv ON g.id = gv.geofence_id
@@ -276,7 +277,7 @@ func (w *Worker) evaluateGeofences(ctx context.Context, schema string, payload m
 }
 
 func (w *Worker) evaluateRouteDeviation(ctx context.Context, schema string, payload models.TelemetryPayload, point geo.Point) {
-	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(strings.TrimPrefix(schema, "adatrack_gps_")).Query(ctx, fmt.Sprintf(`
 		SELECT r.id, r.name, r.waypoints, COALESCE(r.deviation_threshold_meters, 200)
 		FROM %s.th_route_assignments ra
 		JOIN %s.tm_routes r ON ra.route_id = r.id
@@ -338,7 +339,7 @@ func (w *Worker) evaluateFuel(ctx context.Context, schema string, payload models
 	}
 
 	var config FuelConfig
-	err := dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+	err := tenant.NewReadRouter(payload.CompanyCode).QueryRow(ctx, fmt.Sprintf(`
 		SELECT max_volume_liters, refuel_threshold_liters, drop_threshold_liters 
 		FROM %s.tm_fuel_configs 
 		WHERE vehicle_id = $1 AND enabled = true
@@ -436,7 +437,7 @@ func (w *Worker) createAlert(ctx context.Context, schema, alertType, severity st
 }
 
 func (w *Worker) dispatchNotifications(ctx context.Context, schema string, alertID int64, alertType, severity string, metadata map[string]interface{}) {
-	rows, err := dbclient.Pool.Query(ctx, fmt.Sprintf(`
+	rows, err := tenant.NewReadRouter(strings.TrimPrefix(schema, "adatrack_gps_")).Query(ctx, fmt.Sprintf(`
 		SELECT user_id, channel, min_severity 
 		FROM %s.tm_notification_preferences 
 		WHERE alert_type = $1 AND enabled = true

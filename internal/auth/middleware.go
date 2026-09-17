@@ -36,8 +36,8 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			}
 
 			// Check revocation (denylist) if redis is configured
-			if redclient.Client != nil {
-				isRevoked, err := redclient.Client.Exists(r.Context(), "denylist:"+tokenStr).Result()
+			if redclient.Client != nil && claims.ID != "" {
+				isRevoked, err := redclient.Client.Exists(r.Context(), "denylist:"+claims.ID).Result()
 				if err == nil && isRevoked > 0 {
 					http.Error(w, "Token Revoked", http.StatusUnauthorized)
 					return

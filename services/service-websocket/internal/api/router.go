@@ -33,11 +33,11 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/login", h.Login)
+		r.Post("/auth/refresh", h.Refresh)
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.AuthMiddleware(cfg))
 			
-			r.Post("/auth/refresh", h.Refresh)
 			r.Post("/auth/logout", h.Logout)
 			
 			// Platform endpoints

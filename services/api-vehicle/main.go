@@ -12,6 +12,7 @@ import (
 	"backend/internal/logger"
 	"backend/internal/dbclient"
 	"backend/internal/redclient"
+	"backend/internal/tenant"
 	"backend/internal/storage"
 	"backend/api-vehicle/internal/api"
 )
