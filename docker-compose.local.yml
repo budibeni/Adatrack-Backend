@@ -134,8 +134,46 @@ services:
     ports:
       - "9093:9093"
 
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: adatrack_postgres_replica_local
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5532:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c '
+      rm -rf /var/lib/postgresql/data/*;
+      until pg_isready -h postgres -p 5432 -U ${DB_USER}; do sleep 2; done;
+      PGPASSWORD="${DB_PASSWORD}" pg_basebackup -h postgres -U ${DB_USER} -D /var/lib/postgresql/data -Fp -Xs -P -R;
+      chown -R postgres:postgres /var/lib/postgresql/data;
+      chmod 700 /var/lib/postgresql/data;
+      exec su postgres -c "postgres"
+      '
+
+  redis-replica:
+    image: redis:7-alpine
+    container_name: adatrack_redis_replica_local
+    command: redis-server --replicaof redis 6379 --requirepass ""
+    ports:
+      - "6380:6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
   redisdata:
   natsdata:
   miniodata:
+
