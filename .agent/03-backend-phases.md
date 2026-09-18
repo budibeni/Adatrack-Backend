@@ -218,15 +218,15 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B9 — Protocol Expansion ⬜
+## Phase B9 — Protocol Expansion ✅
 
 ### Tasks
-- [ ] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
-- [ ] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
-- [ ] Test vector per protokol (hex sample → struct → persist).
+- [x] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
+- [x] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
+- [x] Test vector per protokol (hex sample → struct → persist).
 
 ### Acceptance
-- [ ] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
+- [x] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
 
 ---
 
