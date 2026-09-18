@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 
 	"backend/internal/auth"
 	"backend/internal/config"
@@ -21,12 +22,17 @@ import (
 )
 
 type Handler struct {
-	cfg   *config.Config
-	store *storage.S3Store
+	cfg       *config.Config
+	store     *storage.S3Store
+	Validator *validator.Validate
 }
 
 func NewHandler(cfg *config.Config, store *storage.S3Store) *Handler {
-	return &Handler{cfg: cfg, store: store}
+	return &Handler{
+		cfg:       cfg,
+		store:     store,
+		Validator: validator.New(),
+	}
 }
 
 type ErrorResponse struct {
@@ -76,8 +82,8 @@ func (h *Handler) auditLog(ctx context.Context, companyCode, action, outcome str
 // -------------------------------------------------------------------------
 
 type VehicleRequest struct {
-	IMEI        string  `json:"imei"`
-	PlateNumber string  `json:"plate_number"`
+	IMEI        string  `json:"imei" validate:"required"`
+	PlateNumber string  `json:"plate_number" validate:"required"`
 	Make        string  `json:"make"`
 	Model       string  `json:"model"`
 	DriverID    *int    `json:"driver_id,omitempty"`
@@ -96,11 +102,11 @@ func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
 
 	var req VehicleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON payload")
+		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
 		return
 	}
-	if req.IMEI == "" || req.PlateNumber == "" {
-		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "imei and plate_number are required")
+	if err := h.Validator.Struct(req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 		return
 	}
 
@@ -223,8 +229,8 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 
 	var v struct {
 		ID          int     `json:"id"`
-		IMEI        string  `json:"imei"`
-		PlateNumber string  `json:"plate_number"`
+		IMEI        string  `json:"imei" validate:"required"`
+		PlateNumber string  `json:"plate_number" validate:"required"`
 		Make        string  `json:"make"`
 		Model       string  `json:"model"`
 		Status      string  `json:"status"`
@@ -363,8 +369,8 @@ func (h *Handler) RestoreVehicle(w http.ResponseWriter, r *http.Request) {
 // -------------------------------------------------------------------------
 
 type GeofenceRequest struct {
-	Name           string          `json:"name"`
-	AreaType       string          `json:"area_type"` // circle or polygon
+	Name           string          `json:"name" validate:"required"`
+	AreaType       string          `json:"area_type" validate:"required"` // circle or polygon
 	Coordinates    json.RawMessage `json:"coordinates"`
 	RadiusMeters   *float64        `json:"radius_meters,omitempty"`
 	BoundaryPoints json.RawMessage `json:"boundary_points,omitempty"`
@@ -387,8 +393,8 @@ func (h *Handler) CreateGeofence(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
 		return
 	}
-	if req.Name == "" || req.AreaType == "" {
-		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "name and area_type are required")
+	if err := h.Validator.Struct(req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
 		return
 	}
 	if len(req.Coordinates) == 0 {
@@ -476,8 +482,8 @@ func (h *Handler) GetGeofence(w http.ResponseWriter, r *http.Request) {
 
 	var g struct {
 		ID             int             `json:"id"`
-		Name           string          `json:"name"`
-		AreaType       string          `json:"area_type"`
+		Name           string          `json:"name" validate:"required"`
+		AreaType       string          `json:"area_type" validate:"required"`
 		Coordinates    json.RawMessage `json:"coordinates"`
 		RadiusMeters   *float64        `json:"radius_meters"`
 		BoundaryPoints json.RawMessage `json:"boundary_points"`

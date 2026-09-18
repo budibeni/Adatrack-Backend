@@ -111,6 +111,12 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Get("/share-links", h.ListShareLinks)
 		r.Post("/share-links", h.CreateShareLink)
 		r.Delete("/share-links/{id}", h.RevokeShareLink)
+		
+		// Enterprise Modules Lists (B12)
+		r.Get("/groups", h.ListGroups)
+		r.Get("/assets", h.ListAssets)
+		r.Get("/organizations", h.ListOrganizations)
+		r.Get("/integrations", h.ListIntegrations)
 	})
 
 	return r

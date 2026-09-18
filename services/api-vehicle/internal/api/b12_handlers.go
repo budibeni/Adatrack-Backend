@@ -166,3 +166,103 @@ func (h *Handler) RevokeShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+type Group struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type Asset struct {
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	SerialNumber string `json:"serial_number,omitempty"`
+}
+
+type Organization struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+type Integration struct {
+	ID      int    `json:"id"`
+	Type    string `json:"type"`
+	Webhook string `json:"webhook,omitempty"`
+}
+
+func (h *Handler) ListGroups(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	query := fmt.Sprintf(`SELECT id, name, description FROM %s.tm_groups WHERE deleted_at IS NULL`, schema)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	defer rows.Close()
+	var items []Group
+	for rows.Next() {
+		var g Group
+		rows.Scan(&g.ID, &g.Name, &g.Description)
+		items = append(items, g)
+	}
+	h.writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) ListAssets(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	query := fmt.Sprintf(`SELECT id, name, type, serial_number FROM %s.tm_assets WHERE deleted_at IS NULL`, schema)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var a Asset
+		rows.Scan(&a.ID, &a.Name, &a.Type, &a.SerialNumber)
+		items = append(items, a)
+	}
+	h.writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) ListOrganizations(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	query := fmt.Sprintf(`SELECT id, name FROM %s.tm_organizations WHERE deleted_at IS NULL`, schema)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	defer rows.Close()
+	var items []Organization
+	for rows.Next() {
+		var o Organization
+		rows.Scan(&o.ID, &o.Name)
+		items = append(items, o)
+	}
+	h.writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) ListIntegrations(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	query := fmt.Sprintf(`SELECT id, integration_type, webhook_url FROM %s.tm_integrations WHERE deleted_at IS NULL`, schema)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	defer rows.Close()
+	var items []Integration
+	for rows.Next() {
+		var i Integration
+		rows.Scan(&i.ID, &i.Type, &i.Webhook)
+		items = append(items, i)
+	}
+	h.writeJSON(w, http.StatusOK, items)
+}

@@ -33,11 +33,16 @@ func main() {
 		log.Printf("Warning: failed to create adatrack_gps_template schema: %v", err)
 	}
 
-	masterPath, err := filepath.Abs("../../database/migrations/master_pg")
+	baseDir := os.Getenv("MIGRATION_DIR")
+	if baseDir == "" {
+		baseDir = "../../database/migrations"
+	}
+
+	masterPath, err := filepath.Abs(filepath.Join(baseDir, "master_pg"))
 	if err != nil {
 		log.Fatalf("Failed to get abs path for master: %v", err)
 	}
-	companyPath, err := filepath.Abs("../../database/migrations/company_pg")
+	companyPath, err := filepath.Abs(filepath.Join(baseDir, "company_pg"))
 	if err != nil {
 		log.Fatalf("Failed to get abs path for company: %v", err)
 	}

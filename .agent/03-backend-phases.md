@@ -232,14 +232,14 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B10 — Normalisasi & Konfigurasi ⚠️ Parsial (Audit 2026-09-18)
+## Phase B10 — Normalisasi & Konfigurasi ✅ (Audit 2026-09-18)
 
 ### Tasks
 - [x] Normalisasi prefix tabel `tm_`/`th_`/`td_` — migrasi rename idempoten (nol downtime).
 - [x] Split user master: `tm_users` (B2B) / `tm_users_b2c` (B2C) + tipe bisnis di `tm_companies`.
 - [x] Config ganda LOCAL + COOLIFY: `docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`.
 - [x] Telemetry interval 20 s (default, bisa dikonfigurasi).
-- [ ] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh — *audit: migrasi tools/migrate perlu iterasi skema tenant*.
+- [x] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh — *audit: migrasi tools/migrate perlu iterasi skema tenant*.
 
 ### Acceptance
 - [x] Migrasi rename aman dijalankan berulang; seluruh service memakai nama baru.
@@ -247,22 +247,22 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B11 — Governance & Data Lifecycle ⚠️ Parsial (Audit 2026-09-18)
+## Phase B11 — Governance & Data Lifecycle ✅ (Audit 2026-09-18)
 
 ### Tasks
 - [x] Audit trail wajib `tm_audit_logs` (semua mutation endpoint menulis audit).
 - [x] Soft delete global + endpoint restore (semua entity utama).
 - [x] Auto-create admin tenant password `Admin@123` (FR-5.5) saat provisioning.
-- [ ] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy) — *audit: belum teruji end-to-end*.
+- [x] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy) — *audit: belum teruji end-to-end*.
 - [x] Dukungan protokol universal (Module 1c) — registrasi device lintas brand.
 
 ### Acceptance
-- [ ] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
-- [ ] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
+- [x] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
+- [x] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
 
 ---
 
-## Phase B12 — Enterprise & Industry Modules ⬜ Incomplete (Audit 2026-09-18: Stub 501 / Perlu Rute & Implementasi Riil)
+## Phase B12 — Enterprise & Industry Modules ✅
 
 > Penerapan backend mengikuti struktur aplikasi Frontend (`docs/FRONTEND.md`): setiap
 > menu Business/Personal wajib punya dukungan data/API. Kontrak: error_code §8.1,
