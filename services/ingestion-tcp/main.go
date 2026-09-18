@@ -14,6 +14,13 @@ import (
 	"backend/ingestion-tcp/internal/protocol/h02"
 	"backend/ingestion-tcp/internal/protocol/meitrack"
 	"backend/ingestion-tcp/internal/protocol/teltonika"
+	"backend/ingestion-tcp/internal/protocol/meiligao"
+	"backend/ingestion-tcp/internal/protocol/xexun"
+	"backend/ingestion-tcp/internal/protocol/suntech"
+	"backend/ingestion-tcp/internal/protocol/totem"
+	"backend/ingestion-tcp/internal/protocol/gt02"
+	"backend/ingestion-tcp/internal/protocol/navigil"
+	"backend/ingestion-tcp/internal/protocol/castel"
 	"backend/ingestion-tcp/internal/server"
 	"backend/internal/config"
 	"backend/internal/dbclient"
@@ -61,6 +68,13 @@ func main() {
 		server.NewTCPServer(":"+cfg.PortCoban, 5000, &coban.Decoder{}),
 		server.NewTCPServer(":"+cfg.PortMeitrack, 5000, &meitrack.Decoder{}),
 		server.NewTCPServer(":"+cfg.PortH02, 5000, &h02.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortMeiligao, 5000, &meiligao.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortXexun, 5000, &xexun.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortSuntech, 5000, &suntech.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortTotem, 5000, &totem.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortGT02, 5000, &gt02.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortNavigil, 5000, &navigil.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortCastel, 5000, &castel.Decoder{}),
 	}
 
 	for _, srv := range servers {
