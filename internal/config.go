@@ -131,7 +131,7 @@ type Config struct {
 		// NotifyRateLimitPerMin caps notifications per company per minute (0 = off).
 		NotifyRateLimitPerMin int
 		// NotifyRetryMax + NotifyRetryBackoff for external delivery.
-		NotifyRetryMax    int
+		NotifyRetryMax     int
 		NotifyRetryBackoff []time.Duration
 		// SMTP settings (§7.3) — empty host disables the email channel.
 		SMTP struct {
@@ -140,7 +140,7 @@ type Config struct {
 		}
 		// SMS settings (§7.3) — provider "none" skips the sms channel.
 		SMS struct {
-			Provider string // none|twilio|aws_sns
+			Provider                    string // none|twilio|aws_sns
 			AccountSID, AuthToken, From string
 		}
 	}
@@ -167,6 +167,35 @@ type Config struct {
 		ACCStaleSeconds int
 		// Severity is the default FUEL_DROP severity (REFUEL is always `low`).
 		Severity string
+	}
+
+	// Media holds the B5b dashcam event-media settings (PRD Module 8, Scope A):
+	// object-storage backend, upload limits, HMAC handshake and retention.
+	Media struct {
+		// Addr is the service-media HTTP listener (MEDIA_HTTP_ADDR).
+		Addr string
+		// MetricsAddr is the /healthz + /metrics listener (MEDIA_METRICS_ADDR).
+		MetricsAddr string
+		// Backend selects the object store: "mem" (dev/test) or "s3".
+		Backend string
+		// S3 settings (MEDIA_S3_*): endpoint/region/bucket + static keys.
+		S3Endpoint  string
+		S3Region    string
+		S3Bucket    string
+		S3AccessKey string
+		S3SecretKey string
+		S3UseSSL    bool
+		// PresignTTL bounds the presigned GET URLs (MEDIA_PRESIGN_TTL_SEC).
+		PresignTTL time.Duration
+		// MaxFileMB rejects uploads above the limit (MEDIA_MAX_FILE_MB).
+		MaxFileMB int
+		// HMACSecret is the dev fallback shared secret; per-company secrets live
+		// in master `tm_company_media_config` (MEDIA_HMAC_SECRET).
+		HMACSecret string
+		// RetentionDays is the retention sweep horizon (MEDIA_RETENTION_DAYS).
+		RetentionDays int
+		// RetentionSweep is the periodic retention-job cadence.
+		RetentionSweep time.Duration
 	}
 }
 

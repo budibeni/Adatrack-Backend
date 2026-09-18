@@ -12,6 +12,7 @@ func LoadConfig() *Config {
 	loadPipelineConfig(c)
 	loadAlertConfig(c)
 	loadFuelConfig(c)
+	loadMediaConfig(c)
 	return c
 }
 
@@ -111,6 +112,24 @@ func loadFuelConfig(c *Config) {
 	c.Fuel.ACCStaleSeconds = envInt("FUEL_ACC_STALE_SECONDS", 600)
 }
 
+// loadMediaConfig fills the B5b media settings (PRD Module 8, FR-8.1..FR-8.8).
+func loadMediaConfig(c *Config) {
+	c.Media.Addr = EnvOr("MEDIA_HTTP_ADDR", ":8095")
+	c.Media.MetricsAddr = EnvOr("MEDIA_METRICS_ADDR", ":8096")
+	c.Media.Backend = EnvOr("MEDIA_BACKEND", "mem")
+	c.Media.S3Endpoint = EnvOr("MEDIA_S3_ENDPOINT", "")
+	c.Media.S3Region = EnvOr("MEDIA_S3_REGION", "us-east-1")
+	c.Media.S3Bucket = EnvOr("MEDIA_S3_BUCKET", "adatrack-media")
+	c.Media.S3AccessKey = EnvOr("MEDIA_S3_ACCESS_KEY", "")
+	c.Media.S3SecretKey = EnvOr("MEDIA_S3_SECRET_KEY", "")
+	c.Media.S3UseSSL = envBool("MEDIA_S3_USE_SSL", true)
+	c.Media.PresignTTL = time.Duration(envInt("MEDIA_PRESIGN_TTL_SEC", 300)) * time.Second
+	c.Media.MaxFileMB = envInt("MEDIA_MAX_FILE_MB", 100)
+	c.Media.HMACSecret = EnvOr("MEDIA_HMAC_SECRET", "")
+	c.Media.RetentionDays = envInt("MEDIA_RETENTION_DAYS", 30)
+	c.Media.RetentionSweep = time.Duration(envInt("MEDIA_RETENTION_SWEEP_SEC", 300)) * time.Second
+}
+
 // loadAlertConfig fills the worker-alert engine settings (B3, PRD §5.9/§7.2).
 func loadAlertConfig(c *Config) {
 	c.Alert.MetricsAddr = EnvOr("ALERT_METRICS_ADDR", ":8094")
@@ -143,6 +162,3 @@ func loadAlertConfig(c *Config) {
 	c.Alert.SMS.AuthToken = EnvOr("SMS_AUTH_TOKEN", "")
 	c.Alert.SMS.From = EnvOr("SMS_FROM", "")
 }
-
-
-

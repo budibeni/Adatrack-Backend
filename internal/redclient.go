@@ -64,8 +64,20 @@ func (c *RedisClient) KeyPrefix() string {
 //
 //	adatrack_gps:{company_code}:vehicle:state:{IMEI}
 func (c *RedisClient) LiveStateKey(companyCode, imei string) string {
-	code := normalizeCompany(companyCode)
-	return c.KeyPrefix() + code + ":vehicle:state:" + imei
+	return LiveStateKeyFor(c.KeyPrefix(), companyCode, imei)
+}
+
+// LiveStateKeyFor builds the live-state key from an EXPLICIT prefix so every
+// reader/writer of the live state shares ONE key layout: worker-live writes it
+// (FR-2.1) and the REST overlay in api-vehicle reads it back. Passing an empty
+// prefix falls back to the canonical "adatrack_gps:" namespace, and the company
+// code is normalised exactly like the writer (lowercase, blank-stripped,
+// "default" when empty) so a casing mismatch can never silently miss the key.
+func LiveStateKeyFor(prefix, companyCode, imei string) string {
+	if prefix == "" {
+		prefix = "adatrack_gps:"
+	}
+	return prefix + normalizeCompany(companyCode) + ":vehicle:state:" + imei
 }
 
 // MSetBatch writes many keys in ONE round trip (FR-2.3: 100x fewer Redis ops).

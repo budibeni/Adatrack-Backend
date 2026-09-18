@@ -20,12 +20,21 @@ var httpErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Help: "HTTP error responses, per status and error_code",
 }, []string{"status", "error_code"})
 
+// liveStateErrors counts Redis read failures while enriching REST list/detail
+// responses with the live state (PRD §10.1). Read failures degrade gracefully
+// (the fleet list is still returned) but are never silent — same contract and
+// counter name as service-websocket `livestate.go`.
+var liveStateErrors = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "live_state_read_errors_total",
+	Help: "Redis live-state read failures (graceful degradation: response served without live data)",
+})
+
 // RegisterMetrics registers the api-vehicle collectors.
 func RegisterMetrics(reg prometheus.Registerer) {
 	if reg == nil {
 		return
 	}
-	reg.MustRegister(rbacDenied, httpErrors)
+	reg.MustRegister(rbacDenied, httpErrors, liveStateErrors)
 }
 
 // apiRateLimitMiddleware enforces PRD §8.4 (100 requests / minute / user).

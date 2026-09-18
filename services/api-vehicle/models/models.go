@@ -61,6 +61,44 @@ type Vehicle struct {
 	CreatedAt    string   `json:"created_at"`
 	UpdatedAt    string   `json:"updated_at"`
 	DeletedAt    *string  `json:"deleted_at,omitempty"`
+	// Live is the Redis live-state snapshot overlaid by the API (phase B6:
+	// "REST enrich live-state: overlay fuel_level & acc dari Redis"). It is nil
+	// when the vehicle has never reported telemetry or Redis is unavailable.
+	Live *LiveState `json:"live,omitempty"`
+}
+
+// LiveState is the worker-live snapshot (FR-2.1) as consumed by the REST layer.
+// It carries the freshest telemetry — including the fuel channel
+// (fuel_level / fuel_volume / fuel_temp_c) and the REAL device ACC flag — which
+// the `tm_vehicles` mirror can lag behind (PRD Module 7, phase B6).
+//
+// It deliberately mirrors the Redis JSON one-to-one so the WS `VEHICLE_UPDATE`
+// payload and the REST `live` block stay interchangeable for the frontend.
+type LiveState struct {
+	IMEI        string  `json:"imei"`
+	CompanyCode string  `json:"company_code"`
+	VehicleID   int64   `json:"vehicle_id"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+	Speed       float64 `json:"speed"`
+	Heading     int16   `json:"heading"`
+	Satellites  uint8   `json:"satellites"`
+	Altitude    int16   `json:"altitude"`
+	Battery     uint8   `json:"battery_level"`
+	GsmSignal   uint8   `json:"gsm_signal"`
+	// ACC is the real ignition line state (nil when the device never reported it).
+	ACC     *bool  `json:"acc,omitempty"`
+	Mileage uint32 `json:"mileage,omitempty"`
+	Fix     bool   `json:"fix"`
+	// Status is the CONNECTION state machine (ONLINE/IDLE/OFFLINE, FR-2.2) and
+	// is intentionally distinct from Vehicle.Status, which is the fleet
+	// life-cycle (active/inactive/maintenance).
+	Status     string   `json:"status"`
+	LastSeen   int64    `json:"last_seen"`
+	Timestamp  int64    `json:"timestamp"`
+	FuelLevel  *float64 `json:"fuel_level,omitempty"`
+	FuelVolume *float64 `json:"fuel_volume,omitempty"`
+	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
 }
 
 // UpsertVehicleRequest is the POST/PATCH vehicle body (PRD §8.5 validation).

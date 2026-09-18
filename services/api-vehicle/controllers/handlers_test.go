@@ -14,6 +14,12 @@ import (
 // newTestService wires a Service with the fake store (auth is unused when the
 // handlers are invoked directly; the rate limiter is disabled).
 func newTestService(store *fakeStore) *Service {
+	return newTestServiceWithLive(store, nil)
+}
+
+// newTestServiceWithLive additionally injects the live-state overlay source
+// (a *RedisKV in production, a stub in the live-state tests).
+func newTestServiceWithLive(store *fakeStore, live LiveStateReader) *Service {
 	return NewService(Deps{
 		Settings: Settings{
 			HTTPAddr:        ":0",
@@ -23,6 +29,7 @@ func newTestService(store *fakeStore) *Service {
 			MaxPageSize:     1000,
 		},
 		Store: store,
+		Live:  live,
 	})
 }
 

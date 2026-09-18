@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"adatrack_gps/api-vehicle/models"
 )
@@ -19,6 +20,23 @@ type fakeStore struct {
 	deletedVehicle bool
 	ackedRows      int64
 	imeiExists     bool
+
+	// --- B5a fuel -----------------------------------------------------------
+	// fuelConfigs keeps insertion order so list assertions stay deterministic.
+	fuelConfigs  []*models.FuelConfig
+	fuelLogs     []models.FuelLog
+	fuelHistoryN int64
+	fuelFrom     time.Time
+	fuelTo       time.Time
+	fuelPage     int
+	fuelLimit    int
+	createdFuel  bool
+	updatedFuel  bool
+	deletedFuel  bool
+	restoredFuel bool
+
+	// listVehicles is what ListVehicles returns (nil when unset).
+	listVehicles []models.Vehicle
 }
 
 func newFakeStore() *fakeStore {
@@ -99,4 +117,94 @@ func (f *fakeStore) ResolveAlert(_ context.Context, _ string, id, _ int64) (int6
 		return 1, nil
 	}
 	return 0, nil
+}
+
+// --- vehicles (list, B5a live overlay) ------------------------------------
+
+func (f *fakeStore) ListVehicles(_ context.Context, _ VehicleQuery) ([]models.Vehicle, int64, error) {
+	out := f.listVehicles
+	if out == nil {
+		out = []models.Vehicle{}
+	}
+	return out, int64(len(out)), nil
+}
+
+func (f *fakeStore) seedListedVehicles(vs ...models.Vehicle) { f.listVehicles = vs }
+
+// --- fuel configs + history (B5a) ----------------------------------------
+
+func (f *fakeStore) seedFuelConfig(fc *models.FuelConfig) {
+	f.fuelConfigs = append(f.fuelConfigs, fc)
+}
+
+func (f *fakeStore) ListFuelConfigs(_ context.Context, _ string, includeDeleted bool) ([]models.FuelConfig, error) {
+	out := []models.FuelConfig{}
+	for _, fc := range f.fuelConfigs {
+		if fc.DeletedAt != nil && !includeDeleted {
+			continue
+		}
+		out = append(out, *fc)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) FuelConfigByID(_ context.Context, _ string, id int64, includeDeleted bool) (*models.FuelConfig, error) {
+	for _, fc := range f.fuelConfigs {
+		if fc.ID != id {
+			continue
+		}
+		if fc.DeletedAt != nil && !includeDeleted {
+			return nil, nil
+		}
+		return fc, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeStore) CreateFuelConfig(_ context.Context, _ string, fc *models.FuelConfig, _ int64) (int64, error) {
+	f.createdFuel = true
+	fc.ID = int64(len(f.fuelConfigs) + 1)
+	f.fuelConfigs = append(f.fuelConfigs, fc)
+	return fc.ID, nil
+}
+
+func (f *fakeStore) UpdateFuelConfig(_ context.Context, _ string, fc *models.FuelConfig, _ int64) error {
+	f.updatedFuel = true
+	for i, cur := range f.fuelConfigs {
+		if cur.ID == fc.ID {
+			f.fuelConfigs[i] = fc
+			return nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) SoftDeleteFuelConfig(_ context.Context, _ string, id, _ int64, _ string) error {
+	f.deletedFuel = true
+	for _, fc := range f.fuelConfigs {
+		if fc.ID == id {
+			at := "2026-09-16T00:00:00Z"
+			fc.DeletedAt = &at
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) RestoreFuelConfig(_ context.Context, _ string, id int64) error {
+	f.restoredFuel = true
+	for _, fc := range f.fuelConfigs {
+		if fc.ID == id {
+			fc.DeletedAt = nil
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) ListFuelHistory(_ context.Context, _ string, _ int64, from, to time.Time, page, limit int) ([]models.FuelLog, int64, error) {
+	f.fuelFrom, f.fuelTo, f.fuelPage, f.fuelLimit = from, to, page, limit
+	out := f.fuelLogs
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, f.fuelHistoryN, nil
 }

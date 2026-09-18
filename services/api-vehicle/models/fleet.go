@@ -96,30 +96,30 @@ type UpsertSpeedConfigRequest struct {
 // FuelConfig is one tm_fuel_configs row (B5a, PRD Module 7 / FR-7.6):
 // vehicle_id null = tenant-wide default; a vehicle row wins over the global one.
 type FuelConfig struct {
-	ID                   int64   `json:"id"`
-	VehicleID            *int64  `json:"vehicle_id,omitempty"`
-	DropThresholdPct     int     `json:"drop_threshold_percent"`
-	RefuelThresholdPct   int     `json:"refuel_threshold_percent"`
-	WindowSeconds        int     `json:"window_seconds"`
-	Severity             string  `json:"alert_severity"`
-	RequireACC           bool    `json:"require_acc"`
-	ACCStaleSeconds      int     `json:"acc_stale_seconds"`
-	Enabled              bool    `json:"enabled"`
-	CreatedAt            string  `json:"created_at"`
-	UpdatedAt            string  `json:"updated_at"`
-	DeletedAt            *string `json:"deleted_at,omitempty"`
+	ID                 int64   `json:"id"`
+	VehicleID          *int64  `json:"vehicle_id,omitempty"`
+	DropThresholdPct   int     `json:"drop_threshold_percent"`
+	RefuelThresholdPct int     `json:"refuel_threshold_percent"`
+	WindowSeconds      int     `json:"window_seconds"`
+	Severity           string  `json:"alert_severity"`
+	RequireACC         bool    `json:"require_acc"`
+	ACCStaleSeconds    int     `json:"acc_stale_seconds"`
+	Enabled            bool    `json:"enabled"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
+	DeletedAt          *string `json:"deleted_at,omitempty"`
 }
 
 // UpsertFuelConfigRequest is the POST/PATCH fuel config body.
 type UpsertFuelConfigRequest struct {
-	VehicleID            *int64 `json:"vehicle_id" binding:"omitempty,min=1"`
-	DropThresholdPct     int    `json:"drop_threshold_percent" binding:"required,min=1,max=100"`
-	RefuelThresholdPct   int    `json:"refuel_threshold_percent" binding:"required,min=1,max=100"`
-	WindowSeconds        int    `json:"window_seconds" binding:"omitempty,min=1,max=86400"`
-	Severity             string `json:"alert_severity" binding:"omitempty,oneof=low medium high critical"`
-	RequireACC           *bool  `json:"require_acc,omitempty"`
-	ACCStaleSeconds      int    `json:"acc_stale_seconds" binding:"omitempty,min=1,max=86400"`
-	Enabled              *bool  `json:"enabled,omitempty"`
+	VehicleID          *int64 `json:"vehicle_id" binding:"omitempty,min=1"`
+	DropThresholdPct   int    `json:"drop_threshold_percent" binding:"required,min=1,max=100"`
+	RefuelThresholdPct int    `json:"refuel_threshold_percent" binding:"required,min=1,max=100"`
+	WindowSeconds      int    `json:"window_seconds" binding:"omitempty,min=1,max=86400"`
+	Severity           string `json:"alert_severity" binding:"omitempty,oneof=low medium high critical"`
+	RequireACC         *bool  `json:"require_acc,omitempty"`
+	ACCStaleSeconds    int    `json:"acc_stale_seconds" binding:"omitempty,min=1,max=86400"`
+	Enabled            *bool  `json:"enabled,omitempty"`
 }
 
 // FuelLog is one td_fuel_logs row of the vehicle fuel history (FR-7.7).

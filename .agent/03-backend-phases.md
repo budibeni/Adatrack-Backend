@@ -188,10 +188,13 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Persist `th_fuel_logs` (batch terpisah di worker-persistence; fuel-only tidak masuk `th_telemetry_logs`).
 - [x] Alert FUEL_DROP / REFUEL (threshold + window per tm_fuel_configs/global env, dedup engine, severity, `alert.fuel.<company>`).
 - [x] API fuel-configs CRUD + riwayat fuel `/vehicles/:id/fuel/history?from&to` (pagination + RBAC row-level) + live state fuel (worker-live partial merge → WS).
+- [x] REST enrich live-state: overlay fuel_level/volume/temp & ACC riil dari Redis (satu MGET, `Live` block, degradasi halus + `live_state_read_errors_total`).
+      → `services/api-vehicle/controllers/{live,kv,service}.go` (`LiveStateReader`, `enrichLiveStates` di list+detail, `RedisKV.MGet/LiveStateKey` via `internal.LiveStateKeyFor` + `NewRedisKVWithPrefix(red.Client(), cfg.Redis.KeyPrefix)`), `models.LiveState` (+`Vehicle.Live`); unit test: `live_test.go` (unit `applyLiveState` + key-layout + HTTP detail/list/batch/fuel-only/degrade/corrupt/round-trip) + `fuel_test_helpers_test.go` (list/detail) + `handlers_fuel_{create,update,delete,history}_test.go` (CRUD + riwayat) + `internal/redclient_test.go` (key layout/normalisasi/prefix).
 
 ### Acceptance
 - [ ] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference. *(butuh infra live — menyusul)*
 - [x] Unit test threshold/dedup (worker-alert fuel tests) + parser kanal fuel hijau (`TestParseInfoTransmit` frame `!AIOIL`).
+- [x] Unit test REST overlay hijau: `live_test.go` + fuel handler tests lolos (`go test ./controllers/ -run 'Test(ListFuelConfigs|FuelConfigDetail|CreateFuelConfig|UpdateFuelConfig|DeleteFuelConfig|RestoreFuelConfig|VehicleFuelHistory|ApplyLiveState|RedisKV|RedisKVMGet|VehicleDetailLiveOverlay|VehicleDetailWithoutLive|VehicleListBatch|LiveOverlay|LiveStateJSON)'` PASS; full `go test ./...` + `go vet` api-vehicle & internal hijau).
 
 ---
 
@@ -232,8 +235,8 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 ### Tasks
 - [ ] ACC status live: pakai data asli device (`Acc` telemetry), bukan inferensi `Speed > 0`.
 - [ ] DTO `VehicleUpdateData` lengkap: fuel_level/fuel_volume/fuel_temp_c, satellites, altitude, gsm_signal.
-- [ ] REST enrich live-state: overlay fuel_level & acc dari Redis.
-- [ ] Unit test bridge/parsing/enrich hijau.
+- [x] REST enrich live-state: overlay fuel_level & acc dari Redis. ✅ *selesai di B5a (lihat B5a "REST enrich live-state" + `live_test.go`): `live` block di list+detail, satu batched MGET, fuel-only tidak menghapus posisi DB, degradasi halus + `live_state_read_errors_total`.*
+- [x] Unit test bridge/parsing/enrich hijau. ✅ *enrich hijau di B5a; bridge/parsing tetap mengikuti B2/B3 yang sudah hijau.*
 
 ### Acceptance
 - [ ] Perubahan ACC tercermin real-time di WS & REST sesuai data device.

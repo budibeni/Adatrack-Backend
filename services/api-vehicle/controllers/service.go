@@ -13,6 +13,9 @@ type Deps struct {
 	Settings Settings
 	Store    Store
 	KV       *RedisKV
+	// Live is the live-state overlay source (phase B6). When nil the service
+	// falls back to KV; tests inject a stub instead of a real Redis.
+	Live     LiveStateReader
 	Tenants  *tenant.Manager
 	Registry *prometheus.Registry
 }
@@ -23,6 +26,7 @@ type Service struct {
 	settings Settings
 	store    Store
 	kv       *RedisKV
+	live     LiveStateReader
 	tenants  *tenant.Manager
 	registry *prometheus.Registry
 
@@ -36,8 +40,12 @@ func NewService(deps Deps) *Service {
 		settings: deps.Settings,
 		store:    deps.Store,
 		kv:       deps.KV,
+		live:     deps.Live,
 		tenants:  deps.Tenants,
 		registry: deps.Registry,
+	}
+	if s.live == nil && deps.KV != nil {
+		s.live = deps.KV
 	}
 	s.auth = NewAuthService(deps.Settings, deps.KV)
 	s.engine = s.buildRouter()

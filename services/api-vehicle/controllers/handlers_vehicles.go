@@ -54,6 +54,9 @@ func (s *Service) handleListVehicles(c *gin.Context) {
 		respondError(c, vehicleStoreErr(err))
 		return
 	}
+	// Phase B6: overlay the freshest live telemetry (fuel_level/volume/temp, the
+	// REAL device ACC flag and the last position) in ONE batched Redis read.
+	items = s.enrichLiveStates(c.Request.Context(), identity.companyCode, items)
 	respondOK(c, items, pagination(page, limit, total))
 }
 
@@ -74,7 +77,10 @@ func (s *Service) handleVehicleDetail(c *gin.Context) {
 		respondError(c, errNotFound(CodeVehicleNotFound, "vehicle not found"))
 		return
 	}
-	respondOK(c, v, nil)
+	// Phase B6: the detail view carries the same live overlay as the list, so a
+	// detail poll and a WS VEHICLE_UPDATE describe the vehicle identically.
+	enriched := s.enrichLiveStates(c.Request.Context(), identity.companyCode, []models.Vehicle{*v})
+	respondOK(c, &enriched[0], nil)
 }
 
 // handleCreateVehicle implements POST /api/v1/vehicles (PRD §6.2): validates

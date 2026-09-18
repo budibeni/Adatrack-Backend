@@ -40,6 +40,8 @@ SET search_path TO adatrack_gps_default;
 \i :migrations_dir/company_pg/012_create_notification_preferences.sql
 \i :migrations_dir/company_pg/013_create_fuel_configs.sql
 \i :migrations_dir/company_pg/014_create_fuel_logs.sql
+\i :migrations_dir/company_pg/015_create_media_events.sql
+
 
 -- ---------------------------------------------------------------------------
 -- Dev tenant (adatrack_gps_dev001)

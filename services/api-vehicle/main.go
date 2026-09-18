@@ -76,7 +76,7 @@ func main() {
 	service := controllers.NewService(controllers.Deps{
 		Settings: settings,
 		Store:    controllers.NewPostgresStore(tm),
-		KV:       controllers.NewRedisKV(red.Client()),
+		KV:       controllers.NewRedisKVWithPrefix(red.Client(), cfg.Redis.KeyPrefix),
 		Tenants:  tm,
 		Registry: registry,
 	})
