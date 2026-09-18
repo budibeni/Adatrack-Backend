@@ -230,33 +230,33 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B10 — Normalisasi & Konfigurasi ⬜ (PRD §6.0, §14)
+## Phase B10 — Normalisasi & Konfigurasi ✅ (Executed 2026-09-18)
 
 ### Tasks
-- [ ] Normalisasi prefix tabel `tm_`/`th_`/`td_` — migrasi rename idempoten (nol downtime).
-- [ ] Split user master: `tm_users` (B2B) / `tm_users_b2c` (B2C) + tipe bisnis di `tm_companies`.
-- [ ] Config ganda LOCAL + COOLIFY: `docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`.
-- [ ] Telemetry interval 20 s (default, bisa dikonfigurasi).
-- [ ] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh.
+- [x] Normalisasi prefix tabel `tm_`/`th_`/`td_` — migrasi rename idempoten (nol downtime).
+- [x] Split user master: `tm_users` (B2B) / `tm_users_b2c` (B2C) + tipe bisnis di `tm_companies`.
+- [x] Config ganda LOCAL + COOLIFY: `docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`.
+- [x] Telemetry interval 20 s (default, bisa dikonfigurasi).
+- [x] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh.
 
 ### Acceptance
-- [ ] Migrasi rename aman dijalankan berulang; seluruh service memakai nama baru.
-- [ ] Dua konfigurasi bisa di-up terpisah tanpa edit manual; interval 20 s efektif end-to-end.
+- [x] Migrasi rename aman dijalankan berulang; seluruh service memakai nama baru.
+- [x] Dua konfigurasi bisa di-up terpisah tanpa edit manual; interval 20 s efektif end-to-end.
 
 ---
 
-## Phase B11 — Governance & Data Lifecycle ⬜ (PRD §6.0.1, §9.4, §14.5)
+## Phase B11 — Governance & Data Lifecycle ✅ (Executed 2026-09-18)
 
 ### Tasks
-- [ ] Audit trail wajib `tm_audit_logs` (semua mutation endpoint menulis audit).
-- [ ] Soft delete global + endpoint restore (semua entity utama).
-- [ ] Auto-create admin tenant password `Admin@123` (FR-5.5) saat provisioning.
-- [ ] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy).
-- [ ] Dukungan protokol universal (Module 1c) — registrasi device lintas brand.
+- [x] Audit trail wajib `tm_audit_logs` (semua mutation endpoint menulis audit).
+- [x] Soft delete global + endpoint restore (semua entity utama).
+- [x] Auto-create admin tenant password `Admin@123` (FR-5.5) saat provisioning.
+- [x] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy).
+- [x] Dukungan protokol universal (Module 1c) — registrasi device lintas brand.
 
 ### Acceptance
-- [ ] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
-- [ ] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
+- [x] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
+- [x] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
 
 ---
 
