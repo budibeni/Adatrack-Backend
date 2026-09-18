@@ -205,16 +205,16 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B8 — Advanced Fleet Features ⬜
+## Phase B8 — Advanced Fleet Features ✅
 
 ### Tasks
-- [ ] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device.
-- [ ] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert.
-- [ ] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
+- [x] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device.
+- [x] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert.
+- [x] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
 
 ### Acceptance
-- [ ] Perintah downlink terkirim & ACK device tercatat.
-- [ ] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
+- [x] Perintah downlink terkirim & ACK device tercatat.
+- [x] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
 
 ---
 
