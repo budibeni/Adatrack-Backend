@@ -11,7 +11,9 @@ import (
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
 	"backend/internal/utils"
+	"backend/internal/dbclient"
 	"github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5"
 )
 
 // DetermineStatus computes vehicle state based on ACC
@@ -35,8 +37,32 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 	}
 	prevStatesInter, _ := redclient.Client.MGet(ctx, keys...).Result()
 
+	// Pre-fetch missing initial states from DB (B7.1 gap fix)
+	missingDBMap := make(map[string]models.TelemetryPayload)
+	for i, p := range payloads {
+		if prevStatesInter[i] == nil {
+			schema := fmt.Sprintf("adatrack_gps_%s", p.CompanyCode)
+			query := fmt.Sprintf("SELECT odometer_km, engine_hours FROM %s.tm_vehicles WHERE id = $1", schema)
+			var odom, engine float64
+			err := dbclient.Pool.QueryRow(ctx, query, p.VehicleID).Scan(&odom, &engine)
+			if err == nil {
+				missingDBMap[p.IMEI] = models.TelemetryPayload{
+					IMEI: p.IMEI,
+					OdometerKM: odom,
+					EngineHours: engine,
+					ACCStatus: p.ACCStatus,
+					Timestamp: p.Timestamp,
+				}
+			}
+		}
+	}
+
 	pipe := redclient.Client.Pipeline()
 	now := float64(time.Now().Unix())
+	
+	dbBatch := &pgx.Batch{}
+	
+	// Prepare batch update for tm_vehicles
 	for i, p := range payloads {
 		p.Status = DetermineStatus(p.ACCStatus)
 
@@ -46,6 +72,8 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 			if str, ok := prevStatesInter[i].(string); ok {
 				json.Unmarshal([]byte(str), &prev)
 			}
+		} else if fallback, ok := missingDBMap[p.IMEI]; ok {
+			prev = fallback
 		}
 
 		// Handle Odometer & Engine Hours
@@ -85,6 +113,15 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 		// Update ZSET for sweeper
 		member := fmt.Sprintf("%s:%s", p.CompanyCode, p.IMEI)
 		pipe.ZAdd(ctx, "adatrack_gps:last_updates", redis.Z{Score: now, Member: member})
+		
+		// Add to batch DB Update tm_vehicles
+		schema := fmt.Sprintf("adatrack_gps_%s", p.CompanyCode)
+		updateQuery := fmt.Sprintf(`
+			UPDATE %s.tm_vehicles 
+			SET last_seen_at = $1, current_lat = $2, current_lon = $3, current_speed = $4, odometer_km = $5, engine_hours = $6, status = $7
+			WHERE id = $8 AND (last_seen_at IS NULL OR last_seen_at <= $1)
+		`, schema)
+		dbBatch.Queue(updateQuery, p.Timestamp, p.Latitude, p.Longitude, p.Speed, p.OdometerKM, p.EngineHours, p.Status, p.VehicleID)
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -92,6 +129,13 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 		logger.Log.Error("Redis pipeline exec failed", "err", err)
 		return err // Do not ACK to NATS
 	}
+
+	// Execute DB batch
+	br := dbclient.Pool.SendBatch(ctx, dbBatch)
+	for i := 0; i < dbBatch.Len(); i++ {
+		br.Exec()
+	}
+	br.Close()
 
 	// Publish to Websocket live topic (Fire and forget, since Websocket is ephemeral)
 	for _, p := range payloads {

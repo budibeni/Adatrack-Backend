@@ -1,8 +1,9 @@
 version: '3.8'
+
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: adatrack_postgres
+    container_name: adatrack_postgres_local
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -19,7 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: adatrack_redis
+    container_name: adatrack_redis_local
     command: redis-server --requirepass ""
     ports:
       - "6379:6379"
@@ -33,7 +34,7 @@ services:
 
   nats:
     image: nats:2.10-alpine
-    container_name: adatrack_nats
+    container_name: adatrack_nats_local
     command: ["-js"]
     ports:
       - "4222:4222"
@@ -48,7 +49,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.45.0
-    container_name: adatrack_prometheus
+    container_name: adatrack_prometheus_local
     ports:
       - "9090:9090"
     volumes:
@@ -58,7 +59,7 @@ services:
 
   grafana:
     image: grafana/grafana:10.0.3
-    container_name: adatrack_grafana
+    container_name: adatrack_grafana_local
     ports:
       - "3000:3000"
     environment:
@@ -67,20 +68,48 @@ services:
       - ./deployments/grafana/provisioning:/etc/grafana/provisioning
       - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
 
-volumes:
-  pgdata:
-  redisdata:
-  natsdata:
+  minio:
+    image: minio/minio:latest
+    container_name: adatrack_minio_local
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  minio-setup:
+    image: minio/mc:latest
+    container_name: adatrack_minio_setup_local
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY};
+      /usr/bin/mc rm -r --force myminio/${S3_BUCKET_NAME} || true;
+      /usr/bin/mc mb myminio/${S3_BUCKET_NAME} || true;
+      /usr/bin/mc anonymous set public myminio/${S3_BUCKET_NAME};
+      exit 0;
+      "
 
   node-exporter:
     image: prom/node-exporter:v1.6.0
-    container_name: adatrack_node_exporter
+    container_name: adatrack_node_exporter_local
     ports:
       - "9100:9100"
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.47.2
-    container_name: adatrack_cadvisor
+    container_name: adatrack_cadvisor_local
     ports:
       - "8080:8080"
     volumes:
@@ -91,7 +120,7 @@ volumes:
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.12.0
-    container_name: adatrack_postgres_exporter
+    container_name: adatrack_postgres_exporter_local
     environment:
       DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable"
     ports:
@@ -101,6 +130,12 @@ volumes:
 
   alertmanager:
     image: prom/alertmanager:v0.25.0
-    container_name: adatrack_alertmanager
+    container_name: adatrack_alertmanager_local
     ports:
       - "9093:9093"
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:
+  miniodata:

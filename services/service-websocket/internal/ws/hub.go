@@ -58,10 +58,29 @@ func (h *Hub) Run() {
 			if companyCode == "" {
 				continue
 			}
+			
+			// Format as VEHICLE_UPDATE
+			var sendData []byte = msg.Data
+			if strings.HasPrefix(msg.Subject, "telemetry.live.") {
+				var rawPayload map[string]interface{}
+				if err := json.Unmarshal(msg.Data, &rawPayload); err == nil {
+					if accStatus, ok := rawPayload["acc_status"].(float64); ok {
+						rawPayload["acc"] = (accStatus == 1)
+						delete(rawPayload, "acc_status")
+					}
+					
+					finalPayload := map[string]interface{}{
+						"event": "VEHICLE_UPDATE",
+						"data":  rawPayload,
+					}
+					sendData, _ = json.Marshal(finalPayload)
+				}
+			}
+
 			for client := range h.clients {
 				if client.claims != nil && (client.claims.CompanyCode == companyCode || (client.claims.Role == "SuperAdmin" && client.claims.CompanyCode == "DEFAULT")) {
 					select {
-					case client.send <- msg.Data:
+					case client.send <- sendData:
 					default:
 						close(client.send)
 						delete(h.clients, client)

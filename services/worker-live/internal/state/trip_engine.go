@@ -58,8 +58,9 @@ func ProcessTripAndStop(ctx context.Context, p *models.TelemetryPayload, prev *m
 				
 				// Start new trip in DB
 				var tripID int64
-				err := dbclient.Pool.QueryRow(ctx, 
-					"INSERT INTO th_vehicle_trips (vehicle_id, start_time, start_lat, start_lon) VALUES ($1, $2, $3, $4) RETURNING id",
+				schema := fmt.Sprintf("adatrack_gps_%s", p.CompanyCode)
+				query := fmt.Sprintf("INSERT INTO %s.th_vehicle_trips (vehicle_id, start_time, start_lat, start_lon) VALUES ($1, $2, $3, $4) RETURNING id", schema)
+				err := dbclient.Pool.QueryRow(ctx, query,
 					p.VehicleID, p.Timestamp, p.Latitude, p.Longitude,
 				).Scan(&tripID)
 				
@@ -94,8 +95,9 @@ func ProcessTripAndStop(ctx context.Context, p *models.TelemetryPayload, prev *m
 				
 				// End trip in DB
 				if ts.CurrentTripID > 0 {
-					_, err := dbclient.Pool.Exec(ctx,
-						"UPDATE th_vehicle_trips SET end_time = $1, end_lat = $2, end_lon = $3, distance_km = $4, max_speed = $5, duration_seconds = EXTRACT(EPOCH FROM ($1 - start_time)) WHERE id = $6",
+					schema := fmt.Sprintf("adatrack_gps_%s", p.CompanyCode)
+					updateQuery := fmt.Sprintf("UPDATE %s.th_vehicle_trips SET end_time = $1, end_lat = $2, end_lon = $3, distance_km = $4, max_speed = $5, duration_seconds = EXTRACT(EPOCH FROM ($1 - start_time)) WHERE id = $6", schema)
+					_, err := dbclient.Pool.Exec(ctx, updateQuery,
 						p.Timestamp, p.Latitude, p.Longitude, ts.TripDistance, ts.TripMaxSpeed, ts.CurrentTripID,
 					)
 					if err != nil {
@@ -103,8 +105,8 @@ func ProcessTripAndStop(ctx context.Context, p *models.TelemetryPayload, prev *m
 					}
 					
 					// Create stop record
-					_, err = dbclient.Pool.Exec(ctx,
-						"INSERT INTO td_vehicle_stops (trip_id, start_time, lat, lon) VALUES ($1, $2, $3, $4)",
+					insertStopQuery := fmt.Sprintf("INSERT INTO %s.td_vehicle_stops (trip_id, start_time, lat, lon) VALUES ($1, $2, $3, $4)", schema)
+					_, err = dbclient.Pool.Exec(ctx, insertStopQuery,
 						ts.CurrentTripID, p.Timestamp, p.Latitude, p.Longitude,
 					)
 					if err != nil {

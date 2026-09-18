@@ -11,6 +11,7 @@ import (
 	"backend/internal/models"
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
+	"backend/internal/dbclient"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -87,6 +88,13 @@ func sweepOffline(ctx context.Context) {
 			
 			// Remove from ZSET so we don't spam
 			ops.ZRem(ctx, "adatrack_gps:last_updates", member)
+
+			// DB Update offline status
+			if p.VehicleID > 0 {
+				schema := fmt.Sprintf("adatrack_gps_%s", companyCode)
+				query := fmt.Sprintf("UPDATE %s.tm_vehicles SET status = 'OFFLINE' WHERE id = $1", schema)
+				dbclient.Pool.Exec(ctx, query, p.VehicleID)
+			}
 		}
 		logger.Log.Info("Swept offline vehicles", "count", len(expired))
 	}

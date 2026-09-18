@@ -150,6 +150,13 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 			if id == 252 && val > 0 { // Harsh Cornering
 				payload.EventCode = 3
 			}
+			if id == 239 { // Ignition
+				if val > 0 {
+					payload.ACCStatus = 1
+				} else {
+					payload.ACCStatus = 0
+				}
+			}
 		}
 
 		// 1-byte IOs

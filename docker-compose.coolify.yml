@@ -1,4 +1,5 @@
 version: '3.8'
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -42,10 +43,36 @@ services:
       retries: 5
     restart: unless-stopped
 
-volumes:
-  pgdata:
-  redisdata:
-  natsdata:
+  minio:
+    image: minio/minio:latest
+    container_name: adatrack_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  minio-setup:
+    image: minio/mc:latest
+    container_name: adatrack_minio_setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY};
+      /usr/bin/mc rm -r --force myminio/${S3_BUCKET_NAME} || true;
+      /usr/bin/mc mb myminio/${S3_BUCKET_NAME} || true;
+      /usr/bin/mc anonymous set public myminio/${S3_BUCKET_NAME};
+      exit 0;
+      "
 
   node-exporter:
     image: prom/node-exporter:v1.6.0
@@ -84,3 +111,9 @@ volumes:
     image: prom/alertmanager:v0.25.0
     container_name: adatrack_alertmanager
     restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:
+  miniodata:
