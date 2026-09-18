@@ -1,7 +1,37 @@
 #!/bin/bash
-echo "Load testing Adatrack Platform"
-echo "Requires 'k6' or a custom go tool to simulate TCP connections to port 15000 (GT06) or 15001 (Teltonika)."
-echo "For 1000 msg/s, we recommend running 1000 concurrent simulated devices sending 1 msg/s."
-echo "Running dummy load test validation..."
-sleep 2
-echo "Result: 1000 msg/s | 0 data loss. PASS."
+set -e
+
+# Configuration with defaults
+HOST="${LOAD_TEST_HOST:-127.0.0.1}"
+PORT="${LOAD_TEST_PORT:-15000}"
+DEVICES="${LOAD_TEST_DEVICES:-50}"
+DURATION="${LOAD_TEST_DURATION:-10s}"
+RATE="${LOAD_TEST_RATE:-1.0}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "=== Adatrack Real TCP Load Test Runner ==="
+echo "Host:     $HOST"
+echo "Port:     $PORT (GT06 Protocol)"
+echo "Devices:  $DEVICES"
+echo "Duration: $DURATION"
+echo "Rate:     $RATE msg/s per device"
+echo "=========================================="
+
+# Ensure Go is in PATH
+export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+
+LOADGEN_BIN="$ROOT_DIR/tools/loadgen/loadgen"
+if [ ! -f "$LOADGEN_BIN" ] || [ "$ROOT_DIR/tools/loadgen/main.go" -nt "$LOADGEN_BIN" ]; then
+    echo "Building real TCP loadgen tool..."
+    (cd "$ROOT_DIR/tools/loadgen" && go build -o loadgen .)
+fi
+
+echo "Executing real load test..."
+"$LOADGEN_BIN" \
+    -host "$HOST" \
+    -port "$PORT" \
+    -devices "$DEVICES" \
+    -duration "$DURATION" \
+    -rate "$RATE"

@@ -9,4 +9,5 @@ use (
 	./services/worker-live
 	./services/worker-persistence
 	./tools/migrate
+	./tools/loadgen
 )

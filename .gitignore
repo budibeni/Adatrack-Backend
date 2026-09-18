@@ -3,6 +3,7 @@ bin/
 */bin/
 tools/migrate/db-migrate
 tools/migrate/migrate
+tools/loadgen/loadgen
 *.exe
 *.exe~
 *.dll

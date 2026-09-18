@@ -19,11 +19,18 @@ func main() {
 		dbURL = "postgres://adatrack_local:local_password@localhost:5432/adatrack_gps_master?sslmode=disable"
 	}
 
-	// Ensure master schema exists before migrations run
+	// 1. Ensure master and template schemas exist before migrations run
 	db, err := sql.Open("postgres", dbURL)
-	if err == nil {
-		db.Exec("CREATE SCHEMA IF NOT EXISTS adatrack_gps_master")
-		db.Close()
+	if err != nil {
+		log.Fatalf("Failed to connect to postgres: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec("CREATE SCHEMA IF NOT EXISTS adatrack_gps_master"); err != nil {
+		log.Printf("Warning: failed to create adatrack_gps_master schema: %v", err)
+	}
+	if _, err := db.Exec("CREATE SCHEMA IF NOT EXISTS adatrack_gps_template"); err != nil {
+		log.Printf("Warning: failed to create adatrack_gps_template schema: %v", err)
 	}
 
 	masterPath, err := filepath.Abs("../../database/migrations/master_pg")
@@ -35,37 +42,73 @@ func main() {
 		log.Fatalf("Failed to get abs path for company: %v", err)
 	}
 
-	runMigrate("file://"+masterPath, dbURL, "master_pg")
-	runMigrate("file://"+companyPath, dbURL, "company_pg")
+	// 2. Run master migrations
+	log.Println("=== Running Master Schema Migrations ===")
+	runMigrate("file://"+masterPath, dbURL, "adatrack_gps_master")
+
+	// 3. Discover all tenant schemas (adatrack_gps_% excluding master)
+	rows, err := db.Query(`
+		SELECT schema_name 
+		FROM information_schema.schemata 
+		WHERE schema_name LIKE 'adatrack_gps_%' 
+		  AND schema_name != 'adatrack_gps_master'
+		ORDER BY schema_name
+	`)
+	if err != nil {
+		log.Fatalf("Failed to query tenant schemas: %v", err)
+	}
+	defer rows.Close()
+
+	var tenantSchemas []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err == nil {
+			tenantSchemas = append(tenantSchemas, s)
+		}
+	}
+
+	// Ensure template is included if not discovered
+	hasTemplate := false
+	for _, s := range tenantSchemas {
+		if s == "adatrack_gps_template" {
+			hasTemplate = true
+			break
+		}
+	}
+	if !hasTemplate {
+		tenantSchemas = append([]string{"adatrack_gps_template"}, tenantSchemas...)
+	}
+
+	// 4. Run company migrations for each tenant schema
+	log.Printf("=== Running Tenant Schema Migrations (%d schemas found) ===", len(tenantSchemas))
+	for _, schema := range tenantSchemas {
+		log.Printf("Applying company migrations to tenant schema: %s", schema)
+		runMigrate("file://"+companyPath, dbURL, schema)
+	}
+	log.Println("=== Multi-Tenant Migrations Completed Successfully ===")
 }
 
-func runMigrate(sourceURL, dbURL, name string) {
-	// For company_pg, we might need to apply it per company schema, but for MVP,
-	// if we assume company_pg is a template, we just validate it compiles.
-	// We will apply it to public or a specific schema.
-	// Since PRD says migrations are run by Coolify, we apply them here.
-	
-	// Add search_path for master
-	var finalURL string
-	if name == "master_pg" {
-		finalURL = dbURL + "&search_path=adatrack_gps_master"
-	} else {
-		finalURL = dbURL + "&search_path=public"
+func runMigrate(sourceURL, dbURL, targetSchema string) {
+	sep := "?"
+	if strings.Contains(dbURL, "?") {
+		sep = "&"
 	}
+	finalURL := dbURL + sep + "search_path=" + targetSchema
 
 	m, err := migrate.New(sourceURL, finalURL)
 	if err != nil {
-		log.Fatalf("Failed to initialize %s migrations: %v", name, err)
+		log.Fatalf("[%s] Failed to initialize migrations: %v", targetSchema, err)
 	}
+	defer m.Close()
 
 	err = m.Up()
 	if err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Failed to run %s migrations: %v", name, err)
+		log.Fatalf("[%s] Failed to run migrations: %v", targetSchema, err)
 	}
-	
+
 	if err == migrate.ErrNoChange {
-		log.Printf("[%s] No new migrations to apply.", strings.ToUpper(name))
+		log.Printf("[%s] No new migrations to apply.", targetSchema)
 	} else {
-		log.Printf("[%s] Migrations applied successfully.", strings.ToUpper(name))
+		log.Printf("[%s] Migrations applied successfully.", targetSchema)
 	}
 }

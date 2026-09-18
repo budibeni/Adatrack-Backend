@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"backend/internal/dbclient"
 )
 
 // simple in-memory cache for reverse geocoding
@@ -14,6 +16,21 @@ var (
 	cache = make(map[string]string)
 	mu    sync.RWMutex
 )
+
+// ClearCache clears all in-memory geocoding cache entries.
+func ClearCache() {
+	mu.Lock()
+	defer mu.Unlock()
+	cache = make(map[string]string)
+}
+
+// SetCache sets an explicit address in cache for testing or pre-warming.
+func SetCache(lat, lon float64, address string) {
+	cacheKey := fmt.Sprintf("%.3f,%.3f", lat, lon)
+	mu.Lock()
+	defer mu.Unlock()
+	cache[cacheKey] = address
+}
 
 type NominatimResponse struct {
 	DisplayName string `json:"display_name"`
@@ -38,7 +55,33 @@ func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 	}
 	mu.RUnlock()
 
-	// Fallback to Nominatim API (ensure to follow usage policy: 1 req/sec)
+	// 1. Try local database spatial lookup first (offline first, fast & enterprise grade)
+	if dbclient.Pool != nil {
+		var cityName, provinceName string
+		query := `
+			SELECT c.name, COALESCE(p.name, '')
+			FROM adatrack_gps_master.tm_cities c
+			LEFT JOIN adatrack_gps_master.tm_provinces p ON c.province_id = p.id
+			WHERE c.latitude IS NOT NULL AND c.longitude IS NOT NULL
+			ORDER BY ((c.latitude - $1) * (c.latitude - $1) + (c.longitude - $2) * (c.longitude - $2)) ASC
+			LIMIT 1
+		`
+		err := dbclient.Pool.QueryRow(ctx, query, lat, lon).Scan(&cityName, &provinceName)
+		if err == nil && cityName != "" {
+			var addr string
+			if provinceName != "" {
+				addr = fmt.Sprintf("%s, %s, Indonesia", cityName, provinceName)
+			} else {
+				addr = fmt.Sprintf("%s, Indonesia", cityName)
+			}
+			mu.Lock()
+			cache[cacheKey] = addr
+			mu.Unlock()
+			return addr, nil
+		}
+	}
+
+	// 2. Fallback to Nominatim API (ensure to follow usage policy: 1 req/sec)
 	apiURL := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f&zoom=18&addressdetails=1", lat, lon)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
