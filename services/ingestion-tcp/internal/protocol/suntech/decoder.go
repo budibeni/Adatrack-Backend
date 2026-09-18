@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,12 +35,34 @@ func (d *Decoder) IsHeartbeat(data []byte) bool { return strings.Contains(string
 func (d *Decoder) GenerateHeartbeatResponse(data []byte) []byte { return nil }
 
 func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleID int) (models.TelemetryPayload, error) {
-	str := string(data)
+	str := strings.TrimSpace(string(data))
+	parts := strings.Split(str, ";")
+	
+	if len(parts) < 11 {
+		return models.TelemetryPayload{}, errors.New("insufficient parts for location packet")
+	}
+	
+	// parts[4] = Date (YYYYMMDD), parts[5] = Time (HHMMSS)
+	dtStr := parts[4] + parts[5]
+	timestamp, err := time.Parse("20060102150405", dtStr)
+	if err != nil {
+		timestamp = time.Now().UTC()
+	}
+
+	lat, _ := strconv.ParseFloat(parts[7], 64)
+	lng, _ := strconv.ParseFloat(parts[8], 64)
+	speed, _ := strconv.ParseFloat(parts[9], 64)
+	course, _ := strconv.ParseFloat(parts[10], 64)
+
 	return models.TelemetryPayload{
 		IMEI:        imei,
 		CompanyCode: companyCode,
 		VehicleID:   vehicleID,
-		Timestamp:   time.Now().UTC(),
+		Latitude:    lat,
+		Longitude:   lng,
+		Speed:       speed,
+		Heading:     course,
+		Timestamp:   timestamp,
 		RawData:     str,
 	}, nil
 }

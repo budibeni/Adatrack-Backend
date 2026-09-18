@@ -16,20 +16,24 @@ import (
 	"backend/internal/natsclient"
 	"backend/internal/tenant"
 	"backend/internal/redclient"
+	"backend/worker-alert/internal/alert"
 	"backend/worker-alert/internal/geo"
 )
 
 type Worker struct {
-	sub         *nats.Subscription
-	offlineSub  *nats.Subscription
-	speedCache  sync.Map // cacheKey -> SpeedConfig
-	dedupCache  sync.Map // cacheKey -> time.Time
-	refreshStop chan struct{}
+	sub           *nats.Subscription
+	offlineSub    *nats.Subscription
+	speedCache    sync.Map // cacheKey -> SpeedConfig
+	dedupCache    sync.Map // cacheKey -> time.Time
+	prevTelemetry sync.Map // cacheKey -> models.TelemetryPayload
+	refreshStop   chan struct{}
+	safetyEngine  *alert.SafetyEngine
 }
 
 func NewWorker() *Worker {
 	return &Worker{
-		refreshStop: make(chan struct{}),
+		refreshStop:  make(chan struct{}),
+		safetyEngine: alert.NewSafetyEngine(),
 	}
 }
 
@@ -111,6 +115,14 @@ func (w *Worker) processTelemetry(m *nats.Msg) {
 
 	// 1. OVERSPEEDING LOGIC
 	w.evaluateOverspeed(ctx, schema, payload)
+
+	// 1.5. SAFETY ENGINE LOGIC
+	cacheKey := fmt.Sprintf("%s:%d", payload.CompanyCode, payload.VehicleID)
+	if prev, ok := w.prevTelemetry.Load(cacheKey); ok {
+		prevPayload := prev.(models.TelemetryPayload)
+		w.safetyEngine.Evaluate(ctx, payload.CompanyCode, payload, prevPayload.Speed, prevPayload.Heading)
+	}
+	w.prevTelemetry.Store(cacheKey, payload)
 
 	// 2. SOS LOGIC
 	if payload.EventCode == 0x26 || payload.EventCode == 0x27 || payload.EventCode == 0x19 {

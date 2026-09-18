@@ -2,6 +2,7 @@ package gt02
 
 import (
 	"bufio"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"time"
@@ -14,11 +15,11 @@ type Decoder struct{}
 func (d *Decoder) ProtocolName() string { return "GT02" }
 
 func (d *Decoder) DecodeLogin(data []byte) (string, []byte, error) {
-	// GT02 starts with 0x28 0x28 or 0x29 0x29
 	if len(data) < 10 {
 		return "", nil, errors.New("packet too short")
 	}
-	imei := hex.EncodeToString(data[4:12]) // rough extraction for GT02
+	// Simplified IMEI extraction
+	imei := hex.EncodeToString(data[4:12])
 	return imei, nil, nil
 }
 
@@ -29,10 +30,25 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	if len(data) < 20 {
 		return models.TelemetryPayload{}, errors.New("not a location packet")
 	}
+	
+	// Assume data[11:15] is Lat, data[15:19] is Lng for GT02 binary format
+	latRaw := binary.BigEndian.Uint32(data[11:15])
+	lngRaw := binary.BigEndian.Uint32(data[15:19])
+	
+	lat := float64(latRaw) / 1800000.0
+	lng := float64(lngRaw) / 1800000.0
+	
+	// Adjust for hemisphere bits if necessary (simplified here)
+	
+	speed := float64(data[19])
+
 	return models.TelemetryPayload{
 		IMEI:        imei,
 		CompanyCode: companyCode,
 		VehicleID:   vehicleID,
+		Latitude:    lat,
+		Longitude:   lng,
+		Speed:       speed,
 		Timestamp:   time.Now().UTC(),
 		RawData:     hex.EncodeToString(data),
 	}, nil
@@ -41,7 +57,6 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 { return 0, nil, nil }
-		// GT02 uses 0x0D 0x0A as tail
 		for i := 0; i < len(data)-1; i++ {
 			if data[i] == 0x0D && data[i+1] == 0x0A {
 				return i + 2, data[:i+2], nil

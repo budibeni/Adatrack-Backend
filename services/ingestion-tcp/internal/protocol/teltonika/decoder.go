@@ -240,7 +240,13 @@ func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 
 func (d *Decoder) EncodeCommand(cmdType string, params map[string]string, raw string) ([]byte, error) {
 	if cmdType == "custom" {
-		return []byte(raw), nil
+		return encodeCodec12(raw), nil
 	}
-	return nil, errors.New("command not supported for this protocol")
+	if cmdType == "engine_stop" {
+		return encodeCodec12("setdigout 1"), nil
+	}
+	if cmdType == "engine_resume" {
+		return encodeCodec12("setdigout 0"), nil
+	}
+	return nil, errors.New("command not supported for teltonika")
 }

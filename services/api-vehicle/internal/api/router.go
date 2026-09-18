@@ -94,12 +94,24 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Get("/media/{id}/url", h.GetMediaURL)
 		r.Delete("/media/{id}", h.DeleteMediaEvent)
 		r.Post("/media/{id}/restore", h.RestoreMediaEvent)
-	})
 
 		// Access (B12)
 		r.Get("/access/menu", h.GetAccessibleMenus)
 		r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
 		r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
+
+		// Drivers (B12)
+		r.Get("/drivers", h.ListDrivers)
+		r.Post("/drivers", h.CreateDriver)
+		r.Get("/drivers/{id}", h.GetDriver)
+		r.Put("/drivers/{id}", h.UpdateDriver)
+		r.Delete("/drivers/{id}", h.SoftDeleteDriver)
+
+		// Public Share Links (B12)
+		r.Get("/share-links", h.ListShareLinks)
+		r.Post("/share-links", h.CreateShareLink)
+		r.Delete("/share-links/{id}", h.RevokeShareLink)
+	})
 
 	return r
 }

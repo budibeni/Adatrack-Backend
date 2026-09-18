@@ -165,7 +165,13 @@ func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 
 func (d *Decoder) EncodeCommand(cmdType string, params map[string]string, raw string) ([]byte, error) {
 	if cmdType == "custom" {
-		return []byte(raw), nil
+		return encodeCommand0x80(raw), nil
 	}
-	return nil, errors.New("command not supported for this protocol")
+	if cmdType == "engine_stop" {
+		return encodeCommand0x80("Relay,1#"), nil
+	}
+	if cmdType == "engine_resume" {
+		return encodeCommand0x80("Relay,0#"), nil
+	}
+	return nil, errors.New("command not supported for gt06")
 }

@@ -22,6 +22,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
+	github.com/sigurn/crc16 v0.0.0-20240131213347-83fcde1e29d1 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
