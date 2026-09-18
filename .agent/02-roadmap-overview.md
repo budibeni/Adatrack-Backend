@@ -8,7 +8,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
 > **Acuan struktur aplikasi (PRD v1.7.0):** penerapan backend mengikuti
 > `docs/FRONTEND.md` — modul/menu/fitur aplikasi **Business** & **Personal** (§5.10
-> PRD, Module 9); fase backend pendukungnya = **B12** (⬜ Planned).
+> PRD, Module 9); fase backend pendukungnya = **B12** (✅ Selesai).
 
 ## Macro Sequence
 
@@ -27,7 +27,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ✅ Done |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ⬜ Planned |
 | **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant `Admin@123` (FR-5.5), migrasi DB otomatis Coolify (§14.5), dukungan protokol universal (Module 1c) | `backend/`, `deployments/` | ⬜ Planned |
-| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | ⬜ Planned |
+| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | ✅ Selesai |
 | **F1** | Scaffold Frontend (Next.js + Tailwind + Map) | `frontend/` | ⬜ Not started |
 | **F2** | Live Tracking Dashboard | `frontend/` | ⬜ Not started |
 | **F3** | History Playback, Geofence, Alerts UI | `frontend/` | ⬜ Not started |

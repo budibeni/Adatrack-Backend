@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"backend/internal/auth"
 	"backend/internal/logger"
 	"backend/internal/natsclient"
+	"backend/internal/tenant"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -29,9 +31,16 @@ func (h *Handler) SendCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the IMEI for this vehicle
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+
 	var imei string
-	err := h.db.QueryRow(r.Context(), "SELECT imei FROM tm_vehicles WHERE id = $1 AND deleted_at IS NULL", vehicleID).Scan(&imei)
+	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf("SELECT imei FROM %s.tm_vehicles WHERE id = $1 AND deleted_at IS NULL", schema), vehicleID).Scan(&imei)
 	if err != nil {
 		http.Error(w, "vehicle not found", http.StatusNotFound)
 		return

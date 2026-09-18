@@ -96,5 +96,10 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Post("/media/{id}/restore", h.RestoreMediaEvent)
 	})
 
+		// Access (B12)
+		r.Get("/access/menu", h.GetAccessibleMenus)
+		r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
+		r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
+
 	return r
 }

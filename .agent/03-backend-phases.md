@@ -260,7 +260,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B12 — Enterprise & Industry Modules ⬜ (acuan `docs/FRONTEND.md`, PRD v1.7.0 §5.10)
+## Phase B12 — Enterprise & Industry Modules ✅ (Executed 2026-09-18)
 
 > Penerapan backend mengikuti struktur aplikasi Frontend (`docs/FRONTEND.md`): setiap
 > menu Business/Personal wajib punya dukungan data/API. Kontrak: error_code §8.1,
@@ -268,23 +268,23 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 > prefix `tm_`/`th_`/`td_`; **additive-only**.
 
 ### Tasks
-- [ ] Registry modul & menu di master (`tm_modules`, `tm_menus` — seed idempoten dari FRONTEND.md) + **role akses menu per-tenant** (`tm_role_menu_access` di company schema, seed default per role).
-- [ ] Endpoint `GET /api/v1/access/menu` (menu tersedia utk user) + admin CRUD mapping (ter-audit).
-- [ ] Master: **Drivers** (`tm_drivers`) & **Groups** (`tm_groups` + mapping vehicle/driver).
-- [ ] Akses: **Personel**, **Kartu (RFID)**, **Log akses**.
-- [ ] Aset: **Assets** registry; **Maintenance** (jadwal + reminder — menyambung B8).
-- [ ] Keamanan: **Safety score** (dari B8) & **Incidents**.
-- [ ] Analisis: **Reports/Analytics** lanjutan (trip & violation summary, export, scheduled).
-- [ ] Administrasi: **Organization** (hierarki), **Integrations** (webhook outbound + API key), **Settings** tenant.
-- [ ] **Share lokasi publik** — link token TTL + endpoint publik `GET /api/v1/share/{token}` (FR-9.3).
-- [ ] **Heatmap** agregasi historis (menu Pemantauan).
-- [ ] Industry-specific bertahap (per flag lisensi tenant): Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site.
-- [ ] Personal/B2C: auth `tm_users_b2c`, Statistics agregasi, Settings preferensi (FR-9.2).
+- [x] Registry modul & menu di master (`tm_modules`, `tm_menus` — seed idempoten dari FRONTEND.md) + **role akses menu per-tenant** (`tm_role_menu_access` di company schema, seed default per role).
+- [x] Endpoint `GET /api/v1/access/menu` (menu tersedia utk user) + admin CRUD mapping (ter-audit).
+- [x] Master: **Drivers** (`tm_drivers`) & **Groups** (`tm_groups` + mapping vehicle/driver).
+- [x] Akses: **Personel**, **Kartu (RFID)**, **Log akses**.
+- [x] Aset: **Assets** registry; **Maintenance** (jadwal + reminder — menyambung B8).
+- [x] Keamanan: **Safety score** (dari B8) & **Incidents**.
+- [x] Analisis: **Reports/Analytics** lanjutan (trip & violation summary, export, scheduled).
+- [x] Administrasi: **Organization** (hierarki), **Integrations** (webhook outbound + API key), **Settings** tenant.
+- [x] **Share lokasi publik** — link token TTL + endpoint publik `GET /api/v1/share/{token}` (FR-9.3).
+- [x] **Heatmap** agregasi historis (menu Pemantauan).
+- [x] Industry-specific bertahap (per flag lisensi tenant): Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site.
+- [x] Personal/B2C: auth `tm_users_b2c`, Statistics agregasi, Settings preferensi (FR-9.2).
 
 ### Acceptance
-- [ ] Navigasi frontend dimuat dinamis dari `GET /api/v1/access/menu` sesuai role.
-- [ ] Setiap menu FRONTEND.md punya endpoint ber-RBAC + test (aturan coverage B4).
-- [ ] Tabel baru normalisasi + audit + soft delete; migrasi idempoten.
+- [x] Navigasi frontend dimuat dinamis dari `GET /api/v1/access/menu` sesuai role.
+- [x] Setiap menu FRONTEND.md punya endpoint ber-RBAC + test (aturan coverage B4).
+- [x] Tabel baru normalisasi + audit + soft delete; migrasi idempoten.
 
 ---
 

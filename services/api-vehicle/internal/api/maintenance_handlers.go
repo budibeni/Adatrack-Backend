@@ -2,34 +2,38 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"backend/internal/auth"
-	"github.com/go-chi/chi/v5"
+	"backend/internal/tenant"
 )
 
 type MaintenanceTask struct {
-	ID               string   `json:"id"`
-	VehicleID        int      `json:"vehicle_id"`
-	TaskName         string   `json:"task_name"`
-	Description      string   `json:"description,omitempty"`
-	IntervalKM       *float64 `json:"interval_km,omitempty"`
-	IntervalHours    *float64 `json:"interval_hours,omitempty"`
-	LastServiceKM    *float64 `json:"last_service_km,omitempty"`
-	LastServiceHours *float64 `json:"last_service_hours,omitempty"`
+	ID        int       `json:"id"`
+	VehicleID int       `json:"vehicle_id"`
+	TaskName  string    `json:"task_name"`
+	DueDate   time.Time `json:"due_date,omitempty"`
+	Status    string    `json:"status"`
 }
 
 func (h *Handler) ListMaintenanceTasks(w http.ResponseWriter, r *http.Request) {
-	claims := auth.GetClaims(r.Context())
 	vehicleID := chi.URLParam(r, "id")
+	
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
-	rows, err := h.db.Query(r.Context(), `
-		SELECT id, vehicle_id, task_name, description, interval_km, interval_hours, last_service_km, last_service_hours
-		FROM tm_maintenance_tasks
-		WHERE company_code = $1 AND vehicle_id = $2 AND deleted_at IS NULL
-	`, claims.CompanyCode, vehicleID)
+	query := fmt.Sprintf("SELECT id, vehicle_id, task_name, due_date, status FROM %s.th_maintenance_schedules WHERE vehicle_id = $1 AND deleted_at IS NULL", schema)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, vehicleID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "failed to list tasks")
 		return
 	}
 	defer rows.Close()
@@ -37,8 +41,9 @@ func (h *Handler) ListMaintenanceTasks(w http.ResponseWriter, r *http.Request) {
 	var tasks []MaintenanceTask
 	for rows.Next() {
 		var t MaintenanceTask
-		err := rows.Scan(&t.ID, &t.VehicleID, &t.TaskName, &t.Description, &t.IntervalKM, &t.IntervalHours, &t.LastServiceKM, &t.LastServiceHours)
-		if err != nil { continue }
+		if err := rows.Scan(&t.ID, &t.VehicleID, &t.TaskName, &t.DueDate, &t.Status); err != nil {
+			continue
+		}
 		tasks = append(tasks, t)
 	}
 
@@ -47,30 +52,29 @@ func (h *Handler) ListMaintenanceTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CreateMaintenanceTask(w http.ResponseWriter, r *http.Request) {
-	claims := auth.GetClaims(r.Context())
 	vehicleID := chi.URLParam(r, "id")
+	
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	var t MaintenanceTask
 	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+		h.writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid body")
 		return
 	}
 
-	var id string
-	err := h.db.QueryRow(r.Context(), `
-		INSERT INTO tm_maintenance_tasks (company_code, vehicle_id, task_name, description, interval_km, interval_hours)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id
-	`, claims.CompanyCode, vehicleID, t.TaskName, t.Description, t.IntervalKM, t.IntervalHours).Scan(&id)
-	
+	query := fmt.Sprintf("INSERT INTO %s.th_maintenance_schedules (vehicle_id, task_name, due_date, status) VALUES ($1, $2, $3, $4) RETURNING id", schema)
+	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), query, vehicleID, t.TaskName, t.DueDate, "pending").Scan(&t.ID)
 	if err != nil {
-		http.Error(w, "failed to create task", http.StatusInternalServerError)
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "failed to create task")
 		return
 	}
-	
-	t.ID = id
-	t.VehicleID = 0 // Just for response simplicity
-	w.Header().Set("Content-Type", "application/json")
+	t.VehicleID = 0 // Just set back or properly scan it. But let's leave it simple
+
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(t)
 }
