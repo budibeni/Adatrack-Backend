@@ -754,7 +754,7 @@ default; restore tersedia via `POST /api/v1/media/{id}/restore` (Admin) + audit 
 | 1.2 Master — Armada (Vehicles) · Geofences · Routes | CRUD + row-level RBAC (§8.2) | ⬜ B2/B3 |
 | 1.2 Master — **Pengemudi (Drivers)** · **Grup (Groups)** | master data pengemudi & pengelompokan vehicle/driver + mapping | ⬜ B12 |
 | 1.3 Akses — **Personel** · **Kartu (Card/RFID)** · **Log** (riwayat akses) | identitas personel, kartu akses/RFID, riwayat akses kontrol | ⬜ B12 |
-| 1.4 Aset — **Assets** · **Maintenance** | registry aset; jadwal servis + reminder odometer/engine-hours | ⬜ B12 (maintenance menyambung B8) |
+| 1.4 Aset — **Assets** · **Maintenance** | registry aset; jadwal servis + reminder odometer/engine-hours | ✅ B12 (maintenance menyambung B8) |
 | 1.5 Keamanan — **Safety** (skor mengemudi) · **Incidents** | skor mengemudi (driver behavior B8) + katalog insiden/pelanggaran | ✅ B8/B12 |
 | 1.6 Analisis — **Reports** · **Analytics** | laporan terjadwal & dashboard tren (trip/violation summary, export PDF/Excel) | ⬜ F4/B12 |
 | 1.7 Industry Specific — Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site | modul vertikal per model bisnis (per-tenant, flag lisensi di `tm_companies`) | ⬜ B12+ (bertahap) |
@@ -1747,11 +1747,11 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 
 | # | Fitur | Estimasi | Fase |
 |---|---|---|---|
-| 1 | **Downlink / Remote Commands** — connection registry, engine cut-off (`DYD#`), interval change, reboot | 5 d | B8 |
+| 1 | **Downlink / Remote Commands** — connection registry, engine cut-off (`DYD#`), interval change, reboot | 5 d | ✅ Selesai (B8) |
 | 2 | **Odometer & Engine Hours** | 2 d | B7.1 |
 | 3 | **Trip & Stop Detection** | 5 d | B7.2 |
-| 4 | **Driver Behavior Analysis** (harsh accel/braking/cornering — Teltonika IO 253/254, Concox alarm 0x09/0x0A) | 3 d | B8 |
-| 5 | **Maintenance Scheduling** (servis log, odometer/engine-hours reminders) | 3 d | B8 |
+| 4 | **Driver Behavior Analysis** (harsh accel/braking/cornering — Teltonika IO 253/254, Concox alarm 0x09/0x0A) | 3 d | ✅ Selesai (B8) |
+| 5 | **Maintenance Scheduling** (servis log, odometer/engine-hours reminders) | 3 d | ✅ Selesai (B8) |
 | 6 | **Point Reduction** (Ramer–Douglas–Peucker utk history playback) | 2 d | B7.4 |
 | 7 | **Reverse Geocoding** | 3 d | B7.3 |
 | 8 | **Mobile App driver** (route accept, SOS, offline recording) | — | Phase 3+ |

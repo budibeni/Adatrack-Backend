@@ -126,7 +126,25 @@ func (w *Worker) processTelemetry(m *nats.Msg) {
 		}
 	}
 
-	// 3. BATTERY LOW LOGIC (< 20% default, < 10% critical)
+	// 3. DRIVER BEHAVIOR LOGIC (B8)
+	if payload.EventCode >= 1 && payload.EventCode <= 3 {
+		alertType := ""
+		if payload.EventCode == 1 {
+			alertType = "HARSH_ACCELERATION"
+		} else if payload.EventCode == 2 {
+			alertType = "HARSH_BRAKING"
+		} else if payload.EventCode == 3 {
+			alertType = "HARSH_CORNERING"
+		}
+
+		if alertType != "" && !w.isDuplicate(payload.CompanyCode, payload.VehicleID, alertType, 1*time.Minute) {
+			w.createAlert(ctx, schema, alertType, "medium", payload.VehicleID, payload.Latitude, payload.Longitude, map[string]interface{}{
+				"speed": payload.Speed,
+			})
+		}
+	}
+
+	// 4. BATTERY LOW LOGIC (< 20% default, < 10% critical)
 	if payload.Battery > 0 && payload.Battery < 20 {
 		severity := "high"
 		if payload.Battery < 10 {
