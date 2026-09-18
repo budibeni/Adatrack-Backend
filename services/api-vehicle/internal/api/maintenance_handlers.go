@@ -13,11 +13,16 @@ import (
 )
 
 type MaintenanceTask struct {
-	ID        int       `json:"id"`
-	VehicleID int       `json:"vehicle_id"`
-	TaskName  string    `json:"task_name"`
-	DueDate   time.Time `json:"due_date,omitempty"`
-	Status    string    `json:"status"`
+	ID               string    `json:"id"`
+	VehicleID        int       `json:"vehicle_id"`
+	TaskName         string    `json:"task_name"`
+	Description      string    `json:"description,omitempty"`
+	IntervalKM       float64   `json:"interval_km,omitempty"`
+	IntervalHours    float64   `json:"interval_hours,omitempty"`
+	LastServiceKM    float64   `json:"last_service_km,omitempty"`
+	LastServiceHours float64   `json:"last_service_hours,omitempty"`
+	LastServiceDate  time.Time `json:"last_service_date,omitempty"`
+	IsActive         bool      `json:"is_active"`
 }
 
 func (h *Handler) ListMaintenanceTasks(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +35,11 @@ func (h *Handler) ListMaintenanceTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
-	query := fmt.Sprintf("SELECT id, vehicle_id, task_name, due_date, status FROM %s.th_maintenance_schedules WHERE vehicle_id = $1 AND deleted_at IS NULL", schema)
+	query := fmt.Sprintf(`
+		SELECT id, vehicle_id, task_name, description, interval_km, interval_hours, last_service_km, last_service_hours, last_service_date, is_active 
+		FROM %s.tm_maintenance_tasks 
+		WHERE vehicle_id = $1 AND deleted_at IS NULL
+	`, schema)
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, vehicleID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "failed to list tasks")
@@ -41,10 +50,23 @@ func (h *Handler) ListMaintenanceTasks(w http.ResponseWriter, r *http.Request) {
 	var tasks []MaintenanceTask
 	for rows.Next() {
 		var t MaintenanceTask
-		if err := rows.Scan(&t.ID, &t.VehicleID, &t.TaskName, &t.DueDate, &t.Status); err != nil {
+		var lastDate *time.Time
+		var desc *string
+		var intKM, intHours, lastKM, lastHours *float64
+		if err := rows.Scan(&t.ID, &t.VehicleID, &t.TaskName, &desc, &intKM, &intHours, &lastKM, &lastHours, &lastDate, &t.IsActive); err != nil {
 			continue
 		}
+		if desc != nil { t.Description = *desc }
+		if intKM != nil { t.IntervalKM = *intKM }
+		if intHours != nil { t.IntervalHours = *intHours }
+		if lastKM != nil { t.LastServiceKM = *lastKM }
+		if lastHours != nil { t.LastServiceHours = *lastHours }
+		if lastDate != nil { t.LastServiceDate = *lastDate }
 		tasks = append(tasks, t)
+	}
+
+	if tasks == nil {
+		tasks = []MaintenanceTask{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -67,13 +89,18 @@ func (h *Handler) CreateMaintenanceTask(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	query := fmt.Sprintf("INSERT INTO %s.th_maintenance_schedules (vehicle_id, task_name, due_date, status) VALUES ($1, $2, $3, $4) RETURNING id", schema)
-	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), query, vehicleID, t.TaskName, t.DueDate, "pending").Scan(&t.ID)
+	query := fmt.Sprintf(`
+		INSERT INTO %s.tm_maintenance_tasks (company_code, vehicle_id, task_name, description, interval_km, interval_hours, last_service_km, last_service_hours, last_service_date) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
+	`, schema)
+	
+	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), query, 
+		claims.CompanyCode, vehicleID, t.TaskName, t.Description, t.IntervalKM, t.IntervalHours, t.LastServiceKM, t.LastServiceHours, time.Now()).Scan(&t.ID)
+	
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "failed to create task")
 		return
 	}
-	t.VehicleID = 0 // Just set back or properly scan it. But let's leave it simple
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(t)

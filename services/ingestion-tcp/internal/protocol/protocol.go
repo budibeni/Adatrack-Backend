@@ -1,8 +1,8 @@
 package protocol
 
 import (
-	"bufio"
 	"backend/internal/models"
+	"bufio"
 )
 
 type Decoder interface {
@@ -12,8 +12,8 @@ type Decoder interface {
 	GenerateHeartbeatResponse(data []byte) []byte
 	DecodeLocation(data []byte, imei, companyCode string, vehicleID int) (models.TelemetryPayload, error)
 	EncodeCommand(cmdType string, params map[string]string, raw string) ([]byte, error)
-	
-	// FrameSplitter returns the bufio.SplitFunc used to bound network streams 
+
+	// FrameSplitter returns the bufio.SplitFunc used to bound network streams
 	// solving the TCP Sticky Packets / Fragmentation issues natively.
 	FrameSplitter() bufio.SplitFunc
 }

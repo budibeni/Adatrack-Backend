@@ -101,7 +101,7 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	lat := float64(binary.BigEndian.Uint32(data[11:15])) / 1800000.0
 	lon := float64(binary.BigEndian.Uint32(data[15:19])) / 1800000.0
 	speed := float64(data[19])
-	
+
 	courseStatus := binary.BigEndian.Uint16(data[20:22])
 	heading := float64(courseStatus)
 	// course is technically bit 0-9 (Wait, GT06 docs say course is 10 bits. Actually it's just courseStatus & 0x3FF)
@@ -124,7 +124,7 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 
 	// Driver Behavior / Alarm parsing for Concox (0x16 packet)
 	if data[3] == 0x16 && len(data) >= 33 {
-		alarmType := data[32] // Usually byte 32 or 33 depending on variant
+		alarmType := data[32]  // Usually byte 32 or 33 depending on variant
 		if alarmType == 0x09 { // Harsh Acceleration? Wait, PRD says "0x09/0x0A"
 			payload.EventCode = 1
 		} else if alarmType == 0x0A {

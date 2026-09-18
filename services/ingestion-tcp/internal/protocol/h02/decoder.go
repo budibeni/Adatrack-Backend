@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,10 +48,30 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		return models.TelemetryPayload{}, errors.New("not an h02 location packet")
 	}
 
+	parts := strings.Split(str, ",")
+	if len(parts) < 11 {
+		return models.TelemetryPayload{}, errors.New("invalid h02 format")
+	}
+
+	lat, _ := strconv.ParseFloat(parts[5], 64)
+	if parts[6] == "S" {
+		lat = -lat
+	}
+	lon, _ := strconv.ParseFloat(parts[7], 64)
+	if parts[8] == "W" {
+		lon = -lon
+	}
+	speed, _ := strconv.ParseFloat(parts[9], 64)
+	heading, _ := strconv.ParseFloat(parts[10], 64)
+
 	return models.TelemetryPayload{
 		IMEI:        imei,
 		CompanyCode: companyCode,
 		VehicleID:   vehicleID,
+		Latitude:    lat / 100.0,
+		Longitude:   lon / 100.0,
+		Speed:       speed * 1.852, // assume knots
+		Heading:     heading,
 		Timestamp:   time.Now().UTC(),
 		RawData:     str,
 	}, nil

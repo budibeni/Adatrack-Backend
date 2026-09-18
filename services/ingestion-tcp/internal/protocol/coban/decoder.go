@@ -41,17 +41,21 @@ func (d *Decoder) GenerateHeartbeatResponse(data []byte) []byte {
 }
 
 func parseNMEA(coord string, dir string) float64 {
-	if len(coord) < 4 { return 0 }
+	if len(coord) < 4 {
+		return 0
+	}
 	// DDMM.MMMM
 	idx := strings.Index(coord, ".")
-	if idx < 2 { return 0 }
-	
+	if idx < 2 {
+		return 0
+	}
+
 	degStr := coord[:idx-2]
 	minStr := coord[idx-2:]
-	
+
 	deg, _ := strconv.ParseFloat(degStr, 64)
 	min, _ := strconv.ParseFloat(minStr, 64)
-	
+
 	val := deg + (min / 60.0)
 	if dir == "S" || dir == "W" {
 		val = -val
@@ -64,7 +68,7 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 	if !strings.Contains(str, "tracker") {
 		return models.TelemetryPayload{}, errors.New("not a location packet")
 	}
-	
+
 	// imei:...,tracker,210917,143000,F,035022.000,A,2232.1234,N,11404.1234,E,0.00,0.00...
 	parts := strings.Split(str, ",")
 	var lat, lng, speed float64
@@ -81,7 +85,7 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 		IMEI:        imei,
 		CompanyCode: companyCode,
 		VehicleID:   vehicleID,
-		Latitude:    lat, 
+		Latitude:    lat,
 		Longitude:   lng,
 		Speed:       speed,
 		Timestamp:   time.Now().UTC(),
@@ -91,10 +95,18 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 
 func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) == 0 { return 0, nil, nil }
-		if i := bytes.IndexByte(data, ';'); i >= 0 { return i + 1, data[:i+1], nil }
-		if i := bytes.IndexByte(data, '\n'); i >= 0 { return i + 1, data[:i+1], nil }
-		if atEOF { return len(data), data, nil }
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
+		if i := bytes.IndexByte(data, ';'); i >= 0 {
+			return i + 1, data[:i+1], nil
+		}
+		if i := bytes.IndexByte(data, '\n'); i >= 0 {
+			return i + 1, data[:i+1], nil
+		}
+		if atEOF {
+			return len(data), data, nil
+		}
 		return 0, nil, nil
 	}
 }

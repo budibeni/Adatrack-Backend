@@ -9,7 +9,7 @@ func TestGT06DecodeLogin(t *testing.T) {
 	d := &Decoder{}
 	packetHex := "78781101012345678901234500018C2A0D0A" // typical login
 	packet, _ := hex.DecodeString(packetHex)
-	
+
 	imei, resp, err := d.DecodeLogin(packet)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -26,7 +26,7 @@ func TestGT06DecodeLocation(t *testing.T) {
 	d := &Decoder{}
 	packetHex := "78781F120B081D112E0A03813C1C0C4658440014020101010000000000000D0A"
 	packet, _ := hex.DecodeString(packetHex)
-	
+
 	payload, err := d.DecodeLocation(packet, "12345", "COMP", 1)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)

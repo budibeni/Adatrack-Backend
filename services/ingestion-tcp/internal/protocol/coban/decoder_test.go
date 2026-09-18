@@ -11,7 +11,7 @@ func TestCobanDecodeLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
-	
+
 	if payload.Latitude == 0 {
 		t.Errorf("Latitude not parsed")
 	}

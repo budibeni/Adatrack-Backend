@@ -31,17 +31,17 @@ func (d *Decoder) DecodeLogin(data []byte) (string, []byte, error) {
 	return imei, nil, nil
 }
 
-func (d *Decoder) IsHeartbeat(data []byte) bool { return strings.Contains(string(data), "ALV") }
+func (d *Decoder) IsHeartbeat(data []byte) bool                 { return strings.Contains(string(data), "ALV") }
 func (d *Decoder) GenerateHeartbeatResponse(data []byte) []byte { return nil }
 
 func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleID int) (models.TelemetryPayload, error) {
 	str := strings.TrimSpace(string(data))
 	parts := strings.Split(str, ";")
-	
+
 	if len(parts) < 11 {
 		return models.TelemetryPayload{}, errors.New("insufficient parts for location packet")
 	}
-	
+
 	// parts[4] = Date (YYYYMMDD), parts[5] = Time (HHMMSS)
 	dtStr := parts[4] + parts[5]
 	timestamp, err := time.Parse("20060102150405", dtStr)
@@ -69,19 +69,25 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 
 func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) == 0 { return 0, nil, nil }
+		if atEOF && len(data) == 0 {
+			return 0, nil, nil
+		}
 		if i := bytes.IndexByte(data, '\r'); i >= 0 {
 			if i+1 < len(data) && data[i+1] == '\n' {
 				return i + 2, data[:i+2], nil
 			}
 			return i + 1, data[:i+1], nil
 		}
-		if atEOF { return len(data), data, nil }
+		if atEOF {
+			return len(data), data, nil
+		}
 		return 0, nil, nil
 	}
 }
 
 func (d *Decoder) EncodeCommand(cmdType string, params map[string]string, raw string) ([]byte, error) {
-	if cmdType == "custom" { return []byte(raw), nil }
+	if cmdType == "custom" {
+		return []byte(raw), nil
+	}
 	return nil, errors.New("command not supported for suntech")
 }

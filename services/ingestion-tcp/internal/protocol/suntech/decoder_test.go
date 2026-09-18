@@ -11,7 +11,7 @@ func TestSuntechDecodeLocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to decode: %v", err)
 	}
-	
+
 	if payload.Latitude != 37.478519 {
 		t.Errorf("Latitude mismatch: got %f", payload.Latitude)
 	}
