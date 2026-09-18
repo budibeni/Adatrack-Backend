@@ -44,7 +44,7 @@ services:
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: adatrack_minio
     command: server /data --console-address ":9001"
     environment:
@@ -60,7 +60,7 @@ services:
     restart: unless-stopped
 
   minio-setup:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: adatrack_minio_setup
     depends_on:
       minio:
@@ -75,7 +75,7 @@ services:
       "
 
   node-exporter:
-    image: prom/node-exporter:v1.6.0
+    image: quay.io/prometheus/node-exporter:v1.6.0
     container_name: adatrack_node_exporter
     restart: unless-stopped
 
@@ -90,7 +90,7 @@ services:
     restart: unless-stopped
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.12.0
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.12.0
     container_name: adatrack_postgres_exporter
     environment:
       DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable"
@@ -108,7 +108,7 @@ services:
     restart: unless-stopped
 
   alertmanager:
-    image: prom/alertmanager:v0.25.0
+    image: quay.io/prometheus/alertmanager:v0.25.0
     container_name: adatrack_alertmanager
     restart: unless-stopped
 

@@ -69,7 +69,7 @@ services:
       - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: adatrack_minio_local
     command: server /data --console-address ":9001"
     environment:
@@ -87,7 +87,7 @@ services:
       retries: 3
 
   minio-setup:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: adatrack_minio_setup_local
     depends_on:
       minio:
@@ -102,7 +102,7 @@ services:
       "
 
   node-exporter:
-    image: prom/node-exporter:v1.6.0
+    image: quay.io/prometheus/node-exporter:v1.6.0
     container_name: adatrack_node_exporter_local
     ports:
       - "9100:9100"
@@ -119,7 +119,7 @@ services:
       - /var/lib/docker/:/var/lib/docker:ro
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.12.0
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.12.0
     container_name: adatrack_postgres_exporter_local
     environment:
       DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable"
@@ -129,7 +129,7 @@ services:
       - postgres
 
   alertmanager:
-    image: prom/alertmanager:v0.25.0
+    image: quay.io/prometheus/alertmanager:v0.25.0
     container_name: adatrack_alertmanager_local
     ports:
       - "9093:9093"
