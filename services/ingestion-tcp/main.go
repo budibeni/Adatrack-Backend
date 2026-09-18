@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"os/signal"
@@ -52,11 +53,36 @@ func main() {
 		subject := m.Subject
 		// subject is downlink.commands.{imei}
 		imei := subject[len("downlink.commands."):]
-		success := server.SendCommand(imei, m.Data)
+
+		dc, ok := server.GetDeviceConn(imei)
+		if !ok {
+			logger.Log.Warn("Device offline or connection not in this node", "imei", imei)
+			return
+		}
+
+		type CmdMsg struct {
+			Type   string            `json:"type"`
+			Params map[string]string `json:"params"`
+			Raw    string            `json:"raw"`
+		}
+
+		var cmdMsg CmdMsg
+		if err := json.Unmarshal(m.Data, &cmdMsg); err != nil {
+			logger.Log.Error("Invalid command message", "err", err)
+			return
+		}
+
+		encodedBytes, err := dc.Decoder.EncodeCommand(cmdMsg.Type, cmdMsg.Params, cmdMsg.Raw)
+		if err != nil {
+			logger.Log.Error("Failed to encode command", "err", err, "imei", imei, "type", cmdMsg.Type)
+			return
+		}
+
+		success := server.SendCommand(imei, encodedBytes)
 		if success {
-			logger.Log.Info("Command sent", "imei", imei, "cmd_len", len(m.Data))
+			logger.Log.Info("Command sent", "imei", imei, "type", cmdMsg.Type)
 		} else {
-			logger.Log.Warn("Device offline or cmd failed", "imei", imei)
+			logger.Log.Warn("Command failed to send", "imei", imei)
 		}
 	})
 

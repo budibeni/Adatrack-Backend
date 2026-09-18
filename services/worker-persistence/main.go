@@ -30,7 +30,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	healthServer := &http.Server{Addr: ":8083", Handler: mux}
+	healthServer := &http.Server{Addr: ":8085", Handler: mux}
 	go healthServer.ListenAndServe()
 
 	worker := consumer.NewWorker()

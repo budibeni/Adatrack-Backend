@@ -15,6 +15,7 @@ import (
 	"backend/internal/tenant"
 	"backend/internal/dbclient"
 	"backend/worker-alert/internal/consumer"
+	"backend/worker-alert/internal/maintenance"
 )
 
 func main() {
@@ -30,8 +31,8 @@ func main() {
 
 	if err := redclient.Connect(ctx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
-	tenant.InitManager(cfg)
 	}
+	tenant.InitManager(cfg)
 	
 	if err := natsclient.Connect(cfg); err != nil {
 		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
@@ -42,6 +43,11 @@ func main() {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	healthServer := &http.Server{Addr: ":8083", Handler: mux}
 	go healthServer.ListenAndServe()
+
+	// Start Maintenance Checker
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	maintenance.StartMaintenanceChecker(bgCtx)
 
 	worker := consumer.NewWorker()
 	worker.Start()

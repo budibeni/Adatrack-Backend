@@ -11,7 +11,9 @@ import (
 )
 
 type CommandRequest struct {
-	Command string `json:"command"`
+	Type   string            `json:"type"`
+	Params map[string]string `json:"params"`
+	Raw    string            `json:"raw"`
 }
 
 func (h *Handler) SendCommand(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +39,8 @@ func (h *Handler) SendCommand(w http.ResponseWriter, r *http.Request) {
 
 	// Publish to NATS
 	subject := fmt.Sprintf("downlink.commands.%s", imei)
-	if err := natsclient.NC.Publish(subject, []byte(req.Command)); err != nil {
+	data, _ := json.Marshal(req)
+	if err := natsclient.NC.Publish(subject, data); err != nil {
 		logger.Log.Error("Failed to publish command", "err", err, "imei", imei)
 		http.Error(w, "failed to send command", http.StatusInternalServerError)
 		return

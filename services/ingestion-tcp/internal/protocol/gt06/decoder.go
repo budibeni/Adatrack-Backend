@@ -162,3 +162,10 @@ func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 		return totalFrameLen, data[:totalFrameLen], nil
 	}
 }
+
+func (d *Decoder) EncodeCommand(cmdType string, params map[string]string, raw string) ([]byte, error) {
+	if cmdType == "custom" {
+		return []byte(raw), nil
+	}
+	return nil, errors.New("command not supported for this protocol")
+}

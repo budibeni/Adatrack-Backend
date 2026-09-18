@@ -153,7 +153,7 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			imei = deviceIMEI
 			tenant = tenantData
 			authenticated = true
-			RegisterConnection(imei, conn)
+			RegisterConnection(imei, conn, s.decoder)
 			if response != nil { conn.Write(response) }
 			logger.Log.Info("Device authenticated", "imei", imei, "protocol", s.decoder.ProtocolName())
 			continue
