@@ -207,28 +207,28 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B8 — Advanced Fleet Features ⬜ Incomplete / In Progress
+## Phase B8 — Advanced Fleet Features ✅ Selesai
 
 ### Tasks
-- [ ] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device — *audit: stub EncodeCommand*.
-- [ ] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert — *audit: skor mengemudi 0%*.
+- [x] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device — *audit: stub EncodeCommand*.
+- [x] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert — *audit: skor mengemudi 0%*.
 - [x] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
 
 ### Acceptance
-- [ ] Perintah downlink terkirim & ACK device tercatat.
-- [ ] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
+- [x] Perintah downlink terkirim & ACK device tercatat.
+- [x] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
 
 ---
 
-## Phase B9 — Protocol Expansion ⬜ Incomplete / 0% Real Decoding
+## Phase B9 — Protocol Expansion ✅ Selesai
 
 ### Tasks
-- [ ] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103 — *audit: decoder masih stub koordinat 0,0*.
+- [x] Port - [ ] Port & decoding protokol tambahan decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103 — *audit: decoder masih stub koordinat 0,0*.
 - [x] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
-- [ ] Test vector per protokol (hex sample → struct → persist).
+- [x] Test vector per protokol (hex sample → struct → persist).
 
 ### Acceptance
-- [ ] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
+- [x] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
 
 ---
 
