@@ -9,7 +9,7 @@ import (
 func main() {
 	b, _ := ioutil.ReadFile("internal/config/config.go")
 	s := string(b)
-	
+
 	newFields := `
 	PortGT06      string
 	PortTeltonika string
@@ -37,13 +37,13 @@ func main() {
 		PortCoban:     getEnv("TK103_TCP_PORT", getEnv("PORT_COBAN", "5013")),
 		PortMeitrack:  getEnv("MEITRACK_TCP_PORT", getEnv("PORT_MEITRACK", "5020")),
 		PortH02:       getEnv("H02_TCP_PORT", getEnv("PORT_H02", "5010")),
-		PortMeiligao:  getEnv("MEILIGAO_TCP_PORT", "5002"),
-		PortXexun:     getEnv("XEXUN_TCP_PORT", "5003"),
-		PortSuntech:   getEnv("SUNTECH_TCP_PORT", "5017"),
-		PortTotem:     getEnv("TOTEM_TCP_PORT", "5005"),
-		PortGT02:      getEnv("GT02_TCP_PORT", "5006"),
-		PortNavigil:   getEnv("NAVIGIL_TCP_PORT", "5012"),
-		PortCastel:    getEnv("CASTEL_TCP_PORT", "5019"),
+		PortMeiligao:  getEnv("PORT_MEILIGAO_TCP", "5002"),
+		PortXexun:     getEnv("PORT_XEXUN_TCP", "5003"),
+		PortSuntech:   getEnv("PORT_SUNTECH_TCP", "5017"),
+		PortTotem:     getEnv("PORT_TOTEM_TCP", "5005"),
+		PortGT02:      getEnv("PORT_GT02_TCP", "5006"),
+		PortNavigil:   getEnv("PORT_NAVIGIL_TCP", "5012"),
+		PortCastel:    getEnv("PORT_CASTEL_TCP", "5019"),
 `
 	s = strings.Replace(s, `
 		PortGT06:      getEnv("PORT_GT06", "15000"),

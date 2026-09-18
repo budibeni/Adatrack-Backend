@@ -296,7 +296,7 @@ langkah manual:
 **FR-1.1:** TCP listener (port `TCP_PORT`, default 9000), max 5.000 koneksi concurrent.
 **Dukungan universal semua brand GPS:** setiap protokol mendapat listener sendiri dengan port
 default **mengikuti konvensi referensi Traccar** (mis. GT06 5001 → `TCP_PORT`; Meiligao 5002 →
-`MEILIGAO_TCP_PORT`; Xexun 5003 → `XEXUN_TCP_PORT`; Suntech 5017 → `SUNTECH_TCP_PORT`; H02 5010 →
+`PORT_MEILIGAO_TCP`; Xexun 5003 → `PORT_XEXUN_TCP`; Suntech 5017 → `PORT_SUNTECH_TCP`; H02 5010 →
 `H02_TCP_PORT`) — semuanya overridable via env; `0` = listener nonaktif.
 **Teltonika dikecualikan dari konvensi Traccar:** memakai referensi protokol sendiri
 (`TELTONIKA_TCP_PORT`=9011 → `docs/docs-device/traccar-reference/08-teltonika-codec8.md`).
@@ -381,14 +381,14 @@ Sumber acuan: `docs/docs-device/GT06_GPS_Tracker_Communication_Protocol_v1.8.1.m
 | GT06 (Concox) | 5001 | `TCP_PORT` | ⬜ B0 (prioritas utama) |
 | **Teltonika** | 5027 | `TELTONIKA_TCP_PORT` | ⬜ B0 — **referensi sendiri** (bukan Traccar) |
 | TK103 | 5013 | `TK103_TCP_PORT` | ✅ B9 (validasi) |
-| Meiligao (GT30i/GT60/VT300) | 5002 | `MEILIGAO_TCP_PORT` | ✅ B9 (prioritas tinggi) |
-| Xexun (GPS103/GPS303) | 5003 | `XEXUN_TCP_PORT` | ✅ B9 (prioritas tinggi) |
-| Suntech (ST215/ST240/ST340) | 5017 | `SUNTECH_TCP_PORT` | ✅ B9 (prioritas tinggi) |
+| Meiligao (GT30i/GT60/VT300) | 5002 | `PORT_MEILIGAO_TCP` | ✅ B9 (prioritas tinggi) |
+| Xexun (GPS103/GPS303) | 5003 | `PORT_XEXUN_TCP` | ✅ B9 (prioritas tinggi) |
+| Suntech (ST215/ST240/ST340) | 5017 | `PORT_SUNTECH_TCP` | ✅ B9 (prioritas tinggi) |
 | H02 / H08 | 5010 | `H02_TCP_PORT` | ✅ B9 (prioritas tinggi) |
-| Totem | 5005 | `TOTEM_TCP_PORT` | ✅ Done (prioritas sedang) |
-| GT02 / GT02A | 5006 | `GT02_TCP_PORT` | ✅ Done (prioritas sedang) |
-| Navigil | 5012 | `NAVIGIL_TCP_PORT` | ✅ Done (prioritas sedang) |
-| Castel (SC/CC/MPIP) | 5019 | `CASTEL_TCP_PORT` | ✅ Done (prioritas sedang) |
+| Totem | 5005 | `PORT_TOTEM_TCP` | ✅ Done (prioritas sedang) |
+| GT02 / GT02A | 5006 | `PORT_GT02_TCP` | ✅ Done (prioritas sedang) |
+| Navigil | 5012 | `PORT_NAVIGIL_TCP` | ✅ Done (prioritas sedang) |
+| Castel (SC/CC/MPIP) | 5019 | `PORT_CASTEL_TCP` | ✅ Done (prioritas sedang) |
 | CalAmp / Cellocator / Ruptela | lihat `04-priority-low.md` | `<PROTOCOL>_TCP_PORT` | ⬜ Backlog (prioritas rendah) |
 | *Protokol Traccar lainnya (200+)* | lihat `07-appendix.md` | `<PROTOCOL>_TCP_PORT` | ⬜ onboarding bertahap |
 
@@ -1004,8 +1004,8 @@ DATABASE_URL=            # opsional; prioritas tertinggi
 `TCP_MAX_CONNECTIONS=5000`, `TELTONIKA_TCP_PORT=9011` (referensi sendiri), `TK103_TCP_PORT=9002`,
 `GT06_DATE_BCD=false` (plain-hex default).
 **Protokol universal (Module 1c — port per konvensi Traccar, `0` = nonaktif):**
-`MEILIGAO_TCP_PORT=5002`, `XEXUN_TCP_PORT=5003`, `SUNTECH_TCP_PORT=5017`, `H02_TCP_PORT=5010`,
-`TOTEM_TCP_PORT=5005`, `GT02_TCP_PORT=5006`, `NAVIGIL_TCP_PORT=5012`, `CASTEL_TCP_PORT=5019`
+`PORT_MEILIGAO_TCP=5002`, `PORT_XEXUN_TCP=5003`, `PORT_SUNTECH_TCP=5017`, `H02_TCP_PORT=5010`,
+`PORT_TOTEM_TCP=5005`, `PORT_GT02_TCP=5006`, `PORT_NAVIGIL_TCP=5012`, `PORT_CASTEL_TCP=5019`
 (+ `<PROTOCOL>_TCP_PORT` untuk protokol berikutnya) — boot menolak port bentrok (`os.Exit(1)`).
 
 **worker-persistence:** `BATCH_SIZE=500`, `BATCH_TIMEOUT_SEC=5`, `RETRY_MAX=3`,

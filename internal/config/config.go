@@ -1,22 +1,24 @@
 package config
+
 import (
 	"os"
 	"strconv"
 )
+
 type Config struct {
-	DBUser            string
-	DBPass            string
-	DBHost            string
-	DBPort            string
-	DBName            string
-	DBMaxConns        int
-	DBMinConns        int
-	RedisAddr         string
-	RedisPassword     string
-	NatsURL           string
-	JWTSecret         string
-	PortWebsocket     string
-	
+	DBUser        string
+	DBPass        string
+	DBHost        string
+	DBPort        string
+	DBName        string
+	DBMaxConns    int
+	DBMinConns    int
+	RedisAddr     string
+	RedisPassword string
+	NatsURL       string
+	JWTSecret     string
+	PortWebsocket string
+
 	// GPS Protocol Ports
 	PortGT06      string
 	PortTeltonika string
@@ -32,17 +34,18 @@ type Config struct {
 	PortCastel    string
 
 	// S3 Config
-	S3Endpoint    string
-	S3AccessKey   string
-	S3SecretKey   string
-	S3BucketName  string
-	S3Region      string
-	S3UseSSL      bool
+	S3Endpoint   string
+	S3AccessKey  string
+	S3SecretKey  string
+	S3BucketName string
+	S3Region     string
+	S3UseSSL     bool
 
 	// JetStream Config
 	JetstreamMaxAgeHours int
 	JetstreamMaxBytes    int64
 }
+
 func Load() *Config {
 	maxConns, _ := strconv.Atoi(getEnv("DB_MAX_CONNS", "50"))
 	minConns, _ := strconv.Atoi(getEnv("DB_MIN_CONNS", "5"))
@@ -62,26 +65,26 @@ func Load() *Config {
 		NatsURL:       getEnv("NATS_URL", "nats://localhost:4222"),
 		JWTSecret:     getEnv("JWT_SECRET", "super-secret-key-change-me"),
 		PortWebsocket: getEnv("PORT_WEBSOCKET", "8080"),
-		
+
 		PortGT06:      getEnv("GT06_TCP_PORT", getEnv("PORT_GT06", "5023")),
 		PortTeltonika: getEnv("TELTONIKA_TCP_PORT", getEnv("PORT_TELTONIKA", "5027")),
 		PortCoban:     getEnv("TK103_TCP_PORT", getEnv("PORT_COBAN", "5013")),
 		PortMeitrack:  getEnv("MEITRACK_TCP_PORT", getEnv("PORT_MEITRACK", "5020")),
 		PortH02:       getEnv("H02_TCP_PORT", getEnv("PORT_H02", "5010")),
-		PortMeiligao:  getEnv("MEILIGAO_TCP_PORT", "5002"),
-		PortXexun:     getEnv("XEXUN_TCP_PORT", "5003"),
-		PortSuntech:   getEnv("SUNTECH_TCP_PORT", "5017"),
-		PortTotem:     getEnv("TOTEM_TCP_PORT", "5005"),
-		PortGT02:      getEnv("GT02_TCP_PORT", "5006"),
-		PortNavigil:   getEnv("NAVIGIL_TCP_PORT", "5012"),
-		PortCastel:    getEnv("CASTEL_TCP_PORT", "5019"),
+		PortMeiligao:  getEnv("PORT_MEILIGAO_TCP", "5002"),
+		PortXexun:     getEnv("PORT_XEXUN_TCP", "5003"),
+		PortSuntech:   getEnv("PORT_SUNTECH_TCP", "5017"),
+		PortTotem:     getEnv("PORT_TOTEM_TCP", "5005"),
+		PortGT02:      getEnv("PORT_GT02_TCP", "5006"),
+		PortNavigil:   getEnv("PORT_NAVIGIL_TCP", "5012"),
+		PortCastel:    getEnv("PORT_CASTEL_TCP", "5019"),
 
-		S3Endpoint:    getEnv("S3_ENDPOINT", "localhost:9000"),
-		S3AccessKey:   getEnv("S3_ACCESS_KEY", "minioadmin"),
-		S3SecretKey:   getEnv("S3_SECRET_KEY", "minioadmin"),
-		S3BucketName:  getEnv("S3_BUCKET_NAME", "adatrack-media"),
-		S3Region:      getEnv("S3_REGION", "us-east-1"),
-		S3UseSSL:      useSSL,
+		S3Endpoint:   getEnv("S3_ENDPOINT", "localhost:9000"),
+		S3AccessKey:  getEnv("S3_ACCESS_KEY", "minioadmin"),
+		S3SecretKey:  getEnv("S3_SECRET_KEY", "minioadmin"),
+		S3BucketName: getEnv("S3_BUCKET_NAME", "adatrack-media"),
+		S3Region:     getEnv("S3_REGION", "us-east-1"),
+		S3UseSSL:     useSSL,
 
 		JetstreamMaxAgeHours: jsMaxAge,
 		JetstreamMaxBytes:    jsMaxBytes,
