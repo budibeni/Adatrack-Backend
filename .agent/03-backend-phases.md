@@ -150,13 +150,15 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B4 — Performance, Monitoring, Testing, Hardening ✅ (Executed & Audited 2026-09-18)
+---
+
+## Phase B4 — Performance, Monitoring, Testing, Hardening ⚠️ Incomplete / Needs Rework (Audit 2026-09-18)
 
 ### Tasks
-- [x] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).
-- [x] Endurance 24 jam kumulatif (chunked, resume-safe).
+- [ ] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent) — *audit: script dummy perlu diganti tool load test riil*.
+- [ ] Endurance 24 jam kumulatif (chunked, resume-safe).
 - [x] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
-- [x] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
+- [ ] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih — *audit: riil 3-10%*.
 - [x] Query SLA: history 30 hari < 1,5 s (index & tuning).
 - [x] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
 - [x] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
@@ -164,7 +166,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Retensi DB: partisi/purge telemetry sesuai §11.
 
 ### Acceptance
-- [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
+- [ ] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
 
 ---
 
@@ -181,7 +183,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B7 — Fleet Management Core ✅ (sub-fase)
+## Phase B7 — Fleet Management Core ⚠️ Parsial (sub-fase)
 
 ### B7.1 Odometer & Engine Hours ✅
 - [x] Migrasi company `016_create_odometer_engine_hours.sql` (`company_pg/016`): kolom `odometer_km`, `engine_hours`.
@@ -193,8 +195,8 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Deteksi trip/stop (start/end, distance, max/avg speed, stop_count, duration) + persist.
 - [x] Unit test + live E2E.
 
-### B7.3 Reverse Geocoding ✅
-- [x] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + fallback).
+### B7.3 Reverse Geocoding ⚠️ Parsial
+- [ ] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + query lokal spatial) — *audit: masih dependensi Nominatim publik*.
 
 ### B7.4 Point Reduction ✅
 - [x] Ramer-Douglas-Peucker untuk history playback (endpoint playback memakai hasil reduksi).
@@ -205,39 +207,39 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B8 — Advanced Fleet Features ✅
+## Phase B8 — Advanced Fleet Features ⬜ Incomplete / In Progress
 
 ### Tasks
-- [x] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device.
-- [x] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert.
+- [ ] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device — *audit: stub EncodeCommand*.
+- [ ] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert — *audit: skor mengemudi 0%*.
 - [x] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
 
 ### Acceptance
-- [x] Perintah downlink terkirim & ACK device tercatat.
-- [x] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
+- [ ] Perintah downlink terkirim & ACK device tercatat.
+- [ ] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
 
 ---
 
-## Phase B9 — Protocol Expansion ✅
+## Phase B9 — Protocol Expansion ⬜ Incomplete / 0% Real Decoding
 
 ### Tasks
-- [x] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
+- [ ] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103 — *audit: decoder masih stub koordinat 0,0*.
 - [x] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
-- [x] Test vector per protokol (hex sample → struct → persist).
+- [ ] Test vector per protokol (hex sample → struct → persist).
 
 ### Acceptance
-- [x] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
+- [ ] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
 
 ---
 
-## Phase B10 — Normalisasi & Konfigurasi ✅ (Executed 2026-09-18)
+## Phase B10 — Normalisasi & Konfigurasi ⚠️ Parsial (Audit 2026-09-18)
 
 ### Tasks
 - [x] Normalisasi prefix tabel `tm_`/`th_`/`td_` — migrasi rename idempoten (nol downtime).
 - [x] Split user master: `tm_users` (B2B) / `tm_users_b2c` (B2C) + tipe bisnis di `tm_companies`.
 - [x] Config ganda LOCAL + COOLIFY: `docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`.
 - [x] Telemetry interval 20 s (default, bisa dikonfigurasi).
-- [x] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh.
+- [ ] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh — *audit: migrasi tools/migrate perlu iterasi skema tenant*.
 
 ### Acceptance
 - [x] Migrasi rename aman dijalankan berulang; seluruh service memakai nama baru.
@@ -245,22 +247,22 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B11 — Governance & Data Lifecycle ✅ (Executed 2026-09-18)
+## Phase B11 — Governance & Data Lifecycle ⚠️ Parsial (Audit 2026-09-18)
 
 ### Tasks
 - [x] Audit trail wajib `tm_audit_logs` (semua mutation endpoint menulis audit).
 - [x] Soft delete global + endpoint restore (semua entity utama).
 - [x] Auto-create admin tenant password `Admin@123` (FR-5.5) saat provisioning.
-- [x] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy).
+- [ ] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy) — *audit: belum teruji end-to-end*.
 - [x] Dukungan protokol universal (Module 1c) — registrasi device lintas brand.
 
 ### Acceptance
-- [x] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
-- [x] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
+- [ ] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
+- [ ] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
 
 ---
 
-## Phase B12 — Enterprise & Industry Modules ✅ (Executed 2026-09-18)
+## Phase B12 — Enterprise & Industry Modules ⬜ Incomplete (Audit 2026-09-18: Stub 501 / Perlu Rute & Implementasi Riil)
 
 > Penerapan backend mengikuti struktur aplikasi Frontend (`docs/FRONTEND.md`): setiap
 > menu Business/Personal wajib punya dukungan data/API. Kontrak: error_code §8.1,
@@ -268,23 +270,23 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 > prefix `tm_`/`th_`/`td_`; **additive-only**.
 
 ### Tasks
-- [x] Registry modul & menu di master (`tm_modules`, `tm_menus` — seed idempoten dari FRONTEND.md) + **role akses menu per-tenant** (`tm_role_menu_access` di company schema, seed default per role).
-- [x] Endpoint `GET /api/v1/access/menu` (menu tersedia utk user) + admin CRUD mapping (ter-audit).
-- [x] Master: **Drivers** (`tm_drivers`) & **Groups** (`tm_groups` + mapping vehicle/driver).
-- [x] Akses: **Personel**, **Kartu (RFID)**, **Log akses**.
-- [x] Aset: **Assets** registry; **Maintenance** (jadwal + reminder — menyambung B8).
-- [x] Keamanan: **Safety score** (dari B8) & **Incidents**.
-- [x] Analisis: **Reports/Analytics** lanjutan (trip & violation summary, export, scheduled).
-- [x] Administrasi: **Organization** (hierarki), **Integrations** (webhook outbound + API key), **Settings** tenant.
-- [x] **Share lokasi publik** — link token TTL + endpoint publik `GET /api/v1/share/{token}` (FR-9.3).
-- [x] **Heatmap** agregasi historis (menu Pemantauan).
-- [x] Industry-specific bertahap (per flag lisensi tenant): Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site.
-- [x] Personal/B2C: auth `tm_users_b2c`, Statistics agregasi, Settings preferensi (FR-9.2).
+- [ ] Registry modul & menu di master (`tm_modules`, `tm_menus` — seed idempoten dari FRONTEND.md) + **role akses menu per-tenant** (`tm_role_menu_access` di company schema, seed default per role).
+- [ ] Endpoint `GET /api/v1/access/menu` (menu tersedia utk user) + admin CRUD mapping (ter-audit).
+- [ ] Master: **Drivers** (`tm_drivers`) & **Groups** (`tm_groups` + mapping vehicle/driver).
+- [ ] Akses: **Personel**, **Kartu (RFID)**, **Log akses**.
+- [ ] Aset: **Assets** registry; **Maintenance** (jadwal + reminder — menyambung B8).
+- [ ] Keamanan: **Safety score** (dari B8) & **Incidents**.
+- [ ] Analisis: **Reports/Analytics** lanjutan (trip & violation summary, export, scheduled).
+- [ ] Administrasi: **Organization** (hierarki), **Integrations** (webhook outbound + API key), **Settings** tenant.
+- [ ] **Share lokasi publik** — link token TTL + endpoint publik `GET /api/v1/share/{token}` (FR-9.3).
+- [ ] **Heatmap** agregasi historis (menu Pemantauan).
+- [ ] Industry-specific bertahap (per flag lisensi tenant): Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site.
+- [ ] Personal/B2C: auth `tm_users_b2c`, Statistics agregasi, Settings preferensi (FR-9.2).
 
 ### Acceptance
-- [x] Navigasi frontend dimuat dinamis dari `GET /api/v1/access/menu` sesuai role.
-- [x] Setiap menu FRONTEND.md punya endpoint ber-RBAC + test (aturan coverage B4).
-- [x] Tabel baru normalisasi + audit + soft delete; migrasi idempoten.
+- [ ] Navigasi frontend dimuat dinamis dari `GET /api/v1/access/menu` sesuai role.
+- [ ] Setiap menu FRONTEND.md punya endpoint ber-RBAC + test (aturan coverage B4).
+- [ ] Tabel baru normalisasi + audit + soft delete; migrasi idempoten.
 
 ---
 

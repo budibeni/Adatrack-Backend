@@ -41,3 +41,10 @@ func Connect(ctx context.Context, cfg *config.Config) error {
 	}
 	return fmt.Errorf("failed to connect after retries: %w", lastErr)
 }
+
+// Close closes the database connection pool if initialized.
+func Close() {
+	if Pool != nil {
+		Pool.Close()
+	}
+}

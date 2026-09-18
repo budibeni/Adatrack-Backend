@@ -1685,19 +1685,19 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | Fase | Area | Status |
 |---|---|---|
 | **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ✅ Selesai |
-| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ⬜ Belum dimulai |
-| **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ⬜ Belum dimulai |
-| **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Belum dimulai |
+| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | 🟡 Stabil (Build & Core GT06/Teltonika OK) |
+| **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | 🟡 Stabil (REST API & WS Hub Tested) |
+| **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ✅ Selesai |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ✅ Selesai |
-| **B5b** | Dashcam Event Media Scope A (Module 8) | ✅ Selesai |
-| **B4** | Performance, Monitoring, Testing, Hardening | ✅ Selesai |
+| **B5b** | Dashcam Event Media Scope A (Module 8) | ⚠️ Parsial (di api-vehicle) |
+| **B4** | Performance, Monitoring, Testing, Hardening | ⚠️ Incomplete (Perlu Load Test Riil & Coverage) |
 | **B6** | Real-Time Data Hardening (Audit Fix) | ✅ Selesai |
-| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⬜ Belum dimulai |
-| **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ✅ Selesai |
-| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | ✅ Done |
-| **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | ✅ Selesai |
-| **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant password `Admin@123` (FR-5.5), migrasi DB otomatis di Coolify (§14.5), dukungan protokol universal (Module 1c) | ✅ Selesai |
-| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C (§4.2, FR-9.2); registry module & menu **master** (`tm_modules`/`tm_menus`, seed FRONTEND.md) + role menu access **per-tenant** (`tm_role_menu_access`, §6.2) | ✅ Selesai |
+| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⚠️ Parsial (Odo/Trip OK, Geocoder perlu spatial DB lokal) |
+| **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ⬜ Incomplete (Downlink & Safety Score missing) |
+| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | ⬜ Incomplete (Decoder non-GT06/Teltonika stub 0,0) |
+| **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | ⚠️ Parsial (Schema rename selesai, migration tool tenant iteration pending) |
+| **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant password `Admin@123` (FR-5.5), migrasi DB otomatis di Coolify (§14.5), dukungan protokol universal (Module 1c) | ⚠️ Parsial (Audit trail & soft delete parsial, auto-migration Coolify belum teruji) |
+| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C (§4.2, FR-9.2); registry module & menu **master** (`tm_modules`/`tm_menus`, seed FRONTEND.md) + role menu access **per-tenant** (`tm_role_menu_access`, §6.2) | ⬜ Incomplete (78 baris stub 501, rute salah tempat) |
 
 ### 20.2 Fase Frontend (F1–F4 — menunggu backend selesai)
 

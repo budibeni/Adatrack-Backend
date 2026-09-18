@@ -64,9 +64,18 @@ func TestHub_TenantIsolation(t *testing.T) {
 	select {
 	case received := <-clientA.send:
 		var result map[string]interface{}
-		json.Unmarshal(received, &result)
-		if result["company_code"] != "COMPANY_A" {
-			t.Errorf("expected COMPANY_A, got %v", result["company_code"])
+		if err := json.Unmarshal(received, &result); err != nil {
+			t.Fatalf("failed to unmarshal message: %v", err)
+		}
+		if result["event"] != "VEHICLE_UPDATE" {
+			t.Errorf("expected event VEHICLE_UPDATE, got %v", result["event"])
+		}
+		data, ok := result["data"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected data payload, got %v", result["data"])
+		}
+		if data["company_code"] != "COMPANY_A" {
+			t.Errorf("expected COMPANY_A, got %v", data["company_code"])
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Errorf("expected clientA to receive broadcast message")

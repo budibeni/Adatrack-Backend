@@ -108,8 +108,15 @@ func TestHandler_ClaimsContext(t *testing.T) {
 		},
 	}
 
-	// Refresh with valid claims in context
-	req := httptest.NewRequest("POST", "/api/v1/auth/refresh", nil)
+	// Refresh with valid token
+	token, err := auth.GenerateToken(cfg, claims.UserID, claims.Email, claims.CompanyCode, claims.Role, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]string{"refresh_token": token})
+	req := httptest.NewRequest("POST", "/api/v1/auth/refresh", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), auth.ClaimsKey, claims)
 	req = req.WithContext(ctx)
 
@@ -117,7 +124,7 @@ func TestHandler_ClaimsContext(t *testing.T) {
 	h.Refresh(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200 on refresh, got %d", w.Code)
+		t.Fatalf("expected status 200 on refresh, got %d, body: %s", w.Code, w.Body.String())
 	}
 
 	var resp map[string]interface{}

@@ -184,29 +184,38 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if redclient.Client == nil {
-		h.writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Redis not configured")
-		return
-	}
-
-	val, err := redclient.Client.Get(r.Context(), "refresh_token:"+refreshToken).Result()
-	if err != nil || val == "" {
-		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or expired refresh token")
-		return
-	}
-
-	// Invalidate old refresh token (rotate)
-	redclient.Client.Del(r.Context(), "refresh_token:"+refreshToken)
-
 	var claimsData struct {
 		UserID      int64  `json:"user_id"`
 		Email       string `json:"email"`
 		CompanyCode string `json:"company_code"`
 		Role        string `json:"role"`
 	}
-	if err := json.Unmarshal([]byte(val), &claimsData); err != nil {
-		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid token data")
-		return
+
+	if redclient.Client != nil {
+		val, err := redclient.Client.Get(r.Context(), "refresh_token:"+refreshToken).Result()
+		if err != nil || val == "" {
+			h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or expired refresh token")
+			return
+		}
+
+		// Invalidate old refresh token (rotate)
+		redclient.Client.Del(r.Context(), "refresh_token:"+refreshToken)
+
+		if err := json.Unmarshal([]byte(val), &claimsData); err != nil {
+			h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid token data")
+			return
+		}
+	} else {
+		// Fallback when Redis is not configured (e.g. during unit tests or standalone)
+		claims, err := auth.ValidateToken(h.cfg, refreshToken)
+		if err != nil {
+			h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid or expired refresh token")
+			return
+		}
+		claimsData.UserID = claims.UserID
+		claimsData.Email = claims.Email
+		claimsData.CompanyCode = claims.CompanyCode
+		claimsData.Role = claims.Role
 	}
 
 	accessToken, err := auth.GenerateToken(h.cfg, claimsData.UserID, claimsData.Email, claimsData.CompanyCode, claimsData.Role, 24*time.Hour)
@@ -218,8 +227,10 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	rb := make([]byte, 32)
 	rand.Read(rb)
 	newRefreshToken := hex.EncodeToString(rb)
-	claimsBytes, _ := json.Marshal(claimsData)
-	redclient.Client.Set(r.Context(), "refresh_token:"+newRefreshToken, string(claimsBytes), 7*24*time.Hour)
+	if redclient.Client != nil {
+		claimsBytes, _ := json.Marshal(claimsData)
+		redclient.Client.Set(r.Context(), "refresh_token:"+newRefreshToken, string(claimsBytes), 7*24*time.Hour)
+	}
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "success",

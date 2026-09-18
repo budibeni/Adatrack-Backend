@@ -8,26 +8,26 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
 > **Acuan struktur aplikasi (PRD v1.7.0):** penerapan backend mengikuti
 > `docs/FRONTEND.md` — modul/menu/fitur aplikasi **Business** & **Personal** (§5.10
-> PRD, Module 9); fase backend pendukungnya = **B12** (✅ Selesai).
+> PRD, Module 9); fase backend pendukungnya = **B12** (⬜ Incomplete / In Progress).
 
 ## Macro Sequence
 
 | Fase | Area | Lokasi | Status |
 |---|---|---|---|
 | **B0** | Infrastruktur + Foundations | `backend/` | ✅ Selesai |
-| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ⬜ Belum dimulai |
-| **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ✅ Selesai (Zero-Gap Audited 2026-09-18) |
-| **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai (Zero-Gap Audited 2026-09-18) |
-| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ✅ Selesai (Zero-Gap Audited 2026-09-18) |
-| **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ✅ Selesai (Zero-Gap Audited 2026-09-18) |
-| **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | ✅ Selesai (Executed & Audited 2026-09-18) |
-| **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` | ⬜ Belum dimulai |
-| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ✅ Selesai |
-| **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert` | ⬜ Planned |
-| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ✅ Done |
-| **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ⬜ Planned |
-| **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant `Admin@123` (FR-5.5), migrasi DB otomatis Coolify (§14.5), dukungan protokol universal (Module 1c) | `backend/`, `deployments/` | ⬜ Planned |
-| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | ✅ Selesai |
+| **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | 🟡 Stabil (Build & Core GT06/Teltonika OK) |
+| **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | 🟡 Stabil (REST API & WS Hub Tested) |
+| **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai (Alerts, Geofence, CRUD OK) |
+| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ✅ Selesai (Fuel IO & Logs OK) |
+| **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ⚠️ Parsial (Terintegrasi di api-vehicle) |
+| **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | ⚠️ Incomplete (Perlu Load Test Riil & Peningkatan Coverage) |
+| **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` | ✅ Selesai (Payload Wrap & ACC Status) |
+| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ⚠️ Parsial (Odo/Trip OK, Geocoder butuh spatial DB lokal) |
+| **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert` | ⬜ Incomplete (Downlink stub, Driver Safety Score belum ada) |
+| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ⬜ Incomplete (Decoder non-GT06/Teltonika masih stub 0,0) |
+| **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ⚠️ Parsial (Schema rename selesai, migration tool tenant iteration pending) |
+| **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant `Admin@123` (FR-5.5), migrasi DB otomatis Coolify (§14.5), dukungan protokol universal (Module 1c) | `backend/`, `deployments/` | ⚠️ Parsial (Audit trail & soft delete parsial, auto-migration Coolify belum teruji) |
+| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | ⬜ Incomplete (78 baris stub 501, route salah lokasi) |
 | **F1** | Scaffold Frontend (Next.js + Tailwind + Map) | `frontend/` | ⬜ Not started |
 | **F2** | Live Tracking Dashboard | `frontend/` | ⬜ Not started |
 | **F3** | History Playback, Geofence, Alerts UI | `frontend/` | ⬜ Not started |
