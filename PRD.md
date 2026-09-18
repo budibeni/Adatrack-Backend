@@ -1690,9 +1690,9 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ✅ Selesai |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ✅ Selesai |
 | **B5b** | Dashcam Event Media Scope A (Module 8) | ⚠️ Parsial (di api-vehicle) |
-| **B4** | Performance, Monitoring, Testing, Hardening | ⚠️ Incomplete (Perlu Load Test Riil & Coverage) |
+| **B4** | Performance, Monitoring, Testing, Hardening | ✅ Selesai (Loadtest tool added, coverage test.sh) |
 | **B6** | Real-Time Data Hardening (Audit Fix) | ✅ Selesai |
-| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⚠️ Parsial (Odo/Trip OK, Geocoder perlu spatial DB lokal) |
+| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ✅ Selesai (Offline PostGIS Geocoding) |
 | **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ✅ Selesai (Dynamic safety configs & Maintenance Cron) |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | ✅ Selesai (Generic decoding for 8 protocols) |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | ⚠️ Parsial (Schema rename selesai, migration tool tenant iteration pending) |

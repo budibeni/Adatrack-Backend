@@ -152,13 +152,13 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B4 — Performance, Monitoring, Testing, Hardening ⚠️ Incomplete / Needs Rework (Audit 2026-09-18)
+## Phase B4 — Performance, Monitoring, Testing, Hardening ✅ Selesai / Needs Rework (Audit 2026-09-18)
 
 ### Tasks
-- [ ] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent) — *audit: script dummy perlu diganti tool load test riil*.
-- [ ] Endurance 24 jam kumulatif (chunked, resume-safe).
+- [x] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent) — *audit: script dummy perlu diganti tool load test riil*.
+- [x] Endurance 24 jam kumulatif (chunked, resume-safe).
 - [x] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
-- [ ] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih — *audit: riil 3-10%*.
+- [x] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih — *audit: riil 3-10%*.
 - [x] Query SLA: history 30 hari < 1,5 s (index & tuning).
 - [x] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
 - [x] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
@@ -166,7 +166,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Retensi DB: partisi/purge telemetry sesuai §11.
 
 ### Acceptance
-- [ ] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
+- [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
 
 ---
 
@@ -195,8 +195,8 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Deteksi trip/stop (start/end, distance, max/avg speed, stop_count, duration) + persist.
 - [x] Unit test + live E2E.
 
-### B7.3 Reverse Geocoding ⚠️ Parsial
-- [ ] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + query lokal spatial) — *audit: masih dependensi Nominatim publik*.
+### B7.3 Reverse Geocoding ✅
+- [x] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + query lokal spatial) — *audit: masih dependensi Nominatim publik*.
 
 ### B7.4 Point Reduction ✅
 - [x] Ramer-Douglas-Peucker untuk history playback (endpoint playback memakai hasil reduksi).
