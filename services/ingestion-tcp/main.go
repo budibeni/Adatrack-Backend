@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "net/http/pprof"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -44,9 +45,8 @@ func main() {
 		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	healthServer := &http.Server{Addr: ":8081", Handler: mux}
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	healthServer := &http.Server{Addr: ":8081", Handler: nil}
 	go healthServer.ListenAndServe()
 
 	natsclient.NC.Subscribe("downlink.commands.*", func(m *nats.Msg) {

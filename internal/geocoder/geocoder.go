@@ -28,7 +28,6 @@ func SetCache(lat, lon float64, address string) {
 	cache[cacheKey] = address
 }
 
-// ReverseGeocode tries to resolve (lat, lon) to a formatted address string.
 func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 	cacheKey := fmt.Sprintf("%.3f,%.3f", lat, lon)
 
@@ -40,8 +39,6 @@ func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 	mu.RUnlock()
 
 	if dbclient.Pool != nil {
-		// Offline First PostGIS Spatial Query
-		// Attempts to find the smallest region (village -> district -> city -> province)
 		query := `
 			SELECT r.name, r.level, p1.name, p2.name, p3.name
 			FROM adatrack_gps_master.tm_regions r
@@ -76,17 +73,7 @@ func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 			return addr, nil
 		}
 
-		// Fallback to closest point logic (Euclidean / nearest neighbor)
 		var cityName, provinceName string
-		queryFallback := `
-			SELECT c.name, COALESCE(p.name, '')
-			FROM adatrack_gps_master.tm_cities c
-			LEFT JOIN adatrack_gps_master.tm_provinces p ON c.province_id = p.id
-			WHERE c.latitude IS NOT NULL AND c.longitude IS NOT NULL
-			ORDER BY c.geom <-> ST_SetSRID(ST_MakePoint($2, $1), 4326) ASC
-			LIMIT 1
-		`
-		// Wait, tm_cities might not have geom column. Let's use standard distance.
 		queryFallbackAlt := `
 			SELECT c.name, COALESCE(p.name, '')
 			FROM adatrack_gps_master.tm_cities c

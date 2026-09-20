@@ -5,38 +5,22 @@ import (
 	"testing"
 )
 
-func TestReverseGeocode_CacheHit(t *testing.T) {
+func TestGeocoderCache(t *testing.T) {
 	ClearCache()
-
-	lat, lon := -6.2088, 106.8456
-	expectedAddr := "Jakarta Pusat, DKI Jakarta, Indonesia"
-
-	SetCache(lat, lon, expectedAddr)
-
-	ctx := context.Background()
-	addr, err := ReverseGeocode(ctx, lat, lon)
+	SetCache(-6.2, 106.8, "Jakarta")
+	
+	addr, err := ReverseGeocode(context.Background(), -6.2, 106.8)
 	if err != nil {
-		t.Fatalf("expected no error on cache hit, got %v", err)
+		t.Fatalf("Expected no error, got %v", err)
 	}
-
-	if addr != expectedAddr {
-		t.Errorf("expected %s, got %s", expectedAddr, addr)
+	if addr != "Jakarta" {
+		t.Fatalf("Expected Jakarta, got %s", addr)
 	}
-}
-
-func TestReverseGeocode_ClearCache(t *testing.T) {
+	
 	ClearCache()
-
-	lat, lon := -7.2575, 112.7521
-	SetCache(lat, lon, "Surabaya, Jawa Timur, Indonesia")
-
-	ClearCache()
-
-	mu.RLock()
-	count := len(cache)
-	mu.RUnlock()
-
-	if count != 0 {
-		t.Errorf("expected cache to be empty after ClearCache, got len %d", count)
+	// test miss
+	_, err = ReverseGeocode(context.Background(), -6.2, 106.8)
+	if err == nil {
+		t.Fatalf("Expected error for DB not configured in test")
 	}
 }
