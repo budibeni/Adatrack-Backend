@@ -28,3 +28,6 @@ generate_*.sh
 .env.*.local
 
 services/ingestion-tcp/ingestion-tcp
+.env
+.env.*
+*.pem

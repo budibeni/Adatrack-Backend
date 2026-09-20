@@ -1,0 +1,5 @@
+.git
+.env*
+Dockerfile
+README.md
+audit*.md
