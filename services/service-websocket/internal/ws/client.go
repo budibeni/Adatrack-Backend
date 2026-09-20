@@ -94,12 +94,12 @@ func (c *Client) writePump() {
 }
 
 func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request, cfg *config.Config) {
-	tokenStr := r.URL.Query().Get("token")
-	if tokenStr == "" {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader != "" {
-			tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
-		}
+	tokenStr := ""
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+	} else if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
+		tokenStr = proto
 	}
 	
 	claims, err := auth.ValidateToken(cfg, tokenStr)
@@ -109,7 +109,11 @@ func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request, cfg *config.Confi
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
+	var responseHeader http.Header
+	if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
+		responseHeader = http.Header{"Sec-WebSocket-Protocol": {proto}}
+	}
+	conn, err := upgrader.Upgrade(w, r, responseHeader)
 	if err != nil {
 		logger.Log.Error("WS Upgrade error", "err", err)
 		return

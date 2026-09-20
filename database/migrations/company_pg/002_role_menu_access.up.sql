@@ -1,6 +1,6 @@
-CREATE TABLE IF NOT EXISTS tm_role_menu_access (
+CREATE TABLE IF NOT EXISTS tm_user_menu_access (
     id SERIAL PRIMARY KEY,
-    role VARCHAR(50) NOT NULL,
+    user_id INT NOT NULL,
     menu_id INT NOT NULL, 
     can_view BOOLEAN DEFAULT true,
     can_create BOOLEAN DEFAULT false,

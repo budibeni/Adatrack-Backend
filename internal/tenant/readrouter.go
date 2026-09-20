@@ -175,18 +175,7 @@ func (r *ReadRouter) QueryRow(ctx context.Context, sql string, args ...any) pgx.
 		p.mu.RUnlock()
 
 		if state == StateClosed || state == StateHalfOpen {
-			// Using Query to check error immediately for fallback since QueryRow defers error to Scan
-			rows, err := p.ReadPool.Query(ctx, sql, args...)
-			if err != nil {
-				r.reportFailure(p)
-				return dbclient.Pool.QueryRow(ctx, sql, args...)
-			}
-			r.reportSuccess(p)
-			rows.Close() // this is just a ping check basically, not ideal but safe. 
-			// Wait, if we close rows we can't read it. We can't really fallback transparently if we return pgx.Row.
-			// Let's just return the QueryRow of replica and let caller handle scan error?
-			// Actually we can implement a custom row that does fallback on Scan.
-			// For simplicity, just return the replica's row. If Scan fails with connection error, it fails.
+			return p.ReadPool.QueryRow(ctx, sql, args...)
 		}
 	}
 	return dbclient.Pool.QueryRow(ctx, sql, args...)

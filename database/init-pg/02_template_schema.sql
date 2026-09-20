@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS th_telemetry_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(id, timestamp)
 ) PARTITION BY RANGE (timestamp);
+CREATE TABLE IF NOT EXISTS th_telemetry_logs_default PARTITION OF th_telemetry_logs DEFAULT;
 CREATE INDEX IF NOT EXISTS idx_telemetry_vehicle_ts ON th_telemetry_logs(vehicle_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_imei_ts ON th_telemetry_logs(imei, timestamp DESC);
 CREATE TABLE IF NOT EXISTS th_fuel_logs (
@@ -124,6 +125,7 @@ CREATE TABLE IF NOT EXISTS th_fuel_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(id, timestamp)
 ) PARTITION BY RANGE (timestamp);
+CREATE TABLE IF NOT EXISTS th_fuel_logs_default PARTITION OF th_fuel_logs DEFAULT;
 CREATE TABLE IF NOT EXISTS th_alerts (
     id BIGSERIAL PRIMARY KEY,
     type VARCHAR(50) NOT NULL,
@@ -194,3 +196,37 @@ CREATE TABLE IF NOT EXISTS td_notifications (
     error_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS th_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    action VARCHAR(100) NOT NULL,
+    outcome VARCHAR(50) NOT NULL,
+    actor_user_id INT,
+    actor_email VARCHAR(100),
+    actor_role VARCHAR(50),
+    entity_type VARCHAR(50),
+    entity_id VARCHAR(50),
+    before_data JSONB,
+    after_data JSONB,
+    ip_address VARCHAR(50),
+    user_agent TEXT,
+    request_id VARCHAR(100),
+    reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON th_audit_logs(actor_user_id, created_at);
+
+CREATE OR REPLACE FUNCTION prevent_audit_update_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Audit logs are append-only. UPDATE and DELETE operations are not allowed.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_prevent_audit_update
+BEFORE UPDATE ON th_audit_logs
+FOR EACH ROW EXECUTE FUNCTION prevent_audit_update_delete();
+
+CREATE TRIGGER trg_prevent_audit_delete
+BEFORE DELETE ON th_audit_logs
+FOR EACH ROW EXECUTE FUNCTION prevent_audit_update_delete();

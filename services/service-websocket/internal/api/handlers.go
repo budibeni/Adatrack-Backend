@@ -61,18 +61,16 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, data interface{})
 }
 
 func (h *Handler) auditLog(ctx context.Context, companyCode, action, outcome string, userID int64, email, role, detail string) {
-	if dbclient.Pool == nil {
+	if dbclient.Pool == nil || companyCode == "DEFAULT" || companyCode == "" || !tenant.IsValidCompanyCode(companyCode) {
 		return
 	}
-	schema := "adatrack_gps_master"
-	if companyCode != "DEFAULT" && companyCode != "" {
-		schema = fmt.Sprintf("adatrack_gps_%s", companyCode)
-	}
 
-	query := fmt.Sprintf(`INSERT INTO %s.tm_audit_logs (action, outcome, actor_user_id, actor_email, actor_role, company_code, after) VALUES ($1, $2, $3, $4, $5, $6, $7)`, schema)
+	schema := fmt.Sprintf("adatrack_gps_%s", companyCode)
+
+	query := fmt.Sprintf(`INSERT INTO %s.th_audit_logs (action, outcome, actor_user_id, actor_email, actor_role, after_data) VALUES ($1, $2, $3, $4, $5, $6)`, schema)
 	afterJSON, _ := json.Marshal(map[string]string{"detail": detail})
 
-	_, err := dbclient.Pool.Exec(ctx, query, action, outcome, userID, email, role, companyCode, afterJSON)
+	_, err := dbclient.Pool.Exec(ctx, query, action, outcome, userID, email, role, afterJSON)
 	if err != nil {
 		logger.Log.Error("Failed to write audit log", "err", err, "action", action)
 	}
@@ -93,6 +91,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if req.Email == "" || req.Password == "" || req.CompanyCode == "" {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email, password, and company_code are required")
+		return
+	}
+
+	if !tenant.IsValidCompanyCode(req.CompanyCode) {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid company_code format")
 		return
 	}
 
@@ -288,9 +291,13 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "code and name are required")
 		return
 	}
+	req.Code = strings.ToUpper(req.Code)
+	if !tenant.IsValidCompanyCode(req.Code) {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid company code format")
+		return
+	}
 
 	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
-	req.Code = strings.ToUpper(req.Code)
 	if req.Timezone == "" {
 		req.Timezone = "UTC"
 	}

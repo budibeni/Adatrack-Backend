@@ -282,6 +282,20 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+  service-monitor:
+    build:
+      context: .
+      dockerfile: ./services/service-monitor/Dockerfile
+    container_name: adatrack_service_monitor
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+    - 8085:8085
+    restart: unless-stopped
 volumes:
   pgdata: null
   redisdata: null

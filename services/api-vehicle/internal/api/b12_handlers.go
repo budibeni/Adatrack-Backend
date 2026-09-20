@@ -53,11 +53,11 @@ func (h *Handler) GetAccessibleMenus(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(`
 		SELECT m.id, m.module_id, m.code, m.name, m.path, m.parent_id, m.sort_order, m.enabled
 		FROM adatrack_gps_master.tm_menus m
-		JOIN %s.tm_role_menu_access rma ON m.id = rma.menu_id
-		WHERE rma.role = $1 AND rma.can_view = true AND rma.enabled = true AND m.enabled = true
+		JOIN %s.tm_user_menu_access rma ON m.id = rma.menu_id
+		WHERE rma.user_id = $1 AND rma.can_view = true AND rma.enabled = true AND m.enabled = true
 		ORDER BY m.sort_order
 	`, schema)
-	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, claims.Role)
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, claims.UserID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch menus")
 		return

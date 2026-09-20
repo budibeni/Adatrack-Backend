@@ -29,7 +29,7 @@ func StartRetentionJob(ctx context.Context, cfg *config.Config, store *storage.S
 
 func runRetention(ctx context.Context, cfg *config.Config, store *storage.S3Store) {
 	// We need to iterate over all tenants
-	rows, err := dbclient.Pool.Query(ctx, "SELECT company_code FROM master.tm_companies WHERE deleted_at IS NULL")
+	rows, err := dbclient.Pool.Query(ctx, "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL")
 	if err != nil {
 		logger.Log.Error("Retention job failed to fetch companies", "err", err)
 		return

@@ -20,17 +20,17 @@ import (
 func main() {
 	logger.InitLogger()
 	cfg := config.Load()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer initCancel()
 
-	if err := dbclient.Connect(ctx, cfg); err != nil {
+	if err := dbclient.Connect(initCtx, cfg); err != nil {
 		logger.Log.Error("FATAL Database", "err", err); os.Exit(1)
 	}
 	defer dbclient.Pool.Close()
 
 	tenant.InitManager(cfg)
 
-	if err := redclient.Connect(ctx, cfg); err != nil {
+	if err := redclient.Connect(initCtx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
 	}
 
@@ -39,7 +39,10 @@ func main() {
 		logger.Log.Error("FATAL S3 Store", "err", err); os.Exit(1)
 	}
 
-	api.StartRetentionJob(context.Background(), cfg, store)
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
+	api.StartRetentionJob(appCtx, cfg, store)
 
 	router := api.SetupRouter(cfg, store)
 

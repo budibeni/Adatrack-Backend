@@ -36,8 +36,11 @@ func GenerateToken(cfg *config.Config, userID int64, email string, companyCode s
 
 func ValidateToken(cfg *config.Config, tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
 		return []byte(cfg.JWTSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return nil, err
 	}

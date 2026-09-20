@@ -60,18 +60,16 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, data interface{})
 }
 
 func (h *Handler) auditLog(ctx context.Context, companyCode, action, outcome string, userID int64, email, role, detail string) {
-	if dbclient.Pool == nil {
+	if dbclient.Pool == nil || companyCode == "DEFAULT" || companyCode == "" || !tenant.IsValidCompanyCode(companyCode) {
 		return
 	}
-	schema := "adatrack_gps_master"
-	if companyCode != "DEFAULT" && companyCode != "" {
-		schema = fmt.Sprintf("adatrack_gps_%s", companyCode)
-	}
 
-	query := fmt.Sprintf(`INSERT INTO %s.tm_audit_logs (action, outcome, actor_user_id, actor_email, actor_role, company_code, after) VALUES ($1, $2, $3, $4, $5, $6, $7)`, schema)
+	schema := fmt.Sprintf("adatrack_gps_%s", companyCode)
+
+	query := fmt.Sprintf(`INSERT INTO %s.th_audit_logs (action, outcome, actor_user_id, actor_email, actor_role, after_data) VALUES ($1, $2, $3, $4, $5, $6)`, schema)
 	afterJSON, _ := json.Marshal(map[string]string{"detail": detail})
 
-	_, err := dbclient.Pool.Exec(ctx, query, action, outcome, userID, email, role, companyCode, afterJSON)
+	_, err := dbclient.Pool.Exec(ctx, query, action, outcome, userID, email, role, afterJSON)
 	if err != nil {
 		logger.Log.Error("Failed to write audit log", "err", err, "action", action)
 	}

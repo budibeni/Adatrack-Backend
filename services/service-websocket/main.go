@@ -21,29 +21,32 @@ import (
 func main() {
 	logger.InitLogger()
 	cfg := config.Load()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer initCancel()
 
-	if err := dbclient.Connect(ctx, cfg); err != nil {
+	if err := dbclient.Connect(initCtx, cfg); err != nil {
 		logger.Log.Error("FATAL Database", "err", err); os.Exit(1)
 	}
 	defer dbclient.Pool.Close()
 
-	if err := redclient.Connect(ctx, cfg); err != nil {
+	if err := redclient.Connect(initCtx, cfg); err != nil {
 		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
-	tenant.InitManager(cfg)
 	}
+	tenant.InitManager(cfg)
 	
 	if err := natsclient.Connect(cfg); err != nil {
 		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
 	}
 	defer natsclient.NC.Close()
 
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
+
 	// Initialize WebSocket Hub
 	hub := ws.NewHub(cfg)
 	go hub.Run()
 	// Setup consumer to push updates to hub
-	go hub.StartConsumer(ctx)
+	go hub.StartConsumer(appCtx)
 
 	// Initialize API Router
 	router := api.SetupRouter(cfg, hub)

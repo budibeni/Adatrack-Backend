@@ -34,7 +34,7 @@ func verifyHMAC(secret, signature string, body []byte) bool {
 
 func (h *Handler) getMediaConfigSecret(ctx context.Context, companyCode string) (string, error) {
 	var secret string
-	err := dbclient.Pool.QueryRow(ctx, "SELECT hmac_secret FROM master.tm_company_media_config WHERE company_code = $1", companyCode).Scan(&secret)
+	err := dbclient.Pool.QueryRow(ctx, "SELECT hmac_secret FROM adatrack_gps_master.tm_company_media_config WHERE company_code = $1", companyCode).Scan(&secret)
 	return secret, err
 }
 

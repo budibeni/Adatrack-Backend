@@ -39,7 +39,7 @@ func NewWorker() *Worker {
 
 func (w *Worker) Start() {
 	var err error
-	w.sub, err = natsclient.NC.Subscribe("telemetry.raw.>", func(m *nats.Msg) {
+	w.sub, err = natsclient.JS.QueueSubscribe("telemetry.raw.>", "worker-alert-group", func(m *nats.Msg) {
 		w.processTelemetry(m)
 	})
 	if err != nil {
