@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"backend/internal/models"
+	"github.com/sigurn/crc16"
 )
 
 type Decoder struct{}
@@ -35,21 +36,6 @@ func (d *Decoder) DecodeLogin(data []byte) (string, []byte, error) {
 
 func (d *Decoder) IsHeartbeat(data []byte) bool { return false }
 func (d *Decoder) GenerateHeartbeatResponse(data []byte) []byte { return nil }
-
-func crc16(data []byte) uint16 {
-	crc := uint16(0)
-	for _, b := range data {
-		crc ^= uint16(b)
-		for i := 0; i < 8; i++ {
-			if crc&1 != 0 {
-				crc = (crc >> 1) ^ 0xA001
-			} else {
-				crc >>= 1
-			}
-		}
-	}
-	return crc
-}
 
 func (d *Decoder) GenerateLocationResponse(data []byte) []byte {
 	if len(data) < 10 {
@@ -79,7 +65,8 @@ func (d *Decoder) DecodeLocation(data []byte, imei, companyCode string, vehicleI
 
 	// Validate CRC
 	expectedCRC := binary.BigEndian.Uint32(data[dataLen+8 : dataLen+12]) // CRC is 4 bytes
-	actualCRC := crc16(data[8 : dataLen+8]) // calculated over data part
+	table := crc16.MakeTable(crc16.CRC16_ARC)
+	actualCRC := crc16.Checksum(data[8 : dataLen+8], table) // calculated over data part
 	// Traccar uses crc16 over the payload (bytes 8 to dataLen+8), and it is stored in 4 bytes at the end
 	if uint32(actualCRC) != expectedCRC && expectedCRC != 0 {
 		// Log but don't strictly reject if some devices have buggy firmware
@@ -265,11 +252,6 @@ func (d *Decoder) FrameSplitter() bufio.SplitFunc {
 		}
 		return 1, nil, nil
 	}
-}
-
-func encodeCodec12(raw string) []byte {
-    // Stub
-    return []byte(raw)
 }
 
 func (d *Decoder) EncodeCommand(cmdType string, params map[string]string, raw string) ([]byte, error) {

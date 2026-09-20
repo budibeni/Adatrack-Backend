@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,6 +31,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/metrics", promhttp.Handler())
 	healthServer := &http.Server{Addr: ":8085", Handler: mux}
 	go healthServer.ListenAndServe()
 

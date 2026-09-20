@@ -5,24 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
-	"backend/ingestion-tcp/internal/protocol/coban"
 	"backend/ingestion-tcp/internal/protocol/gt06"
-	"backend/ingestion-tcp/internal/protocol/h02"
-	"backend/ingestion-tcp/internal/protocol/meitrack"
 	"backend/ingestion-tcp/internal/protocol/teltonika"
-	"backend/ingestion-tcp/internal/protocol/meiligao"
-	"backend/ingestion-tcp/internal/protocol/xexun"
-	"backend/ingestion-tcp/internal/protocol/suntech"
-	"backend/ingestion-tcp/internal/protocol/totem"
-	"backend/ingestion-tcp/internal/protocol/gt02"
-	"backend/ingestion-tcp/internal/protocol/navigil"
-	"backend/ingestion-tcp/internal/protocol/castel"
 	"backend/ingestion-tcp/internal/server"
 	"backend/internal/config"
 	"backend/internal/dbclient"
@@ -46,6 +37,8 @@ func main() {
 	}
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics", promhttp.Handler())
 	healthServer := &http.Server{Addr: ":8081", Handler: nil}
 	go healthServer.ListenAndServe()
 

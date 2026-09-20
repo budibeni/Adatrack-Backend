@@ -1,5 +1,7 @@
 package alert
 
+import "backend/internal/logger"
+
 import (
 	"context"
 	"fmt"

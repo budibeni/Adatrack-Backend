@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"backend/internal/auth"
 	"backend/internal/config"
@@ -25,7 +26,7 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
@@ -33,6 +34,8 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
+
+	r.Handle("/metrics", promhttp.Handler())
 
 	h := NewHandler(cfg, store)
 
@@ -95,28 +98,33 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Delete("/media/{id}", h.DeleteMediaEvent)
 		r.Post("/media/{id}/restore", h.RestoreMediaEvent)
 
-		// Access (B12)
-		r.Get("/access/menu", h.GetAccessibleMenus)
-		r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
-		r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
+		// Enterprise Modules Lists (B12) Admin Only
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireRoleMiddleware("admin", "superadmin"))
+			
+			// Access (B12)
+			r.Get("/access/menu", h.GetAccessibleMenus)
+			r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
+			r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
 
-		// Drivers (B12)
-		r.Get("/drivers", h.ListDrivers)
-		r.Post("/drivers", h.CreateDriver)
-		r.Get("/drivers/{id}", h.GetDriver)
-		r.Put("/drivers/{id}", h.UpdateDriver)
-		r.Delete("/drivers/{id}", h.SoftDeleteDriver)
+			// Drivers (B12)
+			r.Get("/drivers", h.ListDrivers)
+			r.Post("/drivers", h.CreateDriver)
+			r.Get("/drivers/{id}", h.GetDriver)
+			r.Put("/drivers/{id}", h.UpdateDriver)
+			r.Delete("/drivers/{id}", h.SoftDeleteDriver)
 
-		// Public Share Links (B12)
-		r.Get("/share-links", h.ListShareLinks)
-		r.Post("/share-links", h.CreateShareLink)
-		r.Delete("/share-links/{id}", h.RevokeShareLink)
-		
-		// Enterprise Modules Lists (B12)
-		r.Get("/groups", h.ListGroups)
-		r.Get("/assets", h.ListAssets)
-		r.Get("/organizations", h.ListOrganizations)
-		r.Get("/integrations", h.ListIntegrations)
+			// Public Share Links (B12)
+			r.Get("/share-links", h.ListShareLinks)
+			r.Post("/share-links", h.CreateShareLink)
+			r.Delete("/share-links/{id}", h.RevokeShareLink)
+			
+			// Enterprise Modules Lists (B12)
+			r.Get("/groups", h.ListGroups)
+			r.Get("/assets", h.ListAssets)
+			r.Get("/organizations", h.ListOrganizations)
+			r.Get("/integrations", h.ListIntegrations)
+		})
 	})
 
 	return r

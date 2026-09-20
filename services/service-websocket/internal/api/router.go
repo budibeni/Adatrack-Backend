@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"backend/internal/config"
 	"backend/internal/auth"
@@ -25,7 +26,7 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
@@ -54,6 +55,8 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			})
 		})
 	})
+	
+	r.Handle("/metrics", promhttp.Handler())
 
 	return r
 }
