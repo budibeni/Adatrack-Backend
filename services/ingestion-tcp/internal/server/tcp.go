@@ -115,17 +115,28 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 	var tenant handler.TenantInfo
 	authenticated := false
 
-	// Enterprise Hardening: Use bufio.Scanner to prevent TCP Sticky Packets / Fragmentation
+	// Increase scanner buffer to 1MB to prevent bufio.ErrTooLong on bulk offline packets
 	scanner := bufio.NewScanner(conn)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
 	scanner.Split(s.decoder.FrameSplitter())
+
+	go func() {
+		<-s.ctx.Done()
+		conn.SetReadDeadline(time.Now()) // Force immediate timeout for graceful shutdown
+	}()
 
 	// Buffered channel/timeout handling natively supported by setting read deadlines inside loop if needed
 	// but standard scanner loop blocks nicely.
 	for {
-		conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+		// Only set deadline if context is not yet done
+		if s.ctx.Err() == nil {
+			conn.SetReadDeadline(time.Now().Add(5 * time.Minute))
+		}
 		if !scanner.Scan() {
 			err := scanner.Err()
-			if err != nil {
+			// Ignore read deadline errors during shutdown
+			if err != nil && s.ctx.Err() == nil {
 				logger.Log.Error("TCP Scanner read error", "ip", ip, "err", err)
 			}
 			if authenticated {
@@ -171,6 +182,14 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			continue
 		}
 		
+		// Send ACK if protocol requires it for location packets (e.g. Teltonika)
+		if responder, ok := s.decoder.(interface{ GenerateLocationResponse([]byte) []byte }); ok {
+			resp := responder.GenerateLocationResponse(data)
+			if resp != nil {
+				conn.Write(resp)
+			}
+		}
+
 		if err := publisher.PublishTelemetry(payload); err != nil {
 			logger.Log.Error("Publish failed", "imei", imei, "err", err)
 		}

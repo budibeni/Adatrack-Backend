@@ -91,16 +91,18 @@ func main() {
 	servers := []*server.TCPServer{
 		server.NewTCPServer(":"+cfg.PortGT06, 5000, &gt06.Decoder{}),
 		server.NewTCPServer(":"+cfg.PortTeltonika, 5000, &teltonika.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortCoban, 5000, &coban.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortMeitrack, 5000, &meitrack.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortH02, 5000, &h02.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortMeiligao, 5000, &meiligao.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortXexun, 5000, &xexun.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortSuntech, 5000, &suntech.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortTotem, 5000, &totem.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortGT02, 5000, &gt02.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortNavigil, 5000, &navigil.Decoder{}),
-		server.NewTCPServer(":"+cfg.PortCastel, 5000, &castel.Decoder{}),
+		// H-06 Enterprise Hardening: Disabled experimental / non-production protocols
+		// to prevent edge-case panics and instability. Must be rigorously tested before re-enabling.
+		// server.NewTCPServer(":"+cfg.PortCoban, 5000, &coban.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortMeitrack, 5000, &meitrack.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortH02, 5000, &h02.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortMeiligao, 5000, &meiligao.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortXexun, 5000, &xexun.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortSuntech, 5000, &suntech.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortTotem, 5000, &totem.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortGT02, 5000, &gt02.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortNavigil, 5000, &navigil.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortCastel, 5000, &castel.Decoder{}),
 	}
 
 	for _, srv := range servers {
