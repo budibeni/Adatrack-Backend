@@ -345,13 +345,14 @@ func (w *Worker) evaluateRouteDeviation(ctx context.Context, schema string, payl
 					"max_deviation_meters": dist,
 				})
 			} else {
-				// Update max_deviation_meters of open alert
-				dbclient.Pool.Exec(ctx, fmt.Sprintf(`
+				if _, err := dbclient.Pool.Exec(ctx, fmt.Sprintf(`
 					UPDATE %s.th_alerts 
 					SET metadata = jsonb_set(metadata::jsonb, '{max_deviation_meters}', to_jsonb($1::numeric)) 
 					WHERE vehicle_id = $2 AND type = 'ROUTE_DEVIATION' AND status = 'open' 
 					AND (metadata->>'route_id')::int = $3 AND (metadata->>'max_deviation_meters')::numeric < $1
-				`, schema), dist, payload.VehicleID, routeID)
+				`, schema), dist, payload.VehicleID, routeID); err != nil {
+					logger.Log.Error("Failed to update max deviation", "err", err, "vehicle_id", payload.VehicleID)
+				}
 			}
 		}
 	}
@@ -492,10 +493,12 @@ func (w *Worker) dispatchNotifications(ctx context.Context, schema string, alert
 				"alert_type": alertType,
 				"severity":   severity,
 			})
-			dbclient.Pool.Exec(ctx, fmt.Sprintf(`
+			if _, err := dbclient.Pool.Exec(ctx, fmt.Sprintf(`
 				INSERT INTO %s.td_notifications (alert_id, user_id, channel, status, provider_response, created_at)
 				VALUES ($1, $2, $3, 'pending', $4, NOW())
-			`, schema), alertID, userID, channel, metaBytes)
+			`, schema), alertID, userID, channel, metaBytes); err != nil {
+				logger.Log.Error("Failed to insert pending notification", "err", err, "alert_id", alertID)
+			}
 
 			// Publish notification channel message
 			natsclient.NC.Publish(fmt.Sprintf("notify.%s.%d", channel, userID), metaBytes)

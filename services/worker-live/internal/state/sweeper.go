@@ -93,7 +93,9 @@ func sweepOffline(ctx context.Context) {
 			if p.VehicleID > 0 {
 				schema := fmt.Sprintf("adatrack_gps_%s", companyCode)
 				query := fmt.Sprintf("UPDATE %s.tm_vehicles SET status = 'OFFLINE' WHERE id = $1", schema)
-				dbclient.Pool.Exec(ctx, query, p.VehicleID)
+				if _, err := dbclient.Pool.Exec(ctx, query, p.VehicleID); err != nil {
+					logger.Log.Error("Sweeper failed to update offline status", "err", err, "vehicle_id", p.VehicleID)
+				}
 			}
 		}
 		logger.Log.Info("Swept offline vehicles", "count", len(expired))

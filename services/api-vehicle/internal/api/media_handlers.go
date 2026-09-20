@@ -1,12 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,10 +34,11 @@ func verifyHMAC(secret, signature string, body []byte) bool {
 	return hmac.Equal([]byte(signature), []byte(expected))
 }
 
-func (h *Handler) getMediaConfigSecret(ctx context.Context, companyCode string) (string, error) {
+func (h *Handler) getMediaConfig(ctx context.Context, companyCode string) (string, int, error) {
 	var secret string
-	err := dbclient.Pool.QueryRow(ctx, "SELECT hmac_secret FROM adatrack_gps_master.tm_company_media_config WHERE company_code = $1", companyCode).Scan(&secret)
-	return secret, err
+	var maxFileMB int
+	err := dbclient.Pool.QueryRow(ctx, "SELECT hmac_secret, max_file_mb FROM adatrack_gps_master.tm_company_media_config WHERE company_code = $1", companyCode).Scan(&secret, &maxFileMB)
+	return secret, maxFileMB, err
 }
 
 func (h *Handler) CreateMediaEvent(w http.ResponseWriter, r *http.Request) {
@@ -45,8 +48,33 @@ func (h *Handler) CreateMediaEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// parse multipart
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
+	secret, maxFileMB, err := h.getMediaConfig(r.Context(), claims.CompanyCode)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "CONFIG_ERROR", "Failed to fetch media config")
+		return
+	}
+
+	maxBytes := int64(maxFileMB) << 20
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+	sig := r.Header.Get("X-Signature")
+	if sig == "" {
+		h.writeError(w, http.StatusUnauthorized, "MISSING_SIGNATURE", "X-Signature header is required")
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to read request body")
+		return
+	}
+	if !verifyHMAC(secret, sig, bodyBytes) {
+		h.writeError(w, http.StatusUnauthorized, "INVALID_SIGNATURE", "Invalid HMAC signature")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	if err := r.ParseMultipartForm(maxBytes); err != nil {
 		h.writeError(w, http.StatusBadRequest, "BAD_REQUEST", "Failed to parse multipart form")
 		return
 	}
@@ -55,6 +83,15 @@ func (h *Handler) CreateMediaEvent(w http.ResponseWriter, r *http.Request) {
 	eventType := r.FormValue("event_type")
 
 	vid, _ := strconv.Atoi(vidStr)
+	
+	// Check ownership
+	var vCount int
+	err = dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf("SELECT COUNT(*) FROM adatrack_gps_%s.tm_vehicles WHERE id = $1 AND deleted_at IS NULL", claims.CompanyCode), vid).Scan(&vCount)
+	if err != nil || vCount == 0 {
+		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Vehicle not found or does not belong to you")
+		return
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "BAD_REQUEST", "File is required")

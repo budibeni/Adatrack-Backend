@@ -11,6 +11,7 @@ import (
 	"backend/internal/models"
 	"backend/internal/natsclient"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error {
@@ -82,15 +83,17 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 		}
 		
 		if batchError != nil {
-			logger.Log.Error("Batch insert failed after retries, routing to DLQ", "company", company, "err", batchError)
-			// Enterprise Hardening: Prevent Poison Pill by routing bad payloads to DLQ instead of blocking NATS worker
-			for _, item := range items {
-				data, _ := json.Marshal(item)
-				natsclient.PublishToDLQ("telemetry", data)
+			if _, isPgErr := batchError.(*pgconn.PgError); isPgErr {
+				logger.Log.Error("Batch insert failed (Poison Pill), routing to DLQ", "company", company, "err", batchError)
+				for _, item := range items {
+					data, _ := json.Marshal(item)
+					natsclient.PublishToDLQ("telemetry", data)
+				}
+			} else {
+				logger.Log.Error("Batch insert failed (Infra Error), returning error to NAK", "company", company, "err", batchError)
+				return batchError
 			}
 		}
 	}
-	// We always return nil so the NATS message gets Ack()ed. 
-	// The bad rows are now safely stored in the DLQ Stream.
 	return nil
 }

@@ -133,7 +133,10 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 	// Execute DB batch
 	br := dbclient.Pool.SendBatch(ctx, dbBatch)
 	for i := 0; i < dbBatch.Len(); i++ {
-		br.Exec()
+		_, err := br.Exec()
+		if err != nil {
+			logger.Log.Error("Worker-live DB update failed", "err", err)
+		}
 	}
 	br.Close()
 

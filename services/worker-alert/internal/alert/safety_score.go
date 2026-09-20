@@ -103,6 +103,8 @@ func (s *SafetyEngine) Evaluate(ctx context.Context, companyCode string, payload
 		`, schema)
 		desc := fmt.Sprintf("Safety violation detected: %v. Deduction: %.1f points. Speed: %.1f", violationTypes, deduction, payload.Speed)
 		
-		dbclient.Pool.Exec(ctx, query, payload.VehicleID, payload.Timestamp, desc, payload.Latitude, payload.Longitude)
+		if _, err := dbclient.Pool.Exec(ctx, query, payload.VehicleID, payload.Timestamp, desc, payload.Latitude, payload.Longitude); err != nil {
+			logger.Log.Error("Failed to log safety incident", "err", err, "vehicle_id", payload.VehicleID)
+		}
 	}
 }
