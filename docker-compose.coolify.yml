@@ -1,5 +1,4 @@
 version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -9,40 +8,55 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+    - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U ${DB_USER} -d ${DB_NAME}
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
+    networks:
+    - coolify
   redis:
     image: redis:7-alpine
     container_name: adatrack_redis
     command: redis-server --requirepass "${REDIS_PASSWORD}"
     volumes:
-      - redisdata:/data
+    - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - -a
+      - ${REDIS_PASSWORD}
+      - ping
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
+    networks:
+    - coolify
   nats:
     image: nats:2.10-alpine
     container_name: adatrack_nats
-    command: ["-js"]
+    command:
+    - -js
     volumes:
-      - natsdata:/data
+    - natsdata:/data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      test:
+      - CMD
+      - wget
+      - -qO-
+      - http://localhost:8222/healthz
       interval: 5s
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
+    networks:
+    - coolify
   minio:
     image: quay.io/minio/minio:latest
     container_name: adatrack_minio
@@ -51,67 +65,76 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     volumes:
-      - miniodata:/data
+    - miniodata:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:9000/minio/health/live
       interval: 30s
       timeout: 20s
       retries: 3
     restart: unless-stopped
-
+    networks:
+    - coolify
   minio-setup:
     image: quay.io/minio/mc:latest
     container_name: adatrack_minio_setup
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc config host add myminio http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY};
-      /usr/bin/mc rm -r --force myminio/${S3_BUCKET_NAME} || true;
-      /usr/bin/mc mb myminio/${S3_BUCKET_NAME} || true;
-      /usr/bin/mc anonymous set public myminio/${S3_BUCKET_NAME};
-      exit 0;
-      "
+    entrypoint: '/bin/sh -c " /usr/bin/mc config host add myminio http://minio:9000
+      ${S3_ACCESS_KEY} ${S3_SECRET_KEY}; /usr/bin/mc rm -r --force myminio/${S3_BUCKET_NAME}
+      || true; /usr/bin/mc mb myminio/${S3_BUCKET_NAME} || true; /usr/bin/mc anonymous
+      set public myminio/${S3_BUCKET_NAME}; exit 0; "
 
+      '
+    networks:
+    - coolify
   node-exporter:
     image: quay.io/prometheus/node-exporter:v1.6.0
     container_name: adatrack_node_exporter
     restart: unless-stopped
-
+    networks:
+    - coolify
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.47.2
     container_name: adatrack_cadvisor
     volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:rw
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
+    - /:/rootfs:ro
+    - /var/run:/var/run:rw
+    - /sys:/sys:ro
+    - /var/lib/docker/:/var/lib/docker:ro
     restart: unless-stopped
-
+    networks:
+    - coolify
   postgres-exporter:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.12.0
     container_name: adatrack_postgres_exporter
     environment:
-      DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable"
+      DATA_SOURCE_NAME: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
     depends_on:
-      - postgres
+    - postgres
     restart: unless-stopped
-
+    networks:
+    - coolify
   prometheus:
     image: prom/prometheus:v2.45.0
     container_name: adatrack_prometheus
     volumes:
-      - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./deployments/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
-      - ./deployments/prometheus/targets:/etc/prometheus/targets
+    - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    - ./deployments/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
+    - ./deployments/prometheus/targets:/etc/prometheus/targets
     restart: unless-stopped
-
+    networks:
+    - coolify
   alertmanager:
     image: quay.io/prometheus/alertmanager:v0.25.0
     container_name: adatrack_alertmanager
     restart: unless-stopped
-
+    networks:
+    - coolify
   postgres-replica:
     image: postgres:15-alpine
     container_name: adatrack_postgres_replica
@@ -122,16 +145,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c '
-      rm -rf /var/lib/postgresql/data/*;
-      until pg_isready -h postgres -p 5432 -U ${DB_USER}; do sleep 2; done;
-      PGPASSWORD="${DB_PASSWORD}" pg_basebackup -h postgres -U ${DB_USER} -D /var/lib/postgresql/data -Fp -Xs -P -R;
-      chown -R postgres:postgres /var/lib/postgresql/data;
-      chmod 700 /var/lib/postgresql/data;
-      exec su postgres -c "postgres"
-      '
+    command: 'sh -c '' rm -rf /var/lib/postgresql/data/*; until pg_isready -h postgres
+      -p 5432 -U ${DB_USER}; do sleep 2; done; PGPASSWORD="${DB_PASSWORD}" pg_basebackup
+      -h postgres -U ${DB_USER} -D /var/lib/postgresql/data -Fp -Xs -P -R; chown -R
+      postgres:postgres /var/lib/postgresql/data; chmod 700 /var/lib/postgresql/data;
+      exec su postgres -c "postgres" ''
 
+      '
+    networks:
+    - coolify
   redis-replica:
     image: redis:7-alpine
     container_name: adatrack_redis_replica
@@ -140,25 +162,131 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - -a
+      - ${REDIS_PASSWORD}
+      - ping
       interval: 5s
       timeout: 5s
       retries: 5
-
+    networks:
+    - coolify
   migrate:
     build:
       context: .
       dockerfile: ./deployments/migrate/Dockerfile
     container_name: adatrack_migrate
     environment:
-      DATABASE_URL: "postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable"
-      MIGRATION_DIR: "/app/database/migrations"
+      DATABASE_URL: postgres://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
+      MIGRATION_DIR: /app/database/migrations
     depends_on:
       postgres:
         condition: service_healthy
-
+    networks:
+    - coolify
+  ingestion-tcp:
+    build:
+      context: .
+      dockerfile: ./services/ingestion-tcp/Dockerfile
+    container_name: adatrack_ingestion_tcp
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+    - 5000-5030:5000-5030
+    - 15000-15010:15000-15010
+  api-vehicle:
+    build:
+      context: .
+      dockerfile: ./services/api-vehicle/Dockerfile
+    container_name: adatrack_api_vehicle
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  worker-live:
+    build:
+      context: .
+      dockerfile: ./services/worker-live/Dockerfile
+    container_name: adatrack_worker_live
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  worker-persistence:
+    build:
+      context: .
+      dockerfile: ./services/worker-persistence/Dockerfile
+    container_name: adatrack_worker_persistence
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  worker-alert:
+    build:
+      context: .
+      dockerfile: ./services/worker-alert/Dockerfile
+    container_name: adatrack_worker_alert
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  service-websocket:
+    build:
+      context: .
+      dockerfile: ./services/service-websocket/Dockerfile
+    container_name: adatrack_service_websocket
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+    - 8080:8080
+  foundation-check:
+    build:
+      context: .
+      dockerfile: ./services/foundation-check/Dockerfile
+    container_name: adatrack_foundation_check
+    env_file:
+    - .env.coolify
+    networks:
+    - coolify
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
 volumes:
-  pgdata:
-  redisdata:
-  natsdata:
-  miniodata:
+  pgdata: null
+  redisdata: null
+  natsdata: null
+  miniodata: null
+networks:
+  coolify:
+    external: true
