@@ -9,7 +9,9 @@ import (
 	"context"
 	"net/http"
 	"time"
-
+	"strconv"
+	
+	"backend/internal/auth"
 	"backend/internal/dbclient"
 )
 
@@ -56,7 +58,20 @@ func (h *Handler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	rows, err := dbclient.Pool.Query(ctx, "SELECT code, name, COALESCE(legal_name, ''), business_type FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ORDER BY created_at DESC")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	offset := (page - 1) * limit
+
+	var total int
+	_ = dbclient.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL").Scan(&total)
+
+	rows, err := dbclient.Pool.Query(ctx, "SELECT code, name, COALESCE(legal_name, ''), business_type FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch companies")
 		return
@@ -73,7 +88,15 @@ func (h *Handler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": companies})
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data": companies,
+		"pagination": map[string]interface{}{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
 }
 
 type UserInfo struct {
@@ -87,7 +110,20 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	rows, err := dbclient.Pool.Query(ctx, "SELECT id, email, is_active, created_at FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL ORDER BY created_at DESC")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	offset := (page - 1) * limit
+
+	var total int
+	_ = dbclient.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL").Scan(&total)
+
+	rows, err := dbclient.Pool.Query(ctx, "SELECT id, email, is_active, created_at FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2", limit, offset)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch users")
 		return
@@ -104,7 +140,15 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": users})
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data": users,
+		"pagination": map[string]interface{}{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
 }
 
 type AdminCreateUserRequest struct {
@@ -112,6 +156,7 @@ type AdminCreateUserRequest struct {
 	Password    string `json:"password"`
 	RoleCode    string `json:"role_code"`
 	CompanyCode string `json:"company_code"`
+	VerificationPassword string `json:"verification_password"`
 }
 
 func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -134,9 +179,28 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.VerificationPassword == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Verification password is required")
+		return
+	}
+
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	var currentHash string
+	if err := dbclient.Pool.QueryRow(ctx, "SELECT password_hash FROM adatrack_gps_master.tm_users WHERE id = $1", claims.UserID).Scan(&currentHash); err != nil || bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.VerificationPassword)) != nil {
+		h.writeError(w, http.StatusForbidden, "INVALID_PASSWORD", "Invalid verification password")
+		return
+	}
+
+	tx, err := dbclient.Pool.Begin(ctx)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to start transaction")
+		return
+	}
+	defer tx.Rollback(ctx)
+
 	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	var newUserID int
-	err := dbclient.Pool.QueryRow(ctx, "INSERT INTO adatrack_gps_master.tm_users (email, password_hash) VALUES ($1, $2) RETURNING id", req.Email, string(hash)).Scan(&newUserID)
+	err = tx.QueryRow(ctx, "INSERT INTO adatrack_gps_master.tm_users (email, password_hash) VALUES ($1, $2) RETURNING id", req.Email, string(hash)).Scan(&newUserID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create user. Email may already exist.")
 		return
@@ -144,12 +208,16 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	if req.RoleCode != "SUPER_ADMIN" && req.CompanyCode != "" {
 		schema := fmt.Sprintf("adatrack_gps_%s", req.CompanyCode)
-		_, err = dbclient.Pool.Exec(ctx, fmt.Sprintf("INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active) VALUES ($1, $2, true)", schema), newUserID, req.RoleCode)
+		_, err = tx.Exec(ctx, fmt.Sprintf("INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active) VALUES ($1, $2, true)", schema), newUserID, req.RoleCode)
 		if err != nil {
-			// Do not fail entirely if access creation fails, just log it. (Ideally use a transaction).
-			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "User created but failed to link to company schema.")
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to link user to company schema.")
 			return
 		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to commit user creation")
+		return
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "message": "User created successfully"})
@@ -157,6 +225,7 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 
 type AdminResetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
+	VerificationPassword string `json:"verification_password"`
 }
 
 func (h *Handler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +241,18 @@ func (h *Handler) AdminResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req AdminResetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewPassword == "" {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "new_password is required")
+		return
+	}
+
+	if req.VerificationPassword == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Verification password is required")
+		return
+	}
+
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	var currentHash string
+	if err := dbclient.Pool.QueryRow(ctx, "SELECT password_hash FROM adatrack_gps_master.tm_users WHERE id = $1", claims.UserID).Scan(&currentHash); err != nil || bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.VerificationPassword)) != nil {
+		h.writeError(w, http.StatusForbidden, "INVALID_PASSWORD", "Invalid verification password")
 		return
 	}
 
@@ -242,6 +323,7 @@ func (h *Handler) AdminGetTenantModules(w http.ResponseWriter, r *http.Request) 
 }
 
 type UpdateTenantModulesRequest struct {
+	Password string `json:"password"`
 	Modules []struct {
 		ModuleID int  `json:"module_id"`
 		Enabled  bool `json:"enabled"`
@@ -256,6 +338,19 @@ func (h *Handler) AdminUpdateTenantModules(w http.ResponseWriter, r *http.Reques
 	var req UpdateTenantModulesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid payload")
+		return
+	}
+
+	if req.Password == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "SuperAdmin password is required")
+		return
+	}
+
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	var hash string
+	err := dbclient.Pool.QueryRow(ctx, "SELECT password_hash FROM adatrack_gps_master.tm_users WHERE id = $1", claims.UserID).Scan(&hash)
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)) != nil {
+		h.writeError(w, http.StatusForbidden, "INVALID_PASSWORD", "Invalid super admin password")
 		return
 	}
 

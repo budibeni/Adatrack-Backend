@@ -282,6 +282,7 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		CountryCode string `json:"country_code"`
 		Timezone    string `json:"timezone"`
+		Password    string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON payload")
@@ -298,15 +299,38 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	
+	if req.Password == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Verification password is required")
+		return
+	}
+	var currentHash string
+	if err := dbclient.Pool.QueryRow(r.Context(), "SELECT password_hash FROM adatrack_gps_master.tm_users WHERE id = $1", claims.UserID).Scan(&currentHash); err != nil || bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.Password)) != nil {
+		h.writeError(w, http.StatusForbidden, "INVALID_PASSWORD", "Invalid verification password")
+		return
+	}
+
 	if req.Timezone == "" {
 		req.Timezone = "UTC"
 	}
 	if req.CountryCode == "" {
 		req.CountryCode = "ID"
 	}
+	
+	// Generate random password
+	rb := make([]byte, 6)
+	rand.Read(rb)
+	randomPassword := hex.EncodeToString(rb)
+
+	tx, err := dbclient.Pool.Begin(r.Context())
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to start transaction")
+		return
+	}
+	defer tx.Rollback(r.Context())
 
 	// 1. Create company record in master
-	_, err := dbclient.Pool.Exec(r.Context(), `
+	_, err = tx.Exec(r.Context(), `
 		INSERT INTO adatrack_gps_master.tm_companies (code, name, country_code, timezone, business_type)
 		VALUES ($1, $2, $3, $4, 'b2b')
 		ON CONFLICT (code) DO NOTHING
@@ -319,13 +343,13 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Create admin user in master
 	adminEmail := fmt.Sprintf("admin@%s.local", strings.ToLower(req.Code))
-	hash, _ := bcrypt.GenerateFromPassword([]byte("Admin@123"), 12)
+	hash, _ := bcrypt.GenerateFromPassword([]byte(randomPassword), 12)
 
 	var newUserID int64
-	err = dbclient.Pool.QueryRow(r.Context(), `
+	err = tx.QueryRow(r.Context(), `
 		INSERT INTO adatrack_gps_master.tm_users (email, password_hash, must_change_password)
 		VALUES ($1, $2, true)
-		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
+		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, must_change_password = true
 		RETURNING id
 	`, adminEmail, string(hash)).Scan(&newUserID)
 	if err != nil {
@@ -336,7 +360,7 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Create schema
 	schema := fmt.Sprintf("adatrack_gps_%s", req.Code)
-	_, err = dbclient.Pool.Exec(r.Context(), fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema))
+	_, err = tx.Exec(r.Context(), fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema))
 	if err != nil {
 		logger.Log.Error("Failed to create schema", "err", err)
 		h.writeError(w, http.StatusInternalServerError, "SCHEMA_CREATION_FAILED", "Failed to create company schema")
@@ -363,7 +387,7 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 			sqlBytes, err := os.ReadFile(file)
 			if err == nil {
 				execSQL := fmt.Sprintf("SET search_path TO %s, public; %s", schema, string(sqlBytes))
-				_, err := dbclient.Pool.Exec(r.Context(), execSQL)
+				_, err := tx.Exec(r.Context(), execSQL)
 				if err != nil {
 					logger.Log.Error("Migration error in company schema", "file", file, "err", err)
 				}
@@ -372,11 +396,22 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Grant admin access
-	dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+	_, err = tx.Exec(r.Context(), fmt.Sprintf(`
 		INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active)
 		VALUES ($1, 'ADMIN', true)
 		ON CONFLICT DO NOTHING
 	`, schema), newUserID)
+	if err != nil {
+		logger.Log.Error("Failed to grant admin access", "err", err)
+		h.writeError(w, http.StatusInternalServerError, "ACCESS_CREATION_FAILED", "Failed to grant admin access to tenant")
+		return
+	}
+	
+	if err := tx.Commit(r.Context()); err != nil {
+		logger.Log.Error("Failed to commit tenant provisioning", "err", err)
+		h.writeError(w, http.StatusInternalServerError, "TX_COMMIT_FAILED", "Failed to finalize tenant provisioning")
+		return
+	}
 
 	h.auditLog(r.Context(), req.Code, "COMPANY_CREATED", "success", claims.UserID, claims.Email, claims.Role, "Company "+req.Code+" created")
 	h.auditLog(r.Context(), req.Code, "TENANT_PROVISIONED", "success", claims.UserID, claims.Email, claims.Role, "Tenant provisioned")
@@ -389,6 +424,7 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 			"name": req.Name,
 			"admin_user": map[string]interface{}{
 				"email":                adminEmail,
+				"password":             randomPassword,
 				"must_change_password": true,
 			},
 		},
