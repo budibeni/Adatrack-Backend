@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
@@ -203,7 +204,7 @@ func (h *Handler) AdminGetTenantModules(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	schema := fmt.Sprintf("adatrack_gps_%s", code)
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(code))
 	
 	// Check if schema exists safely
 	var schemaExists bool
@@ -259,7 +260,7 @@ func (h *Handler) AdminUpdateTenantModules(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	schema := fmt.Sprintf("adatrack_gps_%s", code)
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(code))
 	
 	tx, err := dbclient.Pool.Begin(ctx)
 	if err != nil {

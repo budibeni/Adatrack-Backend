@@ -46,6 +46,10 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/dashboard", h.GetDashboardStats)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/companies", h.ListCompanies)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/users", h.ListUsers)
+			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/companies/{code}/modules", h.AdminGetTenantModules)
+			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/companies/{code}/modules", h.AdminUpdateTenantModules)
+			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/users", h.AdminCreateUser)
+			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/users/{id}/reset-password", h.AdminResetPassword)
 			
 			// Tenant endpoints
 			r.Get("/vehicles", h.ListVehicles)
