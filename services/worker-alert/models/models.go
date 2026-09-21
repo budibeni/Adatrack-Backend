@@ -213,7 +213,7 @@ type Assignment struct {
 // 013): vehicle_id 0 = tenant-wide default, non-zero = per-vehicle override
 // (the vehicle row wins, same precedence rule as tm_speed_configs).
 type FuelConfig struct {
-	ID       int64
+	ID        int64
 	VehicleID int64 // 0 = tenant-wide default
 	// DropThresholdPct / RefuelThresholdPct are percentages of the observed
 	// level; WindowSeconds is the sliding window of the delta evaluation.
@@ -257,17 +257,17 @@ func EffectiveFuelConfig(configs []FuelConfig, vehicleID int64) *FuelConfig {
 // snapshot the history endpoint returns, plus the live-state fuel fields that
 // worker-live merges on partial fuel-only messages (FR-7.5).
 type FuelLogEntry struct {
-	IMEI        string   `json:"imei"`
-	CompanyCode string   `json:"company_code"`
-	VehicleID   int64    `json:"vehicle_id"`
-	EngineHours float64  `json:"engine_hours"`
-	TankHeightCM float64  `json:"tank_height_cm"`
-	TankCapacityCM uint16 `json:"tank_capacity_cm"`
-	FilledLevel   uint16   `json:"filled_level"`
-	FuelTempC   *float64  `json:"fuel_temp_c,omitempty"`
-	FuelLevel    *float64  `json:"fuel_level,omitempty"`
-	FuelVolume   *float64  `json:"fuel_volume,omitempty"`
-	Timestamp   string    `json:"timestamp"`
+	IMEI           string   `json:"imei"`
+	CompanyCode    string   `json:"company_code"`
+	VehicleID      int64    `json:"vehicle_id"`
+	EngineHours    float64  `json:"engine_hours"`
+	TankHeightCM   float64  `json:"tank_height_cm"`
+	TankCapacityCM uint16   `json:"tank_capacity_cm"`
+	FilledLevel    uint16   `json:"filled_level"`
+	FuelTempC      *float64 `json:"fuel_temp_c,omitempty"`
+	FuelLevel      *float64 `json:"fuel_level,omitempty"`
+	FuelVolume     *float64 `json:"fuel_volume,omitempty"`
+	Timestamp      string   `json:"timestamp"`
 }
 
 // NotificationRow is one td_notifications delivery-audit row (PRD §5.9.8). It is

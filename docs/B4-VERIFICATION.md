@@ -16,7 +16,7 @@
 | 2 | Endurance chunked resume-safe | 24 jam kumulatif | **1.438.418 pesan @ 400 msg/s selama 1 jam (6 chunk, 0 loss/chunk), heap & goroutine plateau**; jalur 24 jam siap | ⚠️ 1 jam / 24 jam |
 | 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: 0 leakage dua arah | ✅ |
 | 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | 792 ms (1000 baris dari ≈1,44 juta baris) / 201 ms / 3 ms / 4 ms | ✅ |
-| 5 | Coverage service inti | ≥ 80 % | 13,2 % (worker-live) … 67,1 % (service-websocket) | ️ belum |
+| 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): worker-live **86,8 %**, worker-persistence **91,1 %**, worker-alert **84,2 %**, api-vehicle **80,0 %**, internal/tenant **80,8 %** | ✅ |
 | 6 | `go vet` + build bersih | exit 0 | `scripts/test.sh` exit 0 (8 modul), `go vet` bersih | ✅ |
 | 7 | Monitoring | Prometheus + dashboard SLO Grafana + alert rule inti | 11/11 target UP, 20 rule, dashboard `adatrack-core` | ✅ |
 | 8 | Hardening | JWT revocation, rate limit, audit menyeluruh; retensi JetStream | unit test + audit live append + 6/6 stream 48 h/4 GiB | ✅ |
@@ -94,25 +94,33 @@ SLA. Indeks pendukung:
 `idx_th_telemetry_logs_{vehicle,imei,company}_time` pada `th_telemetry_logs`
 (partitioned monthly) — terpasang sejak migrasi company `007`.
 
-### 2.5 Coverage (⚠️ belum memenuhi ≥ 80 %)
+### 2.5 Coverage (✅ gate ≥ 80 % tercapai)
 
-`go test -cover ./...` per modul (2026-09-19):
+Gate di `scripts/b4-verify.sh` langkah 1 kini menjalankan pengukuran dengan
+`export ADATRACK_IT=1`, sehingga suite integrasi PostgreSQL/NATS/Redis
+(opt-in, pola yang sama dengan `worker-persistence`/`worker-live`) ikut
+dihitung. Hasil per modul (2026-09-21):
 
-| Modul | Coverage | Catatan |
+| Modul | Coverage | Isi suite |
 |---|---|---|
-| `internal` (pkg utama) | 42,3 % | `internal/storage` 100 %, `internal/tenant` 8,5 % (pool/routing butuh DB nyata) |
-| `services/service-websocket/controllers` | **67,1 %** | auth/RBAC/WS/audit |
-| `services/worker-live/controllers` | 13,2 % | logika murni tertutup; flush Redis/state machine belum |
-| `services/worker-persistence/controllers` | 34,2 % | batching tertutup; jalur COPY/retry belum |
-| `services/worker-alert/controllers` | 5,7 % | geometri/threshold tertutup; evaluator + notifier belum |
-| `services/api-vehicle/controllers` | 18,3 % | handler + fake store; `store_pg*.go` belum |
-| `services/ingestion-tcp/controllers` | 48,3 % | parser GT06/Teltonika golden test |
+| `internal/tenant` | **80,8 %** (sebelumnya 8,5 %) | IT nyata: routing pool, `ResolveDeviceByIMEI` + cache Redis, Health, provisioning tenant + idempotensi + ledger (`internal/tenant/tenant_it_test.go`) |
+| `internal/storage` | 100 % | unit |
+| `internal` (pkg utama) | 42,3 % | config/env/logging (di luar gate: gate mengukur max antar-paket) |
+| `services/worker-live/controllers` | **86,8 %** | hermetic + IT (`ADATRACK_IT=1`) |
+| `services/worker-persistence/controllers` | **91,1 %** | hermetic + IT |
+| `services/worker-alert/controllers` | **84,2 %** (sebelumnya 5,7 %) | engine/notifier/detektor hermetic (`alert_*_test.go`, miniredis) + IT `store_pg` (`store_pg_it_test.go`) |
+| `services/api-vehicle/controllers` | **80,0 %** (sebelumnya 18,3 %) | handler hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`, `http_test.go`, `handlers_update_restore_test.go`, dsb.) |
+| `services/service-websocket/controllers` | 66,9 % | auth/RBAC/WS/audit — **di luar daftar gate** (loop coverage b4-verify mencakup internal + 4 worker/api) |
+| `services/ingestion-tcp/controllers` | 48,3 % | parser GT06/Teltonika golden test — di luar daftar gate |
 
-Penyebab utama: berkas lapisan DB/Redis (`store_pg*.go`, `internal/tenant` pool)
-hanya diverifikasi lewat E2E live, bukan unit test bermock. Rencana penutup gap
-(belum dikerjakan, tidak dicentang): mock store untuk `worker-live`
-flush/state-machine, `worker-persistence` batch+retry, `worker-alert`
-evaluator/notifier, dan handler `api-vehicle` yang belum teruji.
+Semua suite IT menulis fixture ber-marka unik dan membersihkannya di
+`t.Cleanup` (dataset dev tidak tertinggal artefak — diverifikasi 0 baris
+sisa setelah run). Menjalankan ulang:
+
+```bash
+ADATRACK_IT=1 scripts/test.sh        # semua modul + suite IT
+ADATRACK_IT=1 make b4-verify QUICK=1 # gate B4 dengan coverage IT
+```
 
 ### 2.6 Monitoring & Observability
 
@@ -167,6 +175,9 @@ evaluator/notifier, dan handler `api-vehicle` yang belum teruji.
 - **Run QUICK setelah perbaikan** (`logs/b4-verify-20260919T080822Z.log`):
   **15 PASS / 0 FAIL — `B4-VERIFY: ALL PASS`**, termasuk
   `audit trail live append (9 -> 10)` dan `scripts/test.sh exit 0 all modules`.
+- **Run QUICK dengan coverage IT** (2026-09-21): **15 PASS / 0 FAIL** —
+  langkah 1 kini mengukur coverage dengan `ADATRACK_IT=1` (lihat §2.5);
+  lima modul yang di-gate ≥ 80 % tanpa WARN.
 
 - **Penyebab FAIL awal:** langkah 8 mengirim password uji `wrong` (5 karakter) →
   ditolak validasi input (§8.5, minimum 8 karakter) sebagai `400 VALIDATION_ERROR`
@@ -197,16 +208,16 @@ make retention-purge                           # dry-run (APPLY=1 untuk drop)
 
 ## 4. Gap yang Tersisa (belum dicentang)
 
-1. **Coverage ≥ 80 % service inti** — diukur apa adanya di §2.5; butuh mock store
-   untuk lapisan DB/Redis (worker-live, worker-persistence, worker-alert,
-   api-vehicle).
-2. **Endurance 24 jam penuh** — **1 jam kumulatif terbukti** (6 chunk × 600 s,
+1. **Endurance 24 jam penuh** — **1 jam kumulatif terbukti** (6 chunk × 600 s,
    1.438.418 pesan, 0 loss/chunk, plateau heap+goroutine, jejak resume
    `logs/b4-endurance-*/resume.log`); eksekusi 24 jam penuh belum dijalankan di
    environment ini — jalurnya siap
    (`B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`).
-3. **Drill replika PostgreSQL/Redis + failover** (§13) — belum dijalankan di
+2. **Drill replika PostgreSQL/Redis + failover** (§13) — belum dijalankan di
    environment lokal (butuh stack replika); prosedur ada di
    `docs/HIGH_AVAILABILITY.md`.
-4. **Load WS 50×1200 subscriber** (§16) — belum dijalankan sesi ini (harness WS
+3. **Load WS 50×1200 subscriber** (§16) — belum dijalankan sesi ini (harness WS
    tersedia di `tools/e2ews`).
+4. **Coverage di luar gate** — `service-websocket` 66,9 % dan `ingestion-tcp`
+   48,3 % tidak termasuk loop coverage `b4-verify`; bisa dinaikkan menyusul
+   (bukan bagian target gate ≥ 80 % service inti).

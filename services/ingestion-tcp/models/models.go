@@ -96,9 +96,9 @@ type TelemetryMessage struct {
 	AlarmCode uint8  `json:"alarm_code,omitempty"`
 	// AlarmLBS marks a GT06 0x19 LBS alarm packet (no GPS fix, no alarm reason
 	// byte) so worker-alert can trigger the SOS life-cycle for it too (B3).
-	AlarmLBS  bool   `json:"alarm_lbs,omitempty"`
-	Fix       bool   `json:"fix,omitempty"`
-	Timestamp int64  `json:"timestamp"`
+	AlarmLBS  bool  `json:"alarm_lbs,omitempty"`
+	Fix       bool  `json:"fix,omitempty"`
+	Timestamp int64 `json:"timestamp"`
 
 	// Fuel sensor fields (B5a) — pointers so "absent" is distinguishable from 0.
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`

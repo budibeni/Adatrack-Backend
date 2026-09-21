@@ -13,7 +13,7 @@ Backend **Real-Time GPS Tracking & Fleet Management Platform** — multi-tenant 
 | **B2** | `service-websocket`: REST + WebSocket + RBAC + auto-provision tenant | ✅ Selesai |
 | **B3** | `worker-alert` + `api-vehicle`: alarm engine (GEOFENCE/OVERSPEEDING/SOS/BATTERY/OFFLINE/ROUTE_DEVIATION + notifikasi) & fleet CRUD (vehicles/geofences/routes/assignments/speed-configs + soft delete/restore + RBAC row-level) | ✅ Selesai |
 | **B5a** | Fuel sensor end-to-end (kanal `0x0D`/AVL IO, `th_fuel_logs`, alert FUEL_DROP/REFUEL, REST overlay live-state) | ✅ Selesai |
-| **B4** | Performance, monitoring, testing, hardening (load 400→2000 msg/s 0 loss, query SLA, Prometheus+Grafana+alert, backup/restore, retensi) | 🟡 Sebagian — lihat [`docs/B4-VERIFICATION.md`](docs/B4-VERIFICATION.md) (gap: coverage ≥80%, endurance 24 jam penuh, drill replika) |
+| **B4** | Performance, monitoring, testing, hardening (load 400→2000 msg/s 0 loss, query SLA, Prometheus+Grafana+alert, backup/restore, retensi) | 🟡 Sebagian — lihat [`docs/B4-VERIFICATION.md`](docs/B4-VERIFICATION.md) (coverage gate ≥80% ✅; gap: endurance 24 jam penuh, drill replika, load WS 50×1200) |
 | B5b, B6–B12 | Dashcam media, fleet core, protokol tambahan, normalisasi, governance, modul enterprise |  Planned |
 
 Verifikasi B2 (2026-09-15): `make e2e-ws` **21/21 PASS** (push WS end-to-end 4 ms), provisioning FR-5.5/FR-5.6 **31/31 PASS**, `make test -race` bersih.
