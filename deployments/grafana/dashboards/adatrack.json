@@ -2,18 +2,70 @@
   "uid": "adatrack-system-monitoring",
   "title": "Adatrack SLO Dashboard",
   "timezone": "browser",
+  "schemaVersion": 16,
+  "version": 2,
   "panels": [
     {
+      "id": 1,
       "type": "stat",
-      "title": "Total Messages Processed",
+      "title": "Dummy Active Users (Simulation)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
       "targets": [
-        {
-          "expr": "time() % 5000",
-          "refId": "A"
+        { "expr": "time() % 5000", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 4000 }
+            ]
+          }
         }
+      },
+      "options": {
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Postgres Memory Usage (Live)",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "container_memory_usage_bytes{name=\"adatrack_postgres_local\"}", "refId": "A", "legendFormat": "Memory (Bytes)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Node CPU Load (Live)",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "node_load1", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 4
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "NATS Message Broker CPU (Live)",
+      "gridPos": { "h": 6, "w": 18, "x": 6, "y": 6 },
+      "targets": [
+        { "expr": "rate(container_cpu_usage_seconds_total{name=\"adatrack_nats_local\"}[1m])", "refId": "A", "legendFormat": "CPU Cores" }
       ]
     }
-  ],
-  "schemaVersion": 16,
-  "version": 1
+  ]
 }
