@@ -50,11 +50,10 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 }
 
-// EnsurePlatformAdminMiddleware ensures that only platform admins can access the route.
 func EnsurePlatformAdminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := r.Context().Value(ClaimsKey).(*Claims)
-		if !ok || claims.CompanyCode != "DEFAULT" || claims.Role != "SUPER_ADMIN" {
+		if !ok || claims.CompanyCode != "DEFAULT" || (claims.Role != "SUPER_ADMIN" && claims.Role != "ADMIN") {
 			http.Error(w, "PLATFORM_SCOPE required", http.StatusForbidden)
 			return
 		}
@@ -71,7 +70,7 @@ func RequireRoleMiddleware(roles ...string) func(http.Handler) http.Handler {
 				return
 			}
 			for _, role := range roles {
-				if claims.Role == role {
+				if strings.EqualFold(claims.Role, role) {
 					next.ServeHTTP(w, r)
 					return
 				}
