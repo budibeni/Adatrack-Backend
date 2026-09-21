@@ -178,6 +178,13 @@ ADATRACK_IT=1 make b4-verify QUICK=1 # gate B4 dengan coverage IT
 - **Run QUICK dengan coverage IT** (2026-09-21): **15 PASS / 0 FAIL** —
   langkah 1 kini mengukur coverage dengan `ADATRACK_IT=1` (lihat §2.5);
   lima modul yang di-gate ≥ 80 % tanpa WARN.
+- **Run FULL setelah fix drain worker-alert + gate coverage IT**
+  (2026-09-21, run `b4-verify-20260921T164334Z.log`): **17 PASS / 0 FAIL —
+  `B4-VERIFY: ALL PASS`** — coverage gate 5/5 modul ≥ 80 % tanpa WARN, load
+  400/1000/2000 (0 loss), endurance 6 chunk **1.438.599 pesan (0 loss/chunk)**,
+  multi-tenant LOADT2 (0 leakage), query SLA, monitoring stack, hardening
+  (audit 0 -> 1), backup-db + restore drill row-count match + backup-redis +
+  retention dry-run.
 
 - **Penyebab FAIL awal:** langkah 8 mengirim password uji `wrong` (5 karakter) →
   ditolak validasi input (§8.5, minimum 8 karakter) sebagai `400 VALIDATION_ERROR`
