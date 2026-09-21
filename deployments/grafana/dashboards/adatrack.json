@@ -1,4 +1,5 @@
 {
+  "uid": "adatrack-system-monitoring",
   "title": "Adatrack SLO Dashboard",
   "timezone": "browser",
   "panels": [
