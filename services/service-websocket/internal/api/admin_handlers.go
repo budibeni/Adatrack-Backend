@@ -381,3 +381,41 @@ func (h *Handler) AdminUpdateTenantModules(w http.ResponseWriter, r *http.Reques
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "message": "Modules updated successfully"})
 }
+
+// ListRoles returns a list of all global roles
+func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
+	db := dbclient.GetPool()
+	if db == nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "Database not initialized"})
+		return
+	}
+
+	rows, err := db.Query(r.Context(), "SELECT code, name, description FROM adatrack_gps_master.tm_roles ORDER BY id ASC")
+	if err != nil {
+		utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch roles"})
+		return
+	}
+	defer rows.Close()
+
+	type Role struct {
+		Code        string `json:"code"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+
+	var roles []Role
+	for rows.Next() {
+		var r Role
+		var desc *string
+		if err := rows.Scan(&r.Code, &r.Name, &desc); err == nil {
+			if desc != nil {
+				r.Description = *desc
+			}
+			roles = append(roles, r)
+		}
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"data": roles,
+	})
+}
