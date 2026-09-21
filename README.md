@@ -12,7 +12,9 @@ Backend **Real-Time GPS Tracking & Fleet Management Platform** — multi-tenant 
 | **B1** | Pipeline data: `ingestion-tcp` · `worker-live` · `worker-persistence` | ✅ Selesai |
 | **B2** | `service-websocket`: REST + WebSocket + RBAC + auto-provision tenant | ✅ Selesai |
 | **B3** | `worker-alert` + `api-vehicle`: alarm engine (GEOFENCE/OVERSPEEDING/SOS/BATTERY/OFFLINE/ROUTE_DEVIATION + notifikasi) & fleet CRUD (vehicles/geofences/routes/assignments/speed-configs + soft delete/restore + RBAC row-level) | ✅ Selesai |
-| B4–B12 | Fuel, dashcam, fleet core, hardening, protokol tambahan, dll. | ⬜ Planned |
+| **B5a** | Fuel sensor end-to-end (kanal `0x0D`/AVL IO, `th_fuel_logs`, alert FUEL_DROP/REFUEL, REST overlay live-state) | ✅ Selesai |
+| **B4** | Performance, monitoring, testing, hardening (load 400→2000 msg/s 0 loss, query SLA, Prometheus+Grafana+alert, backup/restore, retensi) | 🟡 Sebagian — lihat [`docs/B4-VERIFICATION.md`](docs/B4-VERIFICATION.md) (gap: coverage ≥80%, endurance 24 jam penuh, drill replika) |
+| B5b, B6–B12 | Dashcam media, fleet core, protokol tambahan, normalisasi, governance, modul enterprise |  Planned |
 
 Verifikasi B2 (2026-09-15): `make e2e-ws` **21/21 PASS** (push WS end-to-end 4 ms), provisioning FR-5.5/FR-5.6 **31/31 PASS**, `make test -race` bersih.
 Verifikasi B3 (2026-09-16): `scripts/test.sh` **exit 0 semua modul** (unit test geometri Haversine/ray-casting, konfigurasi speed & grace band, RBAC row-level, lifecycle acknowledge/resolve, validasi geometri + pagination); migrasi company `008–012` idempoten & ledger-audited. E2E live per-alert mengikuti setelah infra compose tersedia.
@@ -141,6 +143,9 @@ Template lengkap + penjelasan tiap variabel: [`.env.example`](.env.example). Yan
 | PostgreSQL | `5432` (host `5533`) | Master + schema per-tenant |
 | Redis | `6379` (host `6380`) | Live state, auth, rate limit |
 | NATS | `4222` (monitor `8222`) | JetStream bus |
+| Prometheus (B4) | `9095` | Scrape service `/metrics` + rules SLO/alert |
+| Grafana (B4) | `3001` | Dashboard **ADATRACK Core** (uid `adatrack-core`) |
+| Alertmanager (B4) | `9093` | Routing alert Prometheus |
 
 ## Make Targets
 
@@ -157,6 +162,14 @@ make fmt / vet        # gofmt / go vet semua modul
 make services-up / services-down   # jalankan/stop services di host
 make e2e              # E2E pipeline (frame → NATS → Redis + PG)
 make e2e-ws           # E2E REST + WS (login → RBAC → live push)
+# B4 — performance, monitoring, hardening, DR
+make b4-verify        # rantai acceptance B4 (QUICK=1 untuk smoke cepat)
+make monitoring-up / monitoring-down   # stack Prometheus+Alertmanager+Grafana
+make prom-targets     # regenerate file_sd targets (monitoring/targets/*.json)
+make querybench CODE=DEV001            # SLA query (30 hari < 1,5 s)
+make backup-db / backup-redis          # dump PG per schema / snapshot Redis
+make restore-db STAMP=backups/<ts>/<stamp>   # drill restore (checksum + row count)
+make retention-purge                   # retensi partisi telemetry (APPLY=1 eksekusi)
 ```
 
 ## API & WebSocket (ringkas)

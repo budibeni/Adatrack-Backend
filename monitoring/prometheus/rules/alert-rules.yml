@@ -1,0 +1,95 @@
+# ADATRACK alert rules (B4, PRD §10.3). Severity: warning/page, runbook: docs/INCIDENT_RUNBOOK.md.
+groups:
+  - name: adatrack-alerts
+    interval: 30s
+    rules:
+      - alert: TCPConnectionsNearLimit
+        expr: tcp_connections_active > 4500
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "TCP connections > 90% of 5000 limit — scale ingestion"
+      - alert: NATSPendingCritical
+        expr: nats_pending_messages > 9000
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "NATS pending > 90% max — page on-call, check persistence"
+      - alert: NATSPendingWarning
+        expr: nats_pending_messages > 5000
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "NATS pending > 50% max — watch worker-persistence lag"
+      - alert: InsertLatencyCritical
+        expr: histogram_quantile(0.95, rate(postgres_insert_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Batch insert p95 > 10s — check DB, query optimization"
+      - alert: TenantResolutionSlow
+        expr: histogram_quantile(0.95, rate(tenant_resolution_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Tenant resolution p95 > 500ms — master DB slow"
+      - alert: TenantLookupErrors
+        expr: rate(tenant_lookup_errors_total[5m]) / (rate(tenant_lookups_total[5m]) + 1e-9) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Tenant lookup error > 5% — unregistered IMEI flood?"
+      - alert: WSBroadcastSlow
+        expr: histogram_quantile(0.95, rate(ws_broadcast_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "WS broadcast p95 > 1s — network; may drop users"
+      - alert: HTTPLatencyCritical
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.8
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "HTTP p95 > 800ms at peak — bottleneck DB/Redis/NATS/broadcast"
+      - alert: ErrorRateHigh
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / (sum(rate(http_requests_total[5m])) + 1e-9) > 0.05
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "HTTP 5xx rate > 5% — investigate root cause"
+      - alert: NotificationFailureHigh
+        expr: rate(notification_errors_total[5m]) / (rate(notifications_sent_total[5m]) + 1e-9) > 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Notification failure > 5% — SMTP/SMS gateway"
+      - alert: NotificationRetryExhausted
+        expr: rate(notification_retry_total[5m]) * 60 > 10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Notification retry exhausted > 10/min — provider rate limit"
+      - alert: GoroutineLeakSuspect
+        expr: adatrack_goroutines - (adatrack_goroutines offset 1h) > 50
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "goroutines keep growing after peak — suspect leak (FR-4.4)"
+      - alert: HeapGrowthSuspect
+        expr: adatrack_memory_allocated_bytes - (adatrack_memory_allocated_bytes offset 1h) > 500000000
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "heap keeps growing during endurance — suspect memory leak (FR-4.4)"
+      - alert: DeadLetterRising
+        expr: rate(deadletter_total[5m]) * 60 > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "dead-letter rate rising — check audit/delivery failures"
+      - alert: CompanyDBPoolExhaustion
+        expr: postgres_pool_connections_in_use / (postgres_pool_connections_open + 1e-9) > 0.9
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "DB pool in-use > 90% — scale/investigate stuck pool"

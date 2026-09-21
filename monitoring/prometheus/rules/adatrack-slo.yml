@@ -1,0 +1,23 @@
+# ADATRACK SLO recording rules (B4, PRD §10.2): uptime >= 99.9%, error budget 0.001 + burn-rate alerts.
+groups:
+  - name: adatrack-slo
+    interval: 1m
+    rules:
+      - record: slo:http_availability_5m
+        expr: 1 - (sum(rate(http_requests_total{status=~"5.."}[5m])) / (sum(rate(http_requests_total[5m])) + 1e-9))
+      - record: slo:http_availability_30d
+        expr: 1 - (sum(increase(http_requests_total{status=~"5.."}[30d])) / (sum(increase(http_requests_total[30d])) + 1e-9))
+      - record: slo:error_budget_remaining
+        expr: 0.001 - (1 - slo:http_availability_30d)
+      - alert: SLOFastBurn
+        expr: slo:http_availability_5m < 0.999
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Fast burn: 5m availability below 99.9% SLO — page on-call"
+      - alert: SLOBudgetExhausted
+        expr: slo:error_budget_remaining < 0
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "30d error budget exhausted — post-mortem required"

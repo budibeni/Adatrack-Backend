@@ -1,0 +1,134 @@
+# ============================================================================
+# ADATRACK — Monitoring stack (B4, PRD §10.4 / §14.1)
+# ============================================================================
+# Prometheus + Alertmanager + Grafana + exporters (node/cAdvisor/postgres/redis).
+# Usage:
+#   docker compose -f docker-compose.yml -f monitoring/docker-compose.monitoring.yml \
+#       --env-file .env.local up -d            # LOCAL (+ core infra)
+# Host ports (127.0.0.1 only, LOCAL): Prometheus 9095, Alertmanager 9093,
+# Grafana 3001, postgres-exporter 9187, redis-exporter 9121.
+# Coolify: publish via proxy / internal network per deployments/docker-compose.coolify.yml.
+# Targets: monitoring/prometheus/prometheus.yml (file_sd services.json + static exporters).
+# Rules: monitoring/prometheus/rules/adatrack-slo.yml + alert-rules.yml (PRD §10.3).
+# Dashboard: monitoring/grafana/dashboards/adatrack-core.json (uid adatrack-core).
+# ============================================================================
+name: adatrack_gps_monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: adatrack_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:${HOST_PROM_PORT:-9095}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - ./targets:/etc/prometheus/targets:ro
+      - promdata:/prometheus
+    # Host-run pipeline services (scripts/start-services.sh) listen on the host
+    # loopback; `host.docker.internal` (host-gateway) makes them scrapeable from
+    # inside this container. monitoring/targets/services.json is generated with
+    # PROM_SCRAPE_HOST=host.docker.internal (see `make monitoring-up`).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [adatrack]
+    depends_on:
+      - postgres-exporter
+      - redis-exporter
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: adatrack_alertmanager
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    ports:
+      - "127.0.0.1:${HOST_ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertdata:/alertmanager
+    networks: [adatrack]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: adatrack_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${HOST_GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    networks: [adatrack]
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: adatrack_node_exporter
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${HOST_NODE_EXPORTER_PORT:-9100}:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    networks: [adatrack]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: adatrack_cadvisor
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "127.0.0.1:${HOST_CADVISOR_PORT:-8084}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [adatrack]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: adatrack_postgres_exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-adatrack}:${POSTGRES_PASSWORD:-adatrack_dev_pw}@postgres:5432/${POSTGRES_DB:-adatrack_gps_db}?sslmode=disable
+    ports:
+      - "127.0.0.1:${HOST_PG_EXPORTER_PORT:-9187}:9187"
+    networks: [adatrack]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: adatrack_redis_exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    ports:
+      - "127.0.0.1:${HOST_REDIS_EXPORTER_PORT:-9121}:9121"
+    networks: [adatrack]
+
+volumes:
+  promdata:
+  alertdata:
+  grafanadata:
+
+networks:
+  adatrack:
+    name: adatrack_gps_net
+    external: true

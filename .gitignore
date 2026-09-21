@@ -1,3 +1,10 @@
+# Editor/IDE workspace files (machine-specific).
+/.vscode/
+
+# Compiled tool binaries (build with `go build`; never commit).
+/tools/querybench/querybench
+
+
 # Build artifacts
 /bin/
 /logs/
@@ -21,6 +28,9 @@ vendor/
 *.log
 tmp/
 .pgdata/
+
+# B4 backup/DR artifacts (dump + checksum are environment-specific; never commit).
+/backups/
 
 # Secrets: never commit credentials (§9.5). `.env.local` (dev defaults) and
 # `.env.coolify` (production placeholders) are NOT tracked: copy the tracked

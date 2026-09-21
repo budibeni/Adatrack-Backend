@@ -7,10 +7,10 @@
 SHELL := /bin/bash
 ROOT  := $(shell cd . && pwd)
 VARIANT ?= local
-MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/foundation-check tools/e2e tools/e2ews
+MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/foundation-check tools/e2e tools/e2ews tools/querybench
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws clean
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -67,5 +67,37 @@ e2e-ws: ## End-to-end REST + WebSocket test (login → RBAC → live push, B2)
 	@scripts/e2e-websocket.sh
 
 clean: ## Remove build artifacts
-	@rm -rf bin logs/*.log logs/pids monitoring/targets/services.json
+	@rm -rf bin logs/*.log logs/pids monitoring/targets/*.json
 	@echo "clean: ok"
+
+# --- B4: performance, monitoring, hardening, DR (PRD §10–§13, §16–§17) -------
+
+monitoring-up: ## Start the monitoring stack (Prometheus/Alertmanager/Grafana/exporters)
+	@scripts/gen-prom-targets.sh >/dev/null
+	@docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.$(VARIANT) up -d
+	@echo "monitoring-up: Prometheus :${HOST_PROM_PORT:-9095} — Alertmanager :9093 — Grafana :3001 (dashboard uid adatrack-core)"
+
+monitoring-down: ## Stop the monitoring stack
+	@docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.$(VARIANT) down
+
+prom-targets: ## Regenerate Prometheus file_sd targets from the service ports
+	@scripts/gen-prom-targets.sh
+
+b4-verify: ## Run the B4 acceptance chain (QUICK=1 for a fast smoke)
+	@test -n "$(QUICK)" && scripts/b4-verify.sh --quick || scripts/b4-verify.sh
+
+backup-db: ## Daily PostgreSQL backup (dump per schema + SHA256)
+	@scripts/backup-db.sh
+
+restore-db: ## Restore drill: make restore-db STAMP=backups/b4-*/<stamp>
+	@test -n "$(STAMP)" || { echo "STAMP is required, e.g. make restore-db STAMP=backups/<ts>"; exit 1; }
+	@scripts/restore-db.sh "$(STAMP)"
+
+backup-redis: ## Redis BGSAVE snapshot backup (best-effort)
+	@scripts/backup-redis.sh
+
+retention-purge: ## Retention sweep of telemetry partitions (APPLY=1 to drop)
+	@test -n "$(APPLY)" && scripts/retention-purge.sh --apply || scripts/retention-purge.sh
+
+querybench: ## Query SLA bench (30-day history < 1.5 s, geofence < 500 ms)
+	@(cd tools/querybench && go run . --company=$(or $(CODE),DEV001))

@@ -2,7 +2,12 @@
 
 Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
-> **PROGRESS 2026-09-16:** **B0 ✅**, **B1 ✅**, **B2 ✅**, dan **B3 ✅** selesai
+> **PROGRESS 2026-09-19:** **B0 ✅**, **B1 ✅**, **B2 ✅**, **B3 ✅**, **B5a ✅** selesai,
+> dan **B4 🟡 sebagian** (performance/monitoring/hardening/DR terverifikasi nyata —
+> load 400/1000/2000 msg/s **0 data loss**, SLA query 24–32 ms, Prometheus+Grafana+20 rule,
+> backup/restore drill row-count match, retensi partisi; **gap**: coverage ≥80% service inti,
+> endurance 24 jam penuh, drill replika). Bukti: `docs/B4-VERIFICATION.md`.
+> Fase berikutnya: **B5b / B6 / B7**.
 > (compose/migrations/`internal`/`foundation-check` + pipeline ingestion-tcp →
 > worker-live → worker-persistence: load 1000 msg/s tanpa data loss, isolasi
 > tenant 0 leakage, unit+integration test hijau; **service-websocket**: login
@@ -29,9 +34,9 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | `backend/services/ingestion-tcp`, `backend/services/worker-live`, `backend/services/worker-persistence` | ✅ Selesai 2026-09-15 |
 | **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ✅ Selesai 2026-09-15 |
 | **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai 2026-09-16 (live DB drift diperbaiki, migrasi `020`+`013`) |
-| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ⬜ Belum dimulai |
+| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ✅ Selesai (unit + REST overlay; E2E live fuel menyusul) |
 | **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ⬜ Belum dimulai |
-| **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | ⬜ Belum dimulai |
+| **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | 🟡 Sebagian (2026-09-19) — load 400→2000 msg/s 0 loss, SLA query, monitoring stack + rule SLO/alert, backup/restore drill, retensi; **gap**: coverage ≥80% service inti, endurance 24 jam penuh, drill replika, load WS 50×1200. Bukti: `docs/B4-VERIFICATION.md` |
 | **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` | ⬜ Belum dimulai |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ⬜ Belum dimulai |
 | **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert` | ⬜ Planned |

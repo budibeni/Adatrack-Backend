@@ -114,17 +114,32 @@ func (p *Persister) Start() (*nats.Subscription, error) {
 	return p.nats.Subscribe(p.nats.Subject("raw", ">"), "persistence", p.handleMessage)
 }
 
-// Stop drains the buffer: the final batch is written before returning so an
+// Stop drains the buffers: the final batch is written before returning so an
 // acknowledged message is never lost on shutdown (graceful shutdown, FR-3.1).
+//
+// The drain runs BEFORE p.cancel() because the insert path uses the worker
+// context: cancelling first would make the final INSERT fail with
+// "context canceled" and dead-letter rows that were already acknowledged
+// (B4 acceptance finding). Fuel rows are drained too — the B5a buffer must not
+// be dropped on shutdown (FR-7.4).
 func (p *Persister) Stop() {
-	p.cancel()
 	p.mu.Lock()
 	snapshot := p.pending
 	p.pending = nil
+	pendingRows.Set(0)
+	fuel := p.fuelPending
+	p.fuelPending = nil
+	fuelRowsPending.Set(0)
 	p.mu.Unlock()
+
 	if len(snapshot) > 0 {
 		p.persist(companyGroups(snapshot))
 	}
+	if len(fuel) > 0 {
+		p.persistFuel(fuelGroups(fuel))
+	}
+
+	p.cancel()
 	done := make(chan struct{})
 	go func() {
 		p.wg.Wait()

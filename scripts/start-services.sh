@@ -23,7 +23,7 @@ load_variant_env "${COMPOSE_VARIANT:-local}"
 
 LOG_DIR="$ROOT/logs"
 PID_DIR="$LOG_DIR/pids"
-TARGETS_FILE="$ROOT/monitoring/targets/services.json"
+TARGETS_FILE="$ROOT/monitoring/targets/adatrack-services.json"
 SERVICES=(ingestion-tcp worker-live worker-persistence worker-alert service-websocket api-vehicle)
 
 # Host-side overrides: published infra ports + loopback hosts.

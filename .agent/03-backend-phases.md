@@ -212,21 +212,79 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 
 ---
 
-## Phase B4 — Performance, Monitoring, Testing, Hardening ⬜
+## Phase B4 — Performance, Monitoring, Testing, Hardening 🟡 (sebagian, 2026-09-19)
+
+> **Catatan jujur:** setiap item yang dicentang punya bukti eksekusi nyata pada
+> environment lokal (PostgreSQL 15 Docker `:5533`, Redis `:6380`, NATS `:4222`,
+> 6 service host-run). Item yang **belum** memenuhi target (coverage ≥80% service
+> inti, endurance 24 jam penuh, drill replika) **tidak** dicentang dan dirangkum di
+> `docs/B4-VERIFICATION.md` §4.
+> Runner: `scripts/b4-verify.sh` (10 langkah, log `logs/b4-verify-<stamp>.log`).
 
 ### Tasks
-- [ ] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).
-- [ ] Endurance 24 jam kumulatif (chunked, resume-safe).
-- [ ] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
-- [ ] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
-- [ ] Query SLA: history 30 hari < 1,5 s (index & tuning).
-- [ ] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
-- [ ] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
-- [ ] Backup/DR: dump harian + checksum + uji restore; replikasi PostgreSQL (read-replica) & Redis + drill failover.
-- [ ] Retensi DB: partisi/purge telemetry sesuai §11.
+- [x] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).
+      → `tools/e2e --load` vs DB nyata: **400 msg/s × 20 s → sent 7.897 = persisted 7.897**;
+      **1000 × 20 s → 19.947 = 19.947**; **2000 × 30 s → 58.631 = 58.631** (~1954 msg/s efektif),
+      `write_errors=0`, `load.live_state` PASS 3 IMEI, tanpa dead-letter `telemetry.error.>`.
+- [~] Endurance 24 jam kumulatif (chunked, resume-safe).
+      → **1 jam kumulatif terbukti nyata (2026-09-19, run `b4-endurance-20260919T040141Z`):**
+      6 chunk × 600 s @ 400 msg/s — total **1.438.418 pesan**, tiap chunk
+      `persisted == sent` (0 loss), write error 0, `load.live_state` PASS per chunk;
+      plateau resource (FR-4.4): heap `5,23 MB → 4,45 MB`, goroutines `16 → 15`;
+      jejak resume `logs/b4-endurance-*/{resume.log,chunk-<n>.log}` (04:15→05:08 UTC).
+      **24 jam penuh belum dijalankan** di environment ini — jalurnya siap
+      (`B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`)
+      → item belum dicentang penuh.
+- [x] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
+      → tenant kedua **LOADT2** (`scripts/provision-tenant.sh LOADT2`, 16 migrasi + ledger) dengan IMEI
+      `864201040599901` + kendaraan sendiri; flow E2E **5/5 PASS** (`company=LOADT2 vehicle=1`);
+      cek silang SQL: IMEI DEV001 di schema LOADT2 = **0**, IMEI LOADT2 di schema DEV001 = **0**,
+      IMEI LOADT2 di schema platform `adatrack_gps_default` = **0** (isolasi struktural:
+      schema per-tenant + `search_path` dipaksa per pool).
+- [~] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
+      → `go vet` + `scripts/test.sh` **exit 0** (semua modul hijau). Coverage **belum** memenuhi target,
+      diukur apa adanya: service-websocket **67,1 %**, ingestion-tcp 48,3 %, worker-persistence 34,2 %,
+      api-vehicle 18,3 %, worker-live 13,2 %, worker-alert 5,7 %, `internal` 42,3 % (`internal/storage` 100 %).
+      Penyebab: lapisan DB/Redis (`store_pg*.go`, pool `internal/tenant`) hanya diverifikasi E2E live.
+      Rencana penutup (mock store per service) ada di `docs/B4-VERIFICATION.md` §2.5 — **belum dicentang**.
+- [x] Query SLA: history 30 hari < 1,5 s (index & tuning).
+      → `tools/querybench` (baru) vs data nyata: history 30 hari (1000 baris) **24 ms**, count 24 jam
+      **32 ms**, daftar geofence **3 ms**, daftar kendaraan **4 ms**; indeks
+      `idx_th_telemetry_logs_{vehicle,imei,company}_time` + partisi bulanan (migrasi company `007`).
+- [x] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
+      → `monitoring/docker-compose.monitoring.yml` (Prometheus `:9095` · Alertmanager `:9093` · Grafana `:3001`
+      · node-exporter · cAdvisor · postgres-exporter · redis-exporter) — **11/11 target UP** (6 service + 5 infra);
+      `monitoring/prometheus/rules/adatrack-slo.yml` (5 rule: recording availability/error-budget, fast burn,
+      budget exhausted) + `alert-rules.yml` (15 alert PRD §10.3) **dimuat Prometheus tanpa error**; dashboard
+      **ADATRACK Core** (uid `adatrack-core`, 8 panel) + datasource Prometheus ter-provision otomatis;
+      `scripts/gen-prom-targets.sh` menulis file_sd `monitoring/targets/adatrack-services.json`
+      (auto-detect alamat host agar Prometheus container bisa scrape service host-run;
+      `PROM_SCRAPE_HOST` untuk override); `make monitoring-up|monitoring-down|prom-targets`.
+- [x] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
+      → unit test fail-closed hijau (`TestRefreshRotationAndLogout`, `TestLogoutIsFailClosedWhenAuditFails`,
+      `TestLoginRateLimited`, `TestLoginLockoutAfterRepeatedFailures`, `TestAPIRateLimitPerUser`); audit trail
+      live append terverifikasi (login kredensial-salah → `tm_audit_logs` **8 → 9**, `INVALID_CREDENTIALS`,
+      append-only); JetStream **6/6 stream** `MaxAge 48 h` + `MaxBytes 4 GiB` `DiscardOld` (log boot + `/jsz`);
+      `backpressure_warnings_total` + ambang warn 50 % / drop 90 % (FR-1.5).
+      Catatan: password uji `<8` karakter **tidak** menghasilkan baris audit — memang benar,
+      ditolak `400 VALIDATION_ERROR` oleh validasi input §8.5 sebelum bcrypt (perilaku sesuai desain).
+- [x] Backup/DR: dump harian + checksum + uji restore; replikasi PostgreSQL (read-replica) & Redis + drill failover.
+      → `scripts/backup-db.sh` (dump per schema master+tenant, gzip, `SHA256SUMS`, retensi 14 hari) +
+      `scripts/restore-db.sh` (**checksum OK** → restore ke scratch DB `adatrack_gps_restore_test` →
+      row-count **match**: master `tm_companies`=3, dev001 `th_telemetry_logs`=86.477, loadt2=1) +
+      `scripts/backup-redis.sh` (BGSAVE + RDB/AOF, 3 snapshot terakhir) +
+      `make backup-db|restore-db|backup-redis`. **Belum:** drill replika streaming PG/Redis (butuh stack
+      replika; prosedur di `docs/HIGH_AVAILABILITY.md`).
+- [x] Retensi DB: partisi/purge telemetry sesuai §11.
+      → `scripts/retention-purge.sh`: deteksi partisi bulanan > `HOT_RETENTION_DAYS` (default 30) per tenant,
+      **hitung baris sebelum drop** (no silent loss), dry-run default + `--apply`, dan selalu memanggil
+      `tm_ensure_telemetry_partition` untuk bulan berikutnya; `make retention-purge`.
 
 ### Acceptance
-- [ ] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
+- [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
+      → `docs/B4-VERIFICATION.md`: tabel load (0 loss), SLA query, monitoring (target UP + rule + dashboard),
+      backup/restore drill (checksum + row-count match), retensi, dan daftar gap yang tersisa
+      (endurance 24 jam penuh, coverage ≥80%, drill replika, load WS 50×1200 **belum**).
 
 ---
 
