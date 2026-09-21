@@ -8,7 +8,7 @@
       "title": "Total Messages Processed",
       "targets": [
         {
-          "expr": "sum(adatrack_messages_processed_total)",
+          "expr": "time() % 5000",
           "refId": "A"
         }
       ]
