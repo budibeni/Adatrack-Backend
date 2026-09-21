@@ -60,6 +60,7 @@ func New(cfg *internal.Config, red *internal.RedisClient, nats *internal.NATSCli
 		engine:    NewEngine(cfg, red, nats, store),
 		caches:    map[string]*companyCache{},
 		companies: map[string]bool{},
+		fuelStash: map[string]*fuelStash{}, // first fuel frame must not panic (nil map write)
 		ctx:       ctx,
 		cancel:    cancel,
 	}

@@ -290,8 +290,8 @@ func (s *PostgresStore) InsertNotifications(ctx context.Context, company string,
 		}
 		if _, err := pool.DB.ExecContext(ctx, `
 INSERT INTO td_notifications (alert_id, user_id, channel, status, provider_response, error_reason, sent_at)
-VALUES ($1, $2, $3, $4, $5::jsonb, $6,
-        CASE WHEN $4 IN ('sent', 'delivered') THEN CURRENT_TIMESTAMP END)`,
+VALUES ($1, $2, $3, $4::varchar, $5::jsonb, $6,
+        CASE WHEN $4::varchar IN ('sent', 'delivered') THEN CURRENT_TIMESTAMP END)`,
 			r.AlertID, r.UserID, r.Channel, r.Status, resp, reason); err != nil {
 			return fmt.Errorf("store: insert notification: %w", err)
 		}
@@ -452,23 +452,25 @@ WHERE deleted_at IS NULL ORDER BY id`)
 }
 
 // UpsertFuelConfig inserts or updates the config row of one scope: the
-// tenant-wide default when cfg.VehicleID is 0, otherwise the vehicle override
-// (the partial unique indexes of migration 013 make the conflict target exact).
+// tenant-wide default when cfg.VehicleID is 0, otherwise the vehicle override.
+// Migration 013 keeps TWO partial unique indexes (vehicle_id IS NULL / IS NOT
+// NULL + deleted_at IS NULL), so the conflict target must quote the exact
+// predicate of the matching index — a single generic clause never infers.
 func (s *PostgresStore) UpsertFuelConfig(ctx context.Context, company string, cfg *models.FuelConfig, by int64) error {
 	pool, err := s.tenantPool(company)
 	if err != nil {
 		return err
 	}
-	var vehicleID any
+	conflict := `WHERE vehicle_id IS NULL AND deleted_at IS NULL`
 	if cfg.VehicleID != 0 {
-		vehicleID = cfg.VehicleID
+		conflict = `WHERE vehicle_id IS NOT NULL AND deleted_at IS NULL`
 	}
 	_, err = pool.DB.ExecContext(ctx, `
 INSERT INTO tm_fuel_configs (vehicle_id, drop_threshold_percent, refuel_threshold_percent,
                              window_seconds, alert_severity, require_acc, acc_stale_seconds,
                              enabled, created_by)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (vehicle_id) WHERE deleted_at IS NULL
+ON CONFLICT (vehicle_id) `+conflict+`
 DO UPDATE SET drop_threshold_percent = EXCLUDED.drop_threshold_percent,
               refuel_threshold_percent = EXCLUDED.refuel_threshold_percent,
               window_seconds = EXCLUDED.window_seconds,
@@ -478,12 +480,20 @@ DO UPDATE SET drop_threshold_percent = EXCLUDED.drop_threshold_percent,
               enabled = EXCLUDED.enabled,
               updated_by = EXCLUDED.created_by,
               updated_at = CURRENT_TIMESTAMP`,
-		vehicleID, cfg.DropThresholdPct, cfg.RefuelThresholdPct, cfg.WindowSeconds,
+		vehicleIDArg(cfg.VehicleID), cfg.DropThresholdPct, cfg.RefuelThresholdPct, cfg.WindowSeconds,
 		cfg.Severity, cfg.RequireACC, cfg.ACCStaleSeconds, cfg.Enabled, by)
 	if err != nil {
 		return fmt.Errorf("store: upsert fuel config: %w", err)
 	}
 	return nil
+}
+
+// vehicleIDArg maps 0 to SQL NULL (tenant-wide default row).
+func vehicleIDArg(v int64) any {
+	if v == 0 {
+		return nil
+	}
+	return v
 }
 
 // ActiveVehicles lists active vehicles (id + IMEI) of one company.

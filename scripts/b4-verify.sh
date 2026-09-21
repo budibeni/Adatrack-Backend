@@ -37,7 +37,9 @@ if "$ROOT/scripts/test.sh" >/dev/null 2>&1; then ok "scripts/test.sh exit 0 all 
 # holds with the PostgresStore suite counted).
 export ADATRACK_IT=1
 for mod in internal services/worker-live services/worker-persistence services/worker-alert services/api-vehicle; do
-  pct="$(cd "$ROOT/$mod" && go test -count=1 -cover ./... 2>/dev/null | awk '/coverage:/{for(i=1;i<=NF;i++) if($i~/[0-9.]+%/){gsub(/%/,"",$i); if($i+0>max) max=$i}} END{print max+0}')"
+  # NOTE: gsub() rebuilds the field as a pure string, so compare NUMERICALLY
+  # (max=$i+0) — a plain "max=$i" compared lexicographically ("8.5" > "100.0").
+  pct="$(cd "$ROOT/$mod" && go test -count=1 -cover ./... 2>/dev/null | awk '/coverage:/{for(i=1;i<=NF;i++) if($i~/[0-9.]+%/){gsub(/%/,"",$i); if($i+0>max+0) max=$i+0}} END{print max+0}')"
   echo "coverage: $mod ${pct}%"
   if awk "BEGIN{exit !((${pct:-0}+0) < 80)}"; then echo "coverage: WARN $mod below 80% (B4 target)"; fi
 done
