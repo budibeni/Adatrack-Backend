@@ -54,7 +54,7 @@ func AuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 func EnsurePlatformAdminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims, ok := r.Context().Value(ClaimsKey).(*Claims)
-		if !ok || claims.CompanyCode != "DEFAULT" || claims.Role != "SuperAdmin" {
+		if !ok || claims.CompanyCode != "DEFAULT" || claims.Role != "SUPER_ADMIN" {
 			http.Error(w, "PLATFORM_SCOPE required", http.StatusForbidden)
 			return
 		}

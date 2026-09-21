@@ -55,11 +55,23 @@ CREATE TABLE IF NOT EXISTS tm_companies (
     deleted_at TIMESTAMP WITH TIME ZONE
 );
 SET search_path TO adatrack_gps_master;
+CREATE TABLE IF NOT EXISTS tm_roles (
+    id SERIAL PRIMARY KEY,
+    company_code VARCHAR(50) REFERENCES tm_companies(code),
+    code VARCHAR(50) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_system BOOLEAN DEFAULT false,
+    permissions JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(company_code, code)
+);
+SET search_path TO adatrack_gps_master;
 CREATE TABLE IF NOT EXISTS tm_users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    global_role VARCHAR(50) NOT NULL,
     is_active BOOLEAN DEFAULT true,
     must_change_password BOOLEAN DEFAULT false,
     password_changed_at TIMESTAMP WITH TIME ZONE,
@@ -73,7 +85,6 @@ CREATE TABLE IF NOT EXISTS tm_users_b2c (
     id SERIAL PRIMARY KEY,
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL,
     phone VARCHAR(20),
     is_active BOOLEAN DEFAULT true,
     must_change_password BOOLEAN DEFAULT false,

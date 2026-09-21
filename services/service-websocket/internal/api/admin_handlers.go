@@ -77,18 +77,17 @@ func (h *Handler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 }
 
 type UserInfo struct {
-	ID          int    `json:"id"`
-	Email       string `json:"email"`
-	GlobalRole  string `json:"global_role"`
-	IsActive    bool   `json:"is_active"`
-	CreatedAt   string `json:"created_at"`
+	ID        int    `json:"id"`
+	Email     string `json:"email"`
+	IsActive  bool   `json:"is_active"`
+	CreatedAt string `json:"created_at"`
 }
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	rows, err := dbclient.Pool.Query(ctx, "SELECT id, email, global_role, is_active, created_at FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL ORDER BY created_at DESC")
+	rows, err := dbclient.Pool.Query(ctx, "SELECT id, email, is_active, created_at FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL ORDER BY created_at DESC")
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch users")
 		return
@@ -99,7 +98,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var u UserInfo
 		var t time.Time
-		if err := rows.Scan(&u.ID, &u.Email, &u.GlobalRole, &u.IsActive, &t); err == nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.IsActive, &t); err == nil {
 			u.CreatedAt = t.Format(time.RFC3339)
 			users = append(users, u)
 		}
@@ -111,7 +110,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 type AdminCreateUserRequest struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
-	GlobalRole  string `json:"global_role"`
+	RoleCode    string `json:"role_code"`
 	CompanyCode string `json:"company_code"`
 }
 
@@ -125,27 +124,27 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" || req.GlobalRole == "" {
+	if req.Email == "" || req.Password == "" || req.RoleCode == "" {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Email, password, and role are required")
 		return
 	}
 
-	if req.GlobalRole != "SuperAdmin" && req.CompanyCode == "" {
+	if req.RoleCode != "SUPER_ADMIN" && req.CompanyCode == "" {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Company code is required for non-SuperAdmin users")
 		return
 	}
 
 	hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	var newUserID int
-	err := dbclient.Pool.QueryRow(ctx, "INSERT INTO adatrack_gps_master.tm_users (email, password_hash, global_role) VALUES ($1, $2, $3) RETURNING id", req.Email, string(hash), req.GlobalRole).Scan(&newUserID)
+	err := dbclient.Pool.QueryRow(ctx, "INSERT INTO adatrack_gps_master.tm_users (email, password_hash) VALUES ($1, $2) RETURNING id", req.Email, string(hash)).Scan(&newUserID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create user. Email may already exist.")
 		return
 	}
 
-	if req.GlobalRole != "SuperAdmin" && req.CompanyCode != "" {
+	if req.RoleCode != "SUPER_ADMIN" && req.CompanyCode != "" {
 		schema := fmt.Sprintf("adatrack_gps_%s", req.CompanyCode)
-		_, err = dbclient.Pool.Exec(ctx, fmt.Sprintf("INSERT INTO %s.tm_user_company_access (user_id, role_override, is_active) VALUES ($1, $2, true)", schema), newUserID, req.GlobalRole)
+		_, err = dbclient.Pool.Exec(ctx, fmt.Sprintf("INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active) VALUES ($1, $2, true)", schema), newUserID, req.RoleCode)
 		if err != nil {
 			// Do not fail entirely if access creation fails, just log it. (Ideally use a transaction).
 			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "User created but failed to link to company schema.")

@@ -100,12 +100,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var userID int64
-	var hash, globalRole string
+	var hash string
 	var isActive, mustChange bool
 
 	err := dbclient.Pool.QueryRow(r.Context(),
-		"SELECT id, password_hash, global_role, is_active, must_change_password FROM adatrack_gps_master.tm_users WHERE email = $1 AND deleted_at IS NULL",
-		req.Email).Scan(&userID, &hash, &globalRole, &isActive, &mustChange)
+		"SELECT id, password_hash, is_active, must_change_password FROM adatrack_gps_master.tm_users WHERE email = $1 AND deleted_at IS NULL",
+		req.Email).Scan(&userID, &hash, &isActive, &mustChange)
 	if err != nil {
 		h.writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid credentials")
 		return
@@ -121,25 +121,25 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	role := globalRole
-	if globalRole != "SuperAdmin" || req.CompanyCode != "DEFAULT" {
-		schema := fmt.Sprintf("adatrack_gps_%s", req.CompanyCode)
-		var roleOverride *string
-		var companyActive bool
-		err = dbclient.Pool.QueryRow(r.Context(),
-			fmt.Sprintf("SELECT role_override, is_active FROM %s.tm_user_company_access WHERE user_id = $1 AND deleted_at IS NULL", schema),
-			userID).Scan(&roleOverride, &companyActive)
-		if err != nil {
-			h.writeError(w, http.StatusForbidden, "COMPANY_ACCESS_DENIED", "No access to this company")
-			return
-		}
-		if !companyActive {
-			h.writeError(w, http.StatusForbidden, "COMPANY_ACCESS_INACTIVE", "Company access is deactivated")
-			return
-		}
-		if roleOverride != nil && *roleOverride != "" {
-			role = *roleOverride
-		}
+	schema := fmt.Sprintf("adatrack_gps_%s", req.CompanyCode)
+	var roleCode *string
+	var companyActive bool
+	err = dbclient.Pool.QueryRow(r.Context(),
+		fmt.Sprintf("SELECT role_code, is_active FROM %s.tm_user_company_access WHERE user_id = $1 AND deleted_at IS NULL", schema),
+		userID).Scan(&roleCode, &companyActive)
+	if err != nil {
+		h.writeError(w, http.StatusForbidden, "COMPANY_ACCESS_DENIED", "No access to this company")
+		return
+	}
+
+	if !companyActive {
+		h.writeError(w, http.StatusForbidden, "COMPANY_ACCESS_INACTIVE", "Access to this company is inactive")
+		return
+	}
+
+	role := ""
+	if roleCode != nil {
+		role = *roleCode
 	}
 
 	accessToken, err := auth.GenerateToken(h.cfg, userID, req.Email, req.CompanyCode, role, 24*time.Hour)
@@ -323,8 +323,8 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 
 	var newUserID int64
 	err = dbclient.Pool.QueryRow(r.Context(), `
-		INSERT INTO adatrack_gps_master.tm_users (email, password_hash, global_role, must_change_password)
-		VALUES ($1, $2, 'Admin', true)
+		INSERT INTO adatrack_gps_master.tm_users (email, password_hash, must_change_password)
+		VALUES ($1, $2, true)
 		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash
 		RETURNING id
 	`, adminEmail, string(hash)).Scan(&newUserID)
@@ -373,8 +373,8 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 
 	// 5. Grant admin access
 	dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_user_company_access (user_id, role_override, is_active)
-		VALUES ($1, 'Admin', true)
+		INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active)
+		VALUES ($1, 'ADMIN', true)
 		ON CONFLICT DO NOTHING
 	`, schema), newUserID)
 
