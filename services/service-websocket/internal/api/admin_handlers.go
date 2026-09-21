@@ -100,10 +100,11 @@ func (h *Handler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 }
 
 type UserInfo struct {
-	ID        int    `json:"id"`
-	Email     string `json:"email"`
-	IsActive  bool   `json:"is_active"`
-	CreatedAt string `json:"created_at"`
+	ID         int    `json:"id"`
+	Email      string `json:"email"`
+	IsActive   bool   `json:"is_active"`
+	CreatedAt  string `json:"created_at"`
+	GlobalRole string `json:"global_role"`
 }
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +124,17 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	var total int
 	_ = dbclient.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL").Scan(&total)
 
-	rows, err := dbclient.Pool.Query(ctx, "SELECT id, email, is_active, created_at FROM adatrack_gps_master.tm_users WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2", limit, offset)
+	query := `
+		SELECT u.id, u.email, u.is_active, u.created_at,
+		       COALESCE(a.role_code, 'Tenant User') as global_role
+		FROM adatrack_gps_master.tm_users u
+		LEFT JOIN adatrack_gps_default.tm_user_company_access a ON u.id = a.user_id AND a.deleted_at IS NULL
+		WHERE u.deleted_at IS NULL
+		ORDER BY u.created_at DESC
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := dbclient.Pool.Query(ctx, query, limit, offset)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch users")
 		return
@@ -134,7 +145,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var u UserInfo
 		var t time.Time
-		if err := rows.Scan(&u.ID, &u.Email, &u.IsActive, &t); err == nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.IsActive, &t, &u.GlobalRole); err == nil {
 			u.CreatedAt = t.Format(time.RFC3339)
 			users = append(users, u)
 		}
