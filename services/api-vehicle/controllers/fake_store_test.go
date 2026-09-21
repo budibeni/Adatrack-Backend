@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"time"
 
 	"adatrack_gps/api-vehicle/models"
@@ -37,12 +39,60 @@ type fakeStore struct {
 
 	// listVehicles is what ListVehicles returns (nil when unset).
 	listVehicles []models.Vehicle
+
+	// --- fleet resources (geofences / routes / assignments / speed) ----------
+	// The method bodies live in fake_store_fleet_test.go.
+	geofences    []*models.Geofence
+	routes       []*models.Route
+	assignments  []*models.RouteAssignment
+	speedConfigs []*models.SpeedConfig
+	alertsList   []models.Alert
+
+	createdGeofence  bool
+	updatedGeofence  bool
+	deletedGeofence  bool
+	restoredGeofence bool
+	createdRoute     bool
+	updatedRoute     bool
+	deletedRoute     bool
+	restoredRoute    bool
+
+	createdAssignment bool
+	updatedAssignment bool
+	deletedAssignment bool
+	createdSpeed      bool
+	updatedSpeed      bool
+	deletedSpeed      bool
+	restoredSpeed     bool
+
+	replacedGeofenceVehicles bool
+
+	// --- auth + RBAC (master tm_users + tenant membership, PRD §3.1/§9.2) ----
+	// The method bodies live in fake_store_test.go below.
+	users           map[int64]*UserRecord
+	tenantAccess    map[string]tenantAccessRow
+	assigned        map[int64][]int64
+	restoredVehicle bool
+}
+
+// tenantAccessRow is one tm_user_company_access row as the fake returns it.
+type tenantAccessRow struct {
+	roleOverride string
+	active       bool
+}
+
+// tenantKey keys a membership row by company code + user id.
+func tenantKey(company string, userID int64) string {
+	return strings.ToUpper(strings.TrimSpace(company)) + "#" + strconv.FormatInt(userID, 10)
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		vehicles: map[int64]*models.Vehicle{},
-		alerts:   map[int64]*models.Alert{},
+		vehicles:     map[int64]*models.Vehicle{},
+		alerts:       map[int64]*models.Alert{},
+		users:        map[int64]*UserRecord{},
+		tenantAccess: map[string]tenantAccessRow{},
+		assigned:     map[int64][]int64{},
 	}
 }
 
@@ -92,6 +142,51 @@ func (f *fakeStore) SoftDeleteVehicle(_ context.Context, _ string, id, _ int64, 
 func (f *fakeStore) SyncIMEIMap(_ context.Context, _, _ string, _ int64) error { return nil }
 
 func (f *fakeStore) SoftDeleteIMEIMap(_ context.Context, _, _ string) error { return nil }
+
+func (f *fakeStore) RestoreVehicle(_ context.Context, _ string, id int64) error {
+	f.restoredVehicle = true
+	if v, ok := f.vehicles[id]; ok {
+		v.DeletedAt = nil
+	}
+	return nil
+}
+
+// --- auth + RBAC (master tm_users + membership rows, PRD §3.1/§9.2) --------
+
+// seedUser registers a master `tm_users` row.
+func (f *fakeStore) seedUser(u *UserRecord) { f.users[u.ID] = u }
+
+// seedTenantAccess registers an ACTIVE `tm_user_company_access` row.
+func (f *fakeStore) seedTenantAccess(company string, userID int64, roleOverride string) {
+	f.tenantAccess[tenantKey(company, userID)] = tenantAccessRow{roleOverride: roleOverride, active: true}
+}
+
+// seedTenantAccessInactive registers a REVOKED membership row.
+func (f *fakeStore) seedTenantAccessInactive(company string, userID int64) {
+	f.tenantAccess[tenantKey(company, userID)] = tenantAccessRow{active: false}
+}
+
+func (f *fakeStore) seedAssignedVehicles(userID int64, ids ...int64) { f.assigned[userID] = ids }
+
+func (f *fakeStore) UserByID(_ context.Context, id int64) (*UserRecord, error) {
+	u, ok := f.users[id]
+	if !ok {
+		return nil, nil
+	}
+	return u, nil
+}
+
+func (f *fakeStore) TenantAccess(_ context.Context, company string, userID int64) (string, bool, bool, error) {
+	row, ok := f.tenantAccess[tenantKey(company, userID)]
+	if !ok {
+		return "", false, false, nil
+	}
+	return row.roleOverride, row.active, true, nil
+}
+
+func (f *fakeStore) AssignedVehicleIDs(_ context.Context, _ string, userID int64) ([]int64, error) {
+	return f.assigned[userID], nil
+}
 
 // --- alerts ---------------------------------------------------------------
 
