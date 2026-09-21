@@ -7,7 +7,13 @@ down:
 	docker-compose --env-file .env.local -f docker-compose.local.yml down -v
 
 migrate:
-	./scripts/migrate.sh
+	./scripts/migrate.sh up
+
+migrate-up:
+	./scripts/migrate.sh up
+
+migrate-down:
+	./scripts/migrate.sh down
 
 build:
 	go build -o bin/ ./services/...

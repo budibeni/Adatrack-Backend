@@ -47,9 +47,14 @@ func main() {
 		log.Fatalf("Failed to get abs path for company: %v", err)
 	}
 
+	action := "up"
+	if len(os.Args) > 1 {
+		action = os.Args[1]
+	}
+
 	// 2. Run master migrations
 	log.Println("=== Running Master Schema Migrations ===")
-	runMigrate("file://"+masterPath, dbURL, "adatrack_gps_master")
+	runMigrate("file://"+masterPath, dbURL, "adatrack_gps_master", action)
 
 	// 3. Discover all tenant schemas (adatrack_gps_% excluding master)
 	rows, err := db.Query(`
@@ -88,12 +93,12 @@ func main() {
 	log.Printf("=== Running Tenant Schema Migrations (%d schemas found) ===", len(tenantSchemas))
 	for _, schema := range tenantSchemas {
 		log.Printf("Applying company migrations to tenant schema: %s", schema)
-		runMigrate("file://"+companyPath, dbURL, schema)
+		runMigrate("file://"+companyPath, dbURL, schema, action)
 	}
 	log.Println("=== Multi-Tenant Migrations Completed Successfully ===")
 }
 
-func runMigrate(sourceURL, dbURL, targetSchema string) {
+func runMigrate(sourceURL, dbURL, targetSchema string, action string) {
 	sep := "?"
 	if strings.Contains(dbURL, "?") {
 		sep = "&"
@@ -106,7 +111,12 @@ func runMigrate(sourceURL, dbURL, targetSchema string) {
 	}
 	defer m.Close()
 
-	err = m.Up()
+	if action == "down" {
+		err = m.Down()
+	} else {
+		err = m.Up()
+	}
+	
 	if err != nil && err != migrate.ErrNoChange {
 		log.Fatalf("[%s] Failed to run migrations: %v", targetSchema, err)
 	}

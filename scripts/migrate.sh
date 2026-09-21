@@ -15,9 +15,11 @@ for i in {1..10}; do
 done
 
 echo "Running golang-migrate..."
-./db-migrate
+./db-migrate "$@"
 
-echo "Applying Seed Data..."
-cat ../../database/init-pg/03_seed_master.sql | docker exec -i adatrack_postgres_local psql -U adatrack_gps_user -d adatrack_gps_master
+if [ "$1" != "down" ]; then
+  echo "Applying Seed Data..."
+  cat ../../database/init-pg/03_seed_master.sql | docker exec -i adatrack_postgres_local psql -U adatrack_gps_user -d adatrack_gps_master
+fi
 
 echo "Migration pipeline complete!"
