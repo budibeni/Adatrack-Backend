@@ -384,15 +384,12 @@ func (h *Handler) AdminUpdateTenantModules(w http.ResponseWriter, r *http.Reques
 
 // ListRoles returns a list of all global roles
 func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
-	db := dbclient.GetPool()
-	if db == nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "Database not initialized"})
-		return
-	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
 
-	rows, err := db.Query(r.Context(), "SELECT code, name, description FROM adatrack_gps_master.tm_roles ORDER BY id ASC")
+	rows, err := dbclient.Pool.Query(ctx, "SELECT code, name, description FROM adatrack_gps_master.tm_roles ORDER BY id ASC")
 	if err != nil {
-		utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to fetch roles"})
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch roles")
 		return
 	}
 	defer rows.Close()
@@ -415,7 +412,7 @@ func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": roles,
 	})
 }
