@@ -139,6 +139,11 @@ func TestITStoreReadinessAndLookups(t *testing.T) {
 	if err := store.TenantHealth(ctx); err != nil {
 		t.Fatalf("TenantHealth: %v", err)
 	}
+	// Jalur sehat yang sama diperiksa /healthz (PRD §10.2): pool master harus
+	// benar-benar menjawab, bukan hanya tidak error.
+	if err := store.Master().Ping(ctx); err != nil {
+		t.Fatalf("Master().Ping: %v", err)
+	}
 
 	// Tenant pool resolution is normalised (trim + upper) and unknown codes fail.
 	if _, err := store.tenantPool(" dev001 "); err != nil {

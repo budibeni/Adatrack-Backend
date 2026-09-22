@@ -16,7 +16,7 @@
 | 2 | Endurance chunked resume-safe | 24 jam kumulatif | 1 jam kumulatif terbukti (1.438.418 pesan @400 msg/s, 0 loss/chunk, plateau heap+goroutine); **run 24 jam @3600 s/chunk dijalankan bertahap** — progres di `logs/b4-endurance-<stamp>/resume.log` | 🟡 berjalan |
 | 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: 0 leakage dua arah | ✅ |
 | 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | 792 ms (1000 baris dari ≈1,44 juta baris) / 201 ms / 3 ms / 4 ms | ✅ |
-| 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): internal **91,9 %** (max antar-paket: `internal/storage`), worker-persistence **91,1 %**, worker-live **85,1 %**, worker-alert **84,2 %**, api-vehicle **80,1 %** — semua ≥ 80 %. Service di luar gate (diukur `make cover`): service-websocket 78,4 %, service-media 62,8 %, ingestion-tcp 62,5 % | ✅ |
+| 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): internal **91,9 %** (max antar-paket: `internal/storage`), worker-persistence **91,1 %**, worker-live **85,1 %**, worker-alert **84,2 %**, api-vehicle **80,1 %** — semua ≥ 80 %. Service di luar gate (diukur `make cover`): service-websocket 78,4 %, service-media 67,1 %, ingestion-tcp 62,5 % | ✅ |
 | 6 | `go vet` + build bersih | exit 0 | `scripts/test.sh` exit 0 (8 modul), `go vet` bersih | ✅ |
 | 7 | Monitoring | Prometheus + dashboard SLO Grafana + alert rule inti | 11/11 target UP, 20 rule, dashboard `adatrack-core` | ✅ |
 | 8 | Hardening | JWT revocation, rate limit, audit menyeluruh; retensi JetStream | unit test + audit live append + 6/6 stream 48 h/4 GiB | ✅ |
@@ -115,7 +115,7 @@ dihitung. Hasil per modul (2026-09-21):
 | `services/api-vehicle/controllers` | **80,0 %** (sebelumnya 18,3 %) | handler hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`, `http_test.go`, `handlers_update_restore_test.go`, dsb.) |
 | `services/service-websocket/controllers` | **78,4 %** (sebelumnya 66,9 %) | auth/RBAC/WS/audit hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`): readiness, siklus hidup user + lockout, filter/paging kendaraan, history + window, audit append-only (imutabilitas diuji ke trigger), dan seluruh lapisan row-level RBAC (`tm_user_company_access`/`tm_user_vehicles`: upsert idempoten, soft-delete/revive, guard IDOR) |
 | `services/ingestion-tcp/controllers` | **62,5 %** (sebelumnya 48,3 %) | parser GT06/Teltonika golden test + `server_test.go` (siklus hidup `AcceptLoop`/`handleConn`/`connClose` nyata via listener loopback, penolakan FR-1.1 saat budget penuh, shutdown tanpa goroutine bocor) + `teltonika_frame_test.go` (framing AVL + ack record-count + encoder tanggal BCD) |
-| `services/service-media/controllers` | **62,8 %** (sebelumnya 48,9 %) | unit + IT `PostgresStore` nyata (`store_pg_it_test.go`, `ADATRACK_IT=1`): readiness/tenant pool, `VehicleByID`, allowlist IMEI anti-spoofing, `MediaCompanies`, RBAC row-level + **regresi revocation**, siklus hidup katalog (create→filter/paging→complete→soft delete→restore), kandidat retensi + `MarkMediaExpired`/`CountStoredObjects`, audit append-only (imutabilitas diuji ke trigger). Dua bug nyata ikut ketemu & diperbaiki → §2.13 |
+| `services/service-media/controllers` | **67,1 %** (sebelumnya 48,9 %) | unit + IT `PostgresStore` nyata (`store_pg_it_test.go`, `ADATRACK_IT=1`): readiness/tenant pool, `VehicleByID`, allowlist IMEI anti-spoofing, `MediaCompanies`, RBAC row-level + **regresi revocation**, siklus hidup katalog (create→filter/paging→complete→soft delete→restore), kandidat retensi + `MarkMediaExpired`/`CountStoredObjects`, audit append-only (imutabilitas diuji ke trigger). Plus suite hermetik `settings_test.go` (default env + override, validasi fail-closed, whitelist Origin CORS, `validStatus`, `/healthz` fail-closed 503 vs `/livez`). Dua bug nyata ikut ketemu & diperbaiki → §2.13 |
 
 Semua suite IT menulis fixture ber-marka unik dan membersihkannya di
 `t.Cleanup` (dataset dev tidak tertinggal artefak — diverifikasi 0 baris
@@ -135,7 +135,7 @@ make cover COVER_ARGS="services/service-websocket services/ingestion-tcp"
 > **Tabel lengkap `make cover` (2026-09-22, infra hidup, `ADATRACK_IT=1`):**
 > `internal` 91,9 % · `worker-persistence` 91,1 % · `worker-live` 85,1 % ·
 > `worker-alert` 84,2 % · `api-vehicle` 80,1 % · `service-websocket` 78,4 % ·
-> `service-media` 62,8 % · `ingestion-tcp` 62,5 % — rata-rata 77,8 %.
+> `service-media` 67,1 % · `ingestion-tcp` 62,5 % — rata-rata 80,1 %. (naik dari 77,8 % sebelum suite service-media)
 > Empat modul yang **diukur gate b4-verify** (`internal`, `worker-*`,
 > `api-vehicle`) semuanya ≥ 80 %.
 
@@ -368,7 +368,7 @@ revoke grant → daftar kosong (bukan tetap memuat kendaraan).
 
 Suite IT-nya sendiri: 5/5 PASS (`TestITStore*`), fixture dibersihkan di
 `t.Cleanup` (diverifikasi 0 baris sisa di `th_media_events` dan `tm_users`),
-coverage modul 48,9 % → **62,8 %**.
+coverage modul 48,9 % → **67,1 %**
 
 ## 3. Cara Menjalankan Ulang
 

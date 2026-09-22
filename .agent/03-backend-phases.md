@@ -406,7 +406,7 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       Angka `internal/tenant` juga dikoreksi di dokumen: 76,1 % (replika aktif) / 71,6 % (tanpa) —
       angka lama 80,8 % diukur sebelum `replica.go` ada.
 - [x] `service-media` coverage + 2 bug korektness RBAC (2026-09-22): modul terendah dari 8 service
-      (**48,9 % → 62,8 %**) karena seluruh lapisan store (714 baris, 20 metode) 0 %.
+      (**48,9 % → 67,1 %**) karena seluruh lapisan store (714 baris, 20 metode) 0 %.
       Suite baru `services/service-media/controllers/store_pg_it_test.go` (IT `ADATRACK_IT=1`, 5/5 PASS)
       menutup: readiness/tenant pool, `VehicleByID`, allowlist IMEI anti-spoofing, `MediaCompanies`,
       RBAC row-level + regresi revocation, siklus hidup katalog (create→filter/paging→complete→
@@ -417,7 +417,9 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       Lolos e2e karena `tools/e2e-media` login sebagai `admin@dev001.io` (Admin → `allVehicles=true`,
       cabang itu tidak pernah jalan). **Bug B (laten):** `TenantAccess`/`AssignedVehicleIDs` tidak
       menyaring `deleted_at` → revocation tidak dihormati; kini konsisten dengan api-vehicle/worker-alert/
-      service-websocket yang semuanya menyaringnya. Bukti: `docs/B4-VERIFICATION.md` §2.13.
+      service-websocket yang semuanya menyaringnya. Ditambah suite hermetik `settings_test.go`
+      (default + override env, validasi fail-closed, whitelist Origin CORS, `validStatus`, `/healthz`
+      fail-closed 503 vs `/livez`) → modul akhirnya **67,1 %**. Bukti: `docs/B4-VERIFICATION.md` §2.13.
 
       → `docs/B4-VERIFICATION.md`: tabel load (0 loss), **load WS 50×1200** (§2.10,
       0 loss/0 drop, p95 17 ms), SLA query, monitoring (target UP + rule + dashboard),
