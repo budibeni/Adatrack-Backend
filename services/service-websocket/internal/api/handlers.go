@@ -61,18 +61,29 @@ func (h *Handler) writeJSON(w http.ResponseWriter, status int, data interface{})
 }
 
 func (h *Handler) auditLog(ctx context.Context, companyCode, action, outcome string, userID int64, email, role, detail string) {
-	if dbclient.Pool == nil || companyCode == "DEFAULT" || companyCode == "" || !tenant.IsValidCompanyCode(companyCode) {
+	if dbclient.Pool == nil {
+		return
+	}
+	
+	// Global Audit Log for Super Admin
+	globalQuery := `INSERT INTO adatrack_gps_master.tm_global_audit_logs (company_code, actor_email, actor_role, action, outcome, detail) VALUES ($1, $2, $3, $4, $5, $6)`
+	_, err := dbclient.Pool.Exec(ctx, globalQuery, companyCode, email, role, action, outcome, detail)
+	if err != nil {
+		logger.Log.Error("Failed to write global audit log", "err", err)
+	}
+
+	// Tenant Audit Log (only if it's a valid tenant)
+	if companyCode == "DEFAULT" || companyCode == "" || !tenant.IsValidCompanyCode(companyCode) {
 		return
 	}
 
 	schema := fmt.Sprintf("adatrack_gps_%s", companyCode)
-
 	query := fmt.Sprintf(`INSERT INTO %s.th_audit_logs (action, outcome, actor_user_id, actor_email, actor_role, after_data) VALUES ($1, $2, $3, $4, $5, $6)`, schema)
 	afterJSON, _ := json.Marshal(map[string]string{"detail": detail})
 
-	_, err := dbclient.Pool.Exec(ctx, query, action, outcome, userID, email, role, afterJSON)
+	_, err = dbclient.Pool.Exec(ctx, query, action, outcome, userID, email, role, afterJSON)
 	if err != nil {
-		logger.Log.Error("Failed to write audit log", "err", err, "action", action)
+		logger.Log.Error("Failed to write tenant audit log", "err", err, "action", action)
 	}
 }
 
