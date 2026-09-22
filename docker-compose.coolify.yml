@@ -296,6 +296,22 @@ services:
     ports:
     - 8085:8085
     restart: unless-stopped
+  grafana:
+    image: grafana/grafana:10.0.3
+    container_name: adatrack_grafana
+    ports:
+    - 3000:3000
+    environment:
+    - GF_SECURITY_ADMIN_PASSWORD=admin
+    - GF_SECURITY_ALLOW_EMBEDDING=true
+    - GF_AUTH_ANONYMOUS_ENABLED=true
+    - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+    - ./deployments/grafana/provisioning:/etc/grafana/provisioning
+    - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
+    restart: unless-stopped
+    networks:
+    - coolify
 volumes:
   pgdata: null
   redisdata: null
