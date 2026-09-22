@@ -16,7 +16,7 @@
 | 2 | Endurance chunked resume-safe | 24 jam kumulatif | 1 jam kumulatif terbukti (1.438.418 pesan @400 msg/s, 0 loss/chunk, plateau heap+goroutine); **run 24 jam @3600 s/chunk dijalankan bertahap** — progres di `logs/b4-endurance-<stamp>/resume.log` | 🟡 berjalan |
 | 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: 0 leakage dua arah | ✅ |
 | 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | 792 ms (1000 baris dari ≈1,44 juta baris) / 201 ms / 3 ms / 4 ms | ✅ |
-| 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): worker-live **86,8 %**, worker-persistence **91,1 %**, worker-alert **84,2 %**, api-vehicle **80,0 %**, internal/tenant **80,8 %** | ✅ |
+| 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): internal **91,9 %** (max antar-paket: `internal/storage`), worker-persistence **91,1 %**, worker-live **85,1 %**, worker-alert **84,2 %**, api-vehicle **80,1 %** — semua ≥ 80 %. Service di luar gate (diukur `make cover`): service-websocket 78,4 %, service-media 62,8 %, ingestion-tcp 62,5 % | ✅ |
 | 6 | `go vet` + build bersih | exit 0 | `scripts/test.sh` exit 0 (8 modul), `go vet` bersih | ✅ |
 | 7 | Monitoring | Prometheus + dashboard SLO Grafana + alert rule inti | 11/11 target UP, 20 rule, dashboard `adatrack-core` | ✅ |
 | 8 | Hardening | JWT revocation, rate limit, audit menyeluruh; retensi JetStream | unit test + audit live append + 6/6 stream 48 h/4 GiB | ✅ |
@@ -24,6 +24,7 @@
 | 10 | Retensi DB | partisi/purge telemetry (§11) | `retention-purge.sh` + fungsi `tm_ensure_telemetry_partition` | ✅ |
 | 11 | **Load WS 50×1200 (§16)** | 50 subscriber × 1200 frame, 0 loss / 0 drop | `ws.load_50x1200`: `recv[1201..1201]`, `server_sent_delta=60050` (= 50×1201), `drops_delta=0`, `conns_after=0 subs_after=0`, p50 16 ms · p95 17 ms · max 17 ms, goroutine 25→100(transien)→**23** (settle) | ✅ |
 | 12 | **Replika + drill failover (§13)** | PG streaming + standby read-only + Redis promote/fail-back | `make replica-drill`: **20/20 PASS** — `state=streaming` + wal receiver streaming, baris primary terpropagasi ke replay, tulis langsung ke standby **ditolak**, lag **0 byte**, slot `pg_replica_slot` aktif, Redis `role:slave` + `master_link_status:up`, promote → tulis diterima → fail-back resync | ✅ |
+| 13 | **Korektness RBAC media (§2.13)** | Role non-Admin bisa mengakses media; revocation dihormati | Dua bug ditemukan lewat IT suite baru & diperbaiki: (A) `AssignedVehicleIDs` menyaring kolom `is_active` yang **tidak ada** di `tm_user_vehicles` → SQL error → 503 untuk Operator/Driver (tidak pernah tersentuh e2e karena e2e login sebagai Admin); (B) kedua read tidak menyaring `deleted_at` → revocation tidak dihormati (laten, kini konsisten dengan 3 service lain). Regresi ditutup `TestITStoreRBACAndRevocation` (5/5 PASS) | ✅ |
 
 ## 2. Detail Bukti
 
@@ -114,6 +115,7 @@ dihitung. Hasil per modul (2026-09-21):
 | `services/api-vehicle/controllers` | **80,0 %** (sebelumnya 18,3 %) | handler hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`, `http_test.go`, `handlers_update_restore_test.go`, dsb.) |
 | `services/service-websocket/controllers` | **78,4 %** (sebelumnya 66,9 %) | auth/RBAC/WS/audit hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`): readiness, siklus hidup user + lockout, filter/paging kendaraan, history + window, audit append-only (imutabilitas diuji ke trigger), dan seluruh lapisan row-level RBAC (`tm_user_company_access`/`tm_user_vehicles`: upsert idempoten, soft-delete/revive, guard IDOR) |
 | `services/ingestion-tcp/controllers` | **62,5 %** (sebelumnya 48,3 %) | parser GT06/Teltonika golden test + `server_test.go` (siklus hidup `AcceptLoop`/`handleConn`/`connClose` nyata via listener loopback, penolakan FR-1.1 saat budget penuh, shutdown tanpa goroutine bocor) + `teltonika_frame_test.go` (framing AVL + ack record-count + encoder tanggal BCD) |
+| `services/service-media/controllers` | **62,8 %** (sebelumnya 48,9 %) | unit + IT `PostgresStore` nyata (`store_pg_it_test.go`, `ADATRACK_IT=1`): readiness/tenant pool, `VehicleByID`, allowlist IMEI anti-spoofing, `MediaCompanies`, RBAC row-level + **regresi revocation**, siklus hidup katalog (create→filter/paging→complete→soft delete→restore), kandidat retensi + `MarkMediaExpired`/`CountStoredObjects`, audit append-only (imutabilitas diuji ke trigger). Dua bug nyata ikut ketemu & diperbaiki → §2.13 |
 
 Semua suite IT menulis fixture ber-marka unik dan membersihkannya di
 `t.Cleanup` (dataset dev tidak tertinggal artefak — diverifikasi 0 baris
@@ -130,7 +132,13 @@ make cover                           # coverage SEMUA service aplikasi (lihat ca
 make cover COVER_ARGS="services/service-websocket services/ingestion-tcp"
 ```
 
-> **Catatan gate:** loop coverage di `scripts/b4-verify.sh` langkah 1 hanya
+> **Tabel lengkap `make cover` (2026-09-22, infra hidup, `ADATRACK_IT=1`):**
+> `internal` 91,9 % · `worker-persistence` 91,1 % · `worker-live` 85,1 % ·
+> `worker-alert` 84,2 % · `api-vehicle` 80,1 % · `service-websocket` 78,4 % ·
+> `service-media` 62,8 % · `ingestion-tcp` 62,5 % — rata-rata 77,8 %.
+> Empat modul yang **diukur gate b4-verify** (`internal`, `worker-*`,
+> `api-vehicle`) semuanya ≥ 80 %.
+
 > mengukur `internal` + `worker-live`/`worker-persistence`/`worker-alert`/
 > `api-vehicle`. `service-websocket`, `ingestion-tcp`, dan `service-media`
 > **di luar daftar itu**, sehingga `make cover` dibuat sebagai pelengkap yang
@@ -323,6 +331,44 @@ Bukti eksekusi (2026-09-22):
   (`route=primary`), breaker tetap tertutup setelah 1 kegagalan (blip transien
   tidak boleh mematikan split) dan **terbuka** setelah 3 kegagalan — memastikan
   replika rusak tidak pernah menggagalkan request maupun mengunci sistem.
+
+### 2.13 Dua bug korektness `service-media` (ditemukan saat menutup coverage)
+
+Keduanya berada di lapisan RBAC row-level (`store_pg.go`) yang **0 %** sebelum
+suite IT §2.5, dan keduanya **tidak pernah terlihat** oleh `make e2e-media`:
+
+**A. Query menyaring kolom yang tidak ada → 503 untuk semua role non-Admin (berat, terbukti).**
+`AssignedVehicleIDs` menggunakan `WHERE user_id = $1 AND COALESCE(is_active, TRUE)`,
+padahal `tm_user_vehicles` **tidak punya kolom `is_active`** (bukti langsung):
+
+```
+psql> SELECT vehicle_id FROM adatrack_gps_dev001.tm_user_vehicles
+      WHERE user_id = 1 AND COALESCE(is_active, TRUE);
+ERROR:  column "is_active" does not exist
+```
+
+`rbac.go` memanggilnya untuk setiap role selain Admin/Manager (§3.1), dan error-nya
+dipetakan ke `errUnavailable("authorization backend unavailable")` → **HTTP 503**
+(bukan 403). Jadi `operator@dev001.io` / `driver@dev001.io` **tidak bisa
+mengakses media sama sekali**. Lolos dari e2e karena `tools/e2e-media` login sebagai
+`admin@dev001.io` (role Admin → `allVehicles = true`), sehingga cabang ini tidak
+pernah dieksekusi. Perbaikan: filter `deleted_at IS NULL` (semantik yang sama
+dengan tiga service lain) → `TestITStoreRBACAndRevocation` menutupnya.
+
+**B. Revocation (soft delete) tidak dihormati (laten, diperbaiki untuk paritas).**
+`TenantAccess` dan `AssignedVehicleIDs` tidak menyaring `deleted_at`, padahal
+`api-vehicle`, `worker-alert`, dan `service-websocket` semuanya menyaringnya, dan
+`UpsertTenantAccess` secara eksplisit meng-`deleted_at = NULL` saat grant ulang —
+artinya soft delete di kedua tabel itu memang **revocation**. Dampak nyata baru
+muncul bila baris di-revoke sambil `is_active` masih TRUE; satu baris revoked yang
+ada di DEV001 saat ini (`platform@adatrackgps.local`, `is_active=false`) masih
+tertutup oleh cek `is_active`, sehingga bug ini **laten** — tetap diperbaiki agar
+semua service konsisten. Perbaikan + regresi: revoke membership → `found=false`;
+revoke grant → daftar kosong (bukan tetap memuat kendaraan).
+
+Suite IT-nya sendiri: 5/5 PASS (`TestITStore*`), fixture dibersihkan di
+`t.Cleanup` (diverifikasi 0 baris sisa di `th_media_events` dan `tm_users`),
+coverage modul 48,9 % → **62,8 %**.
 
 ## 3. Cara Menjalankan Ulang
 

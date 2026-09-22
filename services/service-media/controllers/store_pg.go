@@ -50,7 +50,10 @@ func (s *PostgresStore) UserByID(ctx context.Context, id int64) (*UserRecord, er
 	return &u, nil
 }
 
-// TenantAccess reads `tm_user_company_access` in the tenant schema.
+// TenantAccess reads `tm_user_company_access` in the tenant schema. A soft-deleted
+// row means the membership was REVOKED (the same semantics as
+// service-websocket/api-vehicle/worker-alert, which all filter `deleted_at IS
+// NULL`; `UpsertTenantAccess` undelets on re-grant) — it must never authorize.
 func (s *PostgresStore) TenantAccess(ctx context.Context, companyCode string, userID int64) (string, bool, bool, error) {
 	pool, err := s.tenantPool(companyCode)
 	if err != nil {
@@ -61,7 +64,7 @@ func (s *PostgresStore) TenantAccess(ctx context.Context, companyCode string, us
 	err = pool.DB.QueryRowContext(ctx, `
 		SELECT COALESCE(role_override, ''), is_active
 		FROM tm_user_company_access
-		WHERE user_id = $1`, userID).Scan(&role, &active)
+		WHERE user_id = $1 AND deleted_at IS NULL`, userID).Scan(&role, &active)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, false, nil
 	}
@@ -71,7 +74,9 @@ func (s *PostgresStore) TenantAccess(ctx context.Context, companyCode string, us
 	return role, active, true, nil
 }
 
-// AssignedVehicleIDs reads the row-level grants (`tm_user_vehicles`).
+// AssignedVehicleIDs reads the row-level grants (`tm_user_vehicles`). Soft-deleted
+// grants are revocations and are excluded (parity with the other services); an
+// empty result means ZERO vehicles, never the whole tenant.
 func (s *PostgresStore) AssignedVehicleIDs(ctx context.Context, companyCode string, userID int64) ([]int64, error) {
 	pool, err := s.tenantPool(companyCode)
 	if err != nil {
@@ -79,8 +84,9 @@ func (s *PostgresStore) AssignedVehicleIDs(ctx context.Context, companyCode stri
 	}
 	rows, err := pool.DB.QueryContext(ctx, `
 		SELECT vehicle_id FROM tm_user_vehicles
-		WHERE user_id = $1 AND COALESCE(is_active, TRUE)
+		WHERE user_id = $1 AND deleted_at IS NULL
 		ORDER BY vehicle_id`, userID)
+
 	if err != nil {
 		return nil, fmt.Errorf("media: assigned vehicles: %w", err)
 	}

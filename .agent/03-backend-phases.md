@@ -405,6 +405,19 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       (200/201/204/409/400) vs 5xx error, presign V4 (parameter `X-Amz-*`), `Mem.Head` + `Mem.PresignPut`.
       Angka `internal/tenant` juga dikoreksi di dokumen: 76,1 % (replika aktif) / 71,6 % (tanpa) —
       angka lama 80,8 % diukur sebelum `replica.go` ada.
+- [x] `service-media` coverage + 2 bug korektness RBAC (2026-09-22): modul terendah dari 8 service
+      (**48,9 % → 62,8 %**) karena seluruh lapisan store (714 baris, 20 metode) 0 %.
+      Suite baru `services/service-media/controllers/store_pg_it_test.go` (IT `ADATRACK_IT=1`, 5/5 PASS)
+      menutup: readiness/tenant pool, `VehicleByID`, allowlist IMEI anti-spoofing, `MediaCompanies`,
+      RBAC row-level + regresi revocation, siklus hidup katalog (create→filter/paging→complete→
+      soft delete→restore), kandidat retensi + `MarkMediaExpired`/`CountStoredObjects`, audit append-only.
+      **Bug A (berat, terbukti):** `AssignedVehicleIDs` menyaring `COALESCE(is_active, TRUE)` padahal
+      `tm_user_vehicles` tidak punya kolom itu → `ERROR: column "is_active" does not exist` → dipetakan
+      `errUnavailable` → **503 untuk semua role non-Admin/Manager** (operator/driver tak bisa akses media).
+      Lolos e2e karena `tools/e2e-media` login sebagai `admin@dev001.io` (Admin → `allVehicles=true`,
+      cabang itu tidak pernah jalan). **Bug B (laten):** `TenantAccess`/`AssignedVehicleIDs` tidak
+      menyaring `deleted_at` → revocation tidak dihormati; kini konsisten dengan api-vehicle/worker-alert/
+      service-websocket yang semuanya menyaringnya. Bukti: `docs/B4-VERIFICATION.md` §2.13.
 
       → `docs/B4-VERIFICATION.md`: tabel load (0 loss), **load WS 50×1200** (§2.10,
       0 loss/0 drop, p95 17 ms), SLA query, monitoring (target UP + rule + dashboard),
