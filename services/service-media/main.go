@@ -78,7 +78,18 @@ func main() {
 			"env", "MASTER_DB_NAME/COMPANY_DB_PREFIX/COMPANY_MIGRATIONS_DIR")
 		os.Exit(1)
 	}
-	tm, err := tenant.New(ctx, cfg, tcfg, nil, registry)
+	// Redis is a CRITICAL dependency: JWT revocation (FR-5.7), the ingest/API rate
+	// limiters and the /healthz readiness check all read through it. Booting
+	// without it would silently disable those protections (audit finding
+	// 2026-09-22), so a missing Redis is fail-fast.
+	red, err := internal.NewRedisClient(cfg)
+	if err != nil {
+		slog.Error("redis unavailable", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = red.Close() }()
+
+	tm, err := tenant.New(ctx, cfg, tcfg, red, registry)
 	if err != nil {
 		slog.Error("tenant manager failed", "error", err)
 		os.Exit(1)
@@ -105,6 +116,7 @@ func main() {
 		Settings: settings,
 		Store:    controllers.NewPostgresStore(tm),
 		Storage:  store,
+		KV:       controllers.NewKV(red),
 		NATS:     nac,
 		Registry: registry,
 	})
@@ -125,7 +137,14 @@ func main() {
 			"metrics_addr", settings.MetricsAddr,
 			"backend", cfg.Media.Backend, "bucket", cfg.Media.S3Bucket,
 			"max_file_mb", settings.MaxFileMB, "retention_days", settings.RetentionDays,
-			"cleanup_cron", settings.CleanupCron)
+			"cleanup_cron", settings.CleanupCron,
+			// Protection state is logged explicitly: after the 2026-09-22 audit
+			// (Redis was not wired) an operator can confirm at boot that the
+			// revocation denylist and both rate limiters are active.
+			"revocation", settings.RevocationEnabled,
+			"ingest_rate_limit_per_min", settings.IngestRateLimit,
+			"api_rate_limit_per_min", settings.APIRateLimit,
+			"audit", settings.AuditEnabled)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("http server failed", "addr", settings.HTTPAddr, "error", err)
 			stop()

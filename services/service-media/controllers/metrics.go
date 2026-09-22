@@ -172,6 +172,42 @@ func (s *Service) requirePasswordRotated() gin.HandlerFunc {
 	}
 }
 
+// ingestRateLimitMiddleware bounds the HMAC ingest tier per client IP BEFORE the
+// signature is checked: verifying the signature needs the body, so an
+// unauthenticated flood must be rejected as cheaply as possible (PRD §8.4 +
+// audit finding 2026-09-22). A Redis failure is fail-closed (503) like the JWT
+// limiter; `MEDIA_INGEST_RATE_LIMIT=0` disables the limiter.
+func (s *Service) ingestRateLimitMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s.settings.IngestRateLimit <= 0 || s.settings.IngestRateWindow <= 0 || s.kv == nil {
+			c.Next()
+			return
+		}
+		key := "adatrack_gps:media:ingest:" + c.ClientIP()
+		n, err := s.kv.Incr(c.Request.Context(), key)
+		if err != nil {
+			respondError(c, errUnavailable("rate limiter unavailable"))
+			c.Abort()
+			return
+		}
+		if n == 1 {
+			if err := s.kv.Expire(c.Request.Context(), key, s.settings.IngestRateWindow); err != nil {
+				respondError(c, errUnavailable("rate limiter unavailable"))
+				c.Abort()
+				return
+			}
+		}
+		if n > int64(s.settings.IngestRateLimit) {
+			s.countHTTPError(http.StatusTooManyRequests, CodeRateLimited)
+			rbacDenied.WithLabelValues("ingest_rate_limit").Inc()
+			respondError(c, errRateLimited("ingest rate limit exceeded"))
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // apiRateLimitMiddleware enforces PRD §8.4 on the JWT-authenticated routes.
 func (s *Service) apiRateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

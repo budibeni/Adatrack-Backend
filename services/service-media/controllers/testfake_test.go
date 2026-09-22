@@ -294,6 +294,8 @@ func newTestService(t *testing.T, store *fakeStore, opts ...func(*Settings)) (*S
 		MaxBodyBytes:     4 << 20,
 		AllowEmptyOrigin: true,
 		AuditEnabled:     true,
+		IngestRateLimit:  600,
+		IngestRateWindow: time.Minute,
 	}
 	for _, opt := range opts {
 		opt(&settings)
@@ -347,4 +349,53 @@ func (f *fakeStore) MediaEventByObjectKey(_ context.Context, company, key string
 		}
 	}
 	return nil, nil
+}
+
+// fakeKV is the in-memory KVStore backing the rate-limit tests (no Redis).
+type fakeKV struct {
+	mu     sync.Mutex
+	counts map[string]int64
+	err    error
+}
+
+func newFakeKV() *fakeKV { return &fakeKV{counts: map[string]int64{}} }
+
+func (f *fakeKV) Get(context.Context, string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return "", f.err
+	}
+	return "", nil
+}
+
+func (f *fakeKV) Incr(_ context.Context, key string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return 0, f.err
+	}
+	f.counts[key]++
+	return f.counts[key], nil
+}
+
+func (f *fakeKV) Expire(context.Context, string, time.Duration) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.err
+}
+
+func (f *fakeKV) Ping(context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.err
+}
+
+// newTestServiceWithKV wires the service WITH a KV store (rate-limit tests).
+func newTestServiceWithKV(t *testing.T, store *fakeStore, kv KVStore, opts ...func(*Settings)) (*Service, *storage.Mem) {
+	t.Helper()
+	svc, mem := newTestService(t, store, opts...)
+	svc.kv = kv
+	svc.auth = NewAuthService(svc.settings, kv)
+	return svc, mem
 }

@@ -12,6 +12,10 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > ber-RBAC, presigned GET + audit fail-closed `MEDIA_URL_ACCESS`, soft delete/restore, retensi
 > cron + `HARD_DELETE`), bridge `service-websocket` (`MEDIA_EVENT` + `notify.alert.<vehicle_id>`),
 > wiring compose/env/Makefile/prometheus, migrasi additive `016_media_events_governance`.
+> **Audit ulang 2026-09-22 (setelah commit pertama):** 2 temuan diperbaiki — (a) `main.go`
+> service-media belum mengkabel Redis sehingga denylist revokasi JWT + limiter + cek Redis di
+> `/healthz` no-op, (b) tier ingest HMAC belum ber-rate-limit. Keduanya kini aktif & terverifikasi
+> live (429 saat flood, 401 `TOKEN_REVOKED` setelah logout, `/healthz` 503 saat MinIO mati).
 > **B5a dituntaskan:** kalibrasi `FUEL_TANK_HEIGHT_CM` kini diterapkan di ingestion +
 > flusher fuel-only worker-persistence diperbaiki. E2E live: `make e2e-fuel` **11/11 PASS** dan
 > `make e2e-media` **18/18 PASS** (MinIO/PostgreSQL/Redis/NATS nyata) — checklist: `.agent/03-backend-phases.md`.

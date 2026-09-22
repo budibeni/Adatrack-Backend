@@ -238,7 +238,17 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       object_etag, retention_days, notified_at + index pending).
       Bukti unit: `controllers/media_ingest_test.go` + `media_flow_test.go` + `media_rbac_test.go`
       (happy path multipart/JSON, 401 tanda tangan, allowlist mime, oversize, complete idempoten,
-      soft delete/restore Admin-only, retensi).
+      soft delete/restore Admin-only, retensi) + `media_ratelimit_test.go` (rate limit tier ingest:
+      429 saat flood, 503 saat limiter down = fail-closed, `MEDIA_INGEST_RATE_LIMIT=0` = off).
+      Catatan audit 2026-09-22: limiter tier ingest ditambahkan **setelah** audit karena jalur HMAC
+      mem-buffer body untuk verifikasi tanda tangan (flood tanpa batas = vektor memori). Audit yang
+      sama menemukan `main.go` service-media **belum mengkabel Redis**: akibatnya denylist revokasi
+      JWT (FR-5.7), kedua limiter, dan cek `redis` di `/healthz` semuanya no-op. Sekarang Redis
+      fail-fast saat boot (`internal.NewRedisClient`), `KV` diserahkan ke service, dan status proteksi
+      (`revocation`, `ingest_rate_limit_per_min`, `api_rate_limit_per_min`, `audit`) dilog saat listening.
+      Bukti live: flood ingest limit 3 → 3×201 lalu **429 RATE_LIMITED** (counter Redis = 4);
+      token setelah logout → **401 `TOKEN_REVOKED`** pada `GET /api/v1/media`; `/healthz` memuat `redis: ok`;
+      MinIO dimatikan → `/healthz` **503 `degraded`** + ingest **503 `SERVICE_UNAVAILABLE`** (bukan 500).
 - [x] WS `MEDIA_EVENT` (fan-out ke user berhak) + presigned GET (round-trip byte-persis).
       → service-media publishes `media.event.<company_code>` (FR-8.5) dengan presigned URL pendek;
       `service-websocket` bridge diperluas: `notify.alert.>` → event `notify.alert.<vehicle_id>`

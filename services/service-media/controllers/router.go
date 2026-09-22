@@ -47,7 +47,8 @@ func (s *Service) buildRouter() *gin.Engine {
 	api := engine.Group("/api/v1")
 
 	// --- ingest tier (HMAC X-Signature per company, FR-8.1) -----------------
-	ingest := api.Group("/media/events", s.requireHMAC())
+	// Rate limit dulu (murah, per IP) baru verifikasi HMAC (butuh buffer body).
+	ingest := api.Group("/media/events", s.ingestRateLimitMiddleware(), s.requireHMAC())
 	ingest.POST("", s.handleIngestEvent)
 	ingest.POST("/:id/complete", s.handleCompleteEvent)
 

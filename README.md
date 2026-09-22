@@ -298,7 +298,9 @@ Pagination: `?page=&limit=` (`API_DEFAULT_PAGE_SIZE` 100, `API_MAX_PAGE_SIZE` 10
 Ingest memakai **HMAC-SHA256 per-company** (bukan JWT); endpoint katalog memakai JWT + RBAC
 row-level. `X-Signature` dihitung atas: **file bytes** untuk multipart (`imei\n event_type\n file`)
 atau **raw body JSON** untuk alur presigned PUT; `X-Timestamp` (RFC3339) wajib dan dibatasi
-`MEDIA_HMAC_MAX_SKEW_SEC` (anti-replay).
+`MEDIA_HMAC_MAX_SKEW_SEC` (anti-replay). Tier ingest juga dibatasi **per IP**
+(`MEDIA_INGEST_RATE_LIMIT`, default 600/menit) *sebelum* verifikasi HMAC, dan limiter yang tidak
+tersedia bersifat **fail-closed** (503).
 
 | Method | Path | Akses | Fungsi |
 |---|---|---|---|

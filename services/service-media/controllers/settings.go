@@ -58,8 +58,13 @@ type Settings struct {
 	DenylistPrefix    string
 
 	// --- API protection (PRD §8.4/§8.5) ------------------------------------
-	APIRateLimit     int
-	APIRateWindow    time.Duration
+	APIRateLimit  int
+	APIRateWindow time.Duration
+	// IngestRateLimit bounds the HMAC ingest tier per client IP (0 = off). The
+	// ingest path buffers the multipart body to verify the signature, so an
+	// unauthenticated flood must be cheap to reject (audit finding 2026-09-22).
+	IngestRateLimit  int
+	IngestRateWindow time.Duration
 	DefaultPageSize  int
 	MaxPageSize      int
 	MaxBodyBytes     int64
@@ -98,6 +103,8 @@ func LoadSettings(cfg *internal.Config) Settings {
 
 		APIRateLimit:     internal.EnvIntDefault("API_RATE_LIMIT", 100),
 		APIRateWindow:    time.Duration(internal.EnvIntDefault("API_RATE_WINDOW_SEC", 60)) * time.Second,
+		IngestRateLimit:  internal.EnvIntDefault("MEDIA_INGEST_RATE_LIMIT", 600),
+		IngestRateWindow: time.Duration(internal.EnvIntDefault("MEDIA_INGEST_RATE_WINDOW_SEC", 60)) * time.Second,
 		DefaultPageSize:  internal.EnvIntDefault("API_DEFAULT_PAGE_SIZE", 100),
 		MaxPageSize:      internal.EnvIntDefault("API_MAX_PAGE_SIZE", 1000),
 		MaxBodyBytes:     int64(internal.EnvIntDefault("MEDIA_MAX_BODY_BYTES", 128<<20)),
