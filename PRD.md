@@ -1452,13 +1452,18 @@ uid `adatrack-core`).
 | **PostgreSQL** | `postgres-replica` — streaming WAL + slot `pg_replica_slot` (standby read-only) | LIVE: walreceiver streaming, INSERT propagasi primary→replika, tulis direct ke replika ditolak |
 | **Redis** | `redis-replica` — `replicaof` master | LIVE: failover cadangan state ≤5 min; drill promote + fail-back resync OK |
 
-**Read/Write Split APP-LEVEL (B4):** `internal/tenant` — `Manager.ReadPool()` per-tenant
-(best-effort warm), `ReadRouter` (Query/QueryRow → replica dengan fallback one-shot ke primary;
-Exec selalu primary), breaker per-tenant (3 fail → open 30 s → half-open), prober berkala.
-Wiring: service-websocket & api-vehicle (handler GET → companyRead), worker-alert (queries
-baca), INSERT/guard dedup tetap primary. Metrik `db_read_queries_total{company_code,route}`,
-`db_replica_up{company_code}`. Verified live PG :5533 + probe `cmd/db-replica-probe`
-(READ→replica, WRITE→primary).
+**Read/Write Split APP-LEVEL (B4):** `internal/tenant` — `Manager.ReadQuery()`/`ReadQueryRow()`
+per-tenant (pool replika dibuka best-effort + prober 15 s), routing **replica → fallback
+one-shot ke primary** saat baca gagal, breaker per-tenant (3 fail → open 30 s → half-open).
+`Exec`/`Begin` (INSERT, guard dedup, migrasi) selalu primary. Wiring GET: `api-vehicle`
+(`ListVehicles`, `ListAlerts`) & `service-websocket` (`VehicleHistory`, `ListVehicles`,
+`VehicleByID`); `*ByID` yang dipakai ulang handler PATCH dan seluruh query `worker-alert`
+(guard dedup sebelum tulis) **sengaja** tetap di primary demi menghindari lost-update akibat
+replication lag. Default **OFF**: tanpa `POSTGRES_REPLICA_HOST` seluruh baca ke primary.
+Metrik `db_read_queries_total{company_code,route}`, `db_replica_up{company_code}`,
+`db_replica_fallbacks_total`. Verified live (2026-09-22): IT `TestITReadWriteSplit` terhadap
+standby `:5433` → `route=replica rows=1 read_route=replica`, plus drill infra 20/20
+(`make replica-drill`); bukti rinci di `docs/B4-VERIFICATION.md` §2.11–§2.12.
 
 > **PENTING:** Replika DB **bukan** mekanisme backup dan **bukan** failover — proteksi data
 > tetap via backup harian + uji restore. Skrip promote DB dihapus (keputusan 2026-08-25);

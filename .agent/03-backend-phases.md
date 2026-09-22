@@ -361,6 +361,16 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       streaming & in-recovery, INSERT primary terpropagasi, tulis langsung ke standby
       ditolak, lag 0 byte, slot aktif, Redis `role:slave`/link up, promote → tulis
       diterima → fail-back resync (bukti `docs/B4-VERIFICATION.md` §2.11).
+      **Read/write split app-level SELESAI (2026-09-22):** `internal/tenant/replica.go` —
+      `ReadQuery`/`ReadQueryRow` per tenant (replika dulu, fallback one-shot ke primary),
+      breaker 3 gagal → 30 s → half-open, prober 15 s, metrik
+      `db_read_queries_total{company_code,route}` / `db_replica_up` /
+      `db_replica_fallbacks_total`; default OFF via `POSTGRES_REPLICA_HOST`.
+      Wiring GET: `api-vehicle` (`ListVehicles`, `ListAlerts`) + `service-websocket`
+      (`VehicleHistory`, `ListVehicles`, `VehicleByID`); `*ByID` (dipakai PATCH) dan
+      `worker-alert` (guard dedup) sengaja tetap primary. Bukti: unit hermetic
+      (`replica_test.go`) + IT nyata `TestITReadWriteSplit` vs standby `:5433`
+      (`route=replica rows=1 read_route=replica`) — `docs/B4-VERIFICATION.md` §2.12.
 - [x] Retensi DB: partisi/purge telemetry sesuai §11.
       → `scripts/retention-purge.sh`: deteksi partisi bulanan > `HOT_RETENTION_DAYS` (default 30) per tenant,
       **hitung baris sebelum drop** (no silent loss), dry-run default + `--apply`, dan selalu memanggil

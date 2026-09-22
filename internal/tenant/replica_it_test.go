@@ -36,7 +36,11 @@ func TestITReadWriteSplit(t *testing.T) {
 	t.Setenv("POSTGRES_REPLICA_PORT", port)
 
 	m, _, _ := itManager(t)
-	defer m.Close()
+	// Close LAST: t.Cleanup runs LIFO, so registering the close first makes the
+	// marker-table DROP below run while the pools are still open. (A plain
+	// `defer m.Close()` would close them BEFORE the cleanup and the DROP would
+	// silently fail, leaving the fixture table behind.)
+	t.Cleanup(m.Close)
 
 	if !m.ReplicaEnabled() {
 		t.Fatal("ReplicaEnabled() = false although POSTGRES_REPLICA_HOST is set")
