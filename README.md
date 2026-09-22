@@ -81,7 +81,7 @@ Alur B3 (alert & fleet): stream `telemetry.raw.>` juga dikonsumsi **worker-alert
 │       ├── master_pg/         # Migrasi schema master (001–019, ledger tm_schema_migrations)
 │       └── company_pg/        # Migrasi schema per-tenant (dijalankan saat provisioning)
 ├── deployments/
-│   └── docker-compose.coolify.yml   # Varian produksi (Coolify)
+│   └── docker-compose.coolify.yml   # Varian Coolify (deploy 1-klik) → docs/DEPLOY_COOLIFY.md
 ├── docker-compose.yml         # Stack kanonik: postgres, redis, nats + monitoring
 ├── docker-compose.local.yml   # Varian LOCAL (bind 127.0.0.1 + MinIO) — include file di atas
 ├── scripts/                   # compose-up, migrate, reset-db, e2e-*, start-services, test
@@ -224,7 +224,7 @@ make e2e-ws            # E2E REST + WebSocket (butuh service-websocket hidup)
 ## Dokumentasi Lanjutan
 
 - [`PRD.md`](PRD.md) — kebutuhan lengkap (arsitektur §4, skema §6, konfigurasi §7, API §8, keamanan §9, deployment §14, roadmap §20).
-- [`docs/`](docs/) — arsitektur DB, HA/DR, runbook insiden, panduan koneksi perangkat, acuan struktur frontend.
+- [`docs/`](docs/) — arsitektur DB, HA/DR, runbook insiden, panduan koneksi perangkat, acuan struktur frontend, **[deploy Coolify sekali klik](docs/DEPLOY_COOLIFY.md)**.
 - [`.agent/03-backend-phases.md`](.agent/03-backend-phases.md) — checklist & bukti verifikasi per fase backend.
 
 

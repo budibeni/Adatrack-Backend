@@ -1,0 +1,63 @@
+# ============================================================================
+# Prometheus — COOLIFY variant (B4, PRD §10.4)
+# ============================================================================
+# Dipakai HANYA oleh deployments/docker-compose.coolify.yml.
+#
+# Beda dengan versi LOCAL (prometheus.yml): di sana service berjalan sebagai
+# proses host sehingga target-nya ditulis lewat file_sd hasil
+# scripts/gen-prom-targets.sh (alamat host / host.docker.internal). Di sini
+# semua service adalah container di network compose yang sama, jadi target-nya
+# memakai NAMA SERVICE pada port /metrics masing-masing.
+#
+# CATATAN: port metrics mengikuti INGESTION_/LIVE_/PERSISTENCE_/ALERT_METRICS_ADDR
+# dan HTTP_ADDR / API_VEHICLE_HTTP_ADDR. Kalau salah satu diubah di environment
+# Coolify, ubah target yang sesuai di bawah supaya scrape tidak ikut putus.
+# ============================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/adatrack-slo.yml
+  - /etc/prometheus/rules/alert-rules.yml
+
+scrape_configs:
+  - job_name: adatrack-services
+    static_configs:
+      - targets: ["ingestion-tcp:8090"]
+        labels: {service: ingestion-tcp, env: coolify}
+      - targets: ["worker-live:8091"]
+        labels: {service: worker-live, env: coolify}
+      - targets: ["worker-persistence:8092"]
+        labels: {service: worker-persistence, env: coolify}
+      - targets: ["worker-alert:8094"]
+        labels: {service: worker-alert, env: coolify}
+      - targets: ["service-websocket:8082"]
+        labels: {service: service-websocket, env: coolify}
+      - targets: ["api-vehicle:8081"]
+        labels: {service: api-vehicle, env: coolify}
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]

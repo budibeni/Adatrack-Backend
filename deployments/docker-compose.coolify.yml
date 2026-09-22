@@ -1,45 +1,186 @@
 # ============================================================================
-# ADATRACK — COOLIFY variant (production, PRD §7 + §14.1 + §14.5)
+# ADATRACK — COOLIFY variant (deploy 1-klik) — PRD §7, §14.1, §14.5
 # ============================================================================
-# Selected automatically by scripts/compose-up.sh when COMPOSE_VARIANT=coolify
-# (or --provider coolify). Differences vs LOCAL:
-#   * NO host port publishing for infra — everything stays on the internal
-#     `adatrack_gps_net` network; Coolify's proxy publishes app services only.
-#   * NO dev credential fallbacks: secrets MUST come from Coolify resources /
-#     .env.coolify (${VAR:?err} fails fast instead of silently using dev values).
-#   * App services built from the repo Dockerfiles (context = backend/), so the
-#     migration artifacts (database/) travel inside the image (§14.5 step 1).
-#   * MIGRATE_ON_BOOT=true + pre-deploy hook runs scripts/migrate.sh (§14.5).
+# FILE INI: backend/deployments/docker-compose.coolify.yml
 #
-# Monitoring (B4, PRD §10.4) is part of the stack — the same seven services the
-# canonical docker-compose.yml defines — but here they are `expose`d on the
-# internal network only (plus Grafana's admin password comes from a Coolify
-# secret). Coolify's proxy maps a domain to the port when an operator needs the
-# Grafana dashboard; nothing is published on the host by default.
+# Cara pakai di Coolify (langkah rinci + checklist: docs/DEPLOY_COOLIFY.md):
+#   1. Coolify -> + New -> Docker Compose (Git repository), pilih repo + branch.
+#        Base Directory          : backend
+#        Docker Compose Location : deployments/docker-compose.coolify.yml
+#   2. Configuration -> Environment Variables -> Developer view -> paste SELURUH
+#      isi backend/.env.coolify -> Save. (Nama KEY di bawah sengaja identik
+#      dengan .env.local, jadi isi kedua file bisa dipakai bergantian.)
+#   3. Isi kolom "Domains" untuk service HTTP yang perlu publik:
+#        service-websocket -> port internal 8082
+#        api-vehicle       -> port internal 8081
+#        grafana (opsional) -> port internal 3000
+#      Proxy + TLS ditangani Coolify. Port GPS device sudah di-publish otomatis.
+#   4. Deploy. Tidak ada langkah lain — migrasi database jalan otomatis saat boot
+#      (MIGRATE_ON_BOOT=true, ledger + advisory lock, §14.5 step 3).
 #
-# NEVER mix this file with .env.local (§7 "tidak ada config campuran").
+# KENAPA TIDAK ADA `env_file: ../.env.coolify`
+#   `.env.coolify` ada di .gitignore sehingga TIDAK ikut ter-clone di server
+#   Coolify -> `env_file` pasti menggagalkan deploy. Karena itu seluruh parameter
+#   dideklarasikan eksplisit sebagai ${KEY} di blok x-app-env di bawah: Coolify
+#   mendeteksi referensi tersebut dan menampilkannya sebagai application
+#   variables yang bisa dipaste sekali jalan.
+#
+# Keputusan arsitektur:
+#   * Infra (PostgreSQL/Redis/NATS) ada DI DALAM stack ini -> satu klik, tanpa
+#     resource eksternal. Data persisten lewat `volumes:`.
+#   * Tanpa `container_name`: dibiarkan Coolify/Compose menamai agar bisa
+#     di-prefix dan tidak bentrok antar-environment.
+#   * Network tanpa `name:` hardcoded supaya Coolify bisa memberi prefix unik;
+#     antar-service tetap saling menemukan lewat nama service di network yang sama.
+#   * Hanya `ingestion-tcp` yang mem-publish port host (TCP device GPS wajib
+#     dijangkau langsung). Service HTTP lain `expose` saja -> lewat proxy Coolify.
+#   * Monitoring (B4, §10.4) internal-only; dashboard Grafana via domain proxy.
+#
+# JANGAN campur file ini dengan .env.local (§7 "tidak ada config campuran").
 # ============================================================================
-name: adatrack_gps_prod
+name: adatrack_staging
+
+# ---------------------------------------------------------------------------
+# x-app-env — SATU daftar env untuk semua service aplikasi (pengganti env_file).
+# Dipakai sebagai `environment: *app-env`. Semua service menerima daftar yang
+# sama, persis seperti perilaku env_file sebelumnya; tiap service hanya membaca
+# key yang relevan baginya.
+# ---------------------------------------------------------------------------
+x-app-env: &app-env
+  # --- logging / telemetry ---
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  TELEMETRY_INTERVAL_SECONDS: ${TELEMETRY_INTERVAL_SECONDS:-20}
+  # --- PostgreSQL (master + tenant; DSN diturunkan dari POSTGRES_*) ---
+  POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  POSTGRES_DB: ${POSTGRES_DB}
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  # DATABASE_URL sengaja boleh kosong: DSN dibangun dari POSTGRES_* di atas.
+  DATABASE_URL: ${DATABASE_URL:-}
+  POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-disable}
+  POSTGRES_POOL_MIN: ${POSTGRES_POOL_MIN:-20}
+  POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-50}
+  MASTER_DB_NAME: ${MASTER_DB_NAME:-adatrack_gps_master}
+  COMPANY_DB_PREFIX: ${COMPANY_DB_PREFIX:-adatrack_gps_}
+  COMPANY_MIGRATIONS_DIR: ${COMPANY_MIGRATIONS_DIR:-./database/migrations/company_pg}
+  MASTER_MIGRATIONS_DIR: ${MASTER_MIGRATIONS_DIR:-./database/migrations/master_pg}
+  # --- Redis ---
+  REDIS_HOST: ${REDIS_HOST:-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+  REDIS_DB: ${REDIS_DB:-0}
+  REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-adatrack_gps:}
+  REDIS_TTL_SEC: ${REDIS_TTL_SEC:-300}
+  REDIS_POOL_MIN: ${REDIS_POOL_MIN:-10}
+  REDIS_POOL_MAX: ${REDIS_POOL_MAX:-30}
+  # --- NATS / JetStream ---
+  NATS_URL: ${NATS_URL:-nats://nats:4222}
+  NATS_SUBJECT_PREFIX: ${NATS_SUBJECT_PREFIX:-telemetry}
+  NATS_MAX_PAYLOAD: ${NATS_MAX_PAYLOAD:-1048576}
+  JETSTREAM_MAX_AGE_HOURS: ${JETSTREAM_MAX_AGE_HOURS:-48}
+  JETSTREAM_MAX_BYTES: ${JETSTREAM_MAX_BYTES:-4294967296}
+  # --- ingestion-tcp (GT06/Teltonika) ---
+  TCP_PORT: ${TCP_PORT:-9003}
+  TCP_MAX_CONNECTIONS: ${TCP_MAX_CONNECTIONS:-5000}
+  TELTONIKA_TCP_PORT: ${TELTONIKA_TCP_PORT:-9011}
+  GT06_DATE_BCD: ${GT06_DATE_BCD:-false}
+  INGESTION_METRICS_ADDR: ${INGESTION_METRICS_ADDR:-:8090}
+  # --- worker-live ---
+  LIVE_METRICS_ADDR: ${LIVE_METRICS_ADDR:-:8091}
+  LIVE_BATCH_INTERVAL_MS: ${LIVE_BATCH_INTERVAL_MS:-100}
+  # --- worker-persistence ---
+  PERSISTENCE_METRICS_ADDR: ${PERSISTENCE_METRICS_ADDR:-:8092}
+  BATCH_SIZE: ${BATCH_SIZE:-500}
+  BATCH_TIMEOUT_SEC: ${BATCH_TIMEOUT_SEC:-5}
+  RETRY_MAX: ${RETRY_MAX:-3}
+  RETRY_BACKOFF_MS: ${RETRY_BACKOFF_MS:-1000,5000,10000}
+  # --- worker-alert (B3) ---
+  ALERT_METRICS_ADDR: ${ALERT_METRICS_ADDR:-:8094}
+  OFFLINE_AFTER_MINUTES: ${OFFLINE_AFTER_MINUTES:-3}
+  FUEL_DROP_SEVERITY: ${FUEL_DROP_SEVERITY:-warning}
+  NOTIFY_RATE_LIMIT_PER_MIN: ${NOTIFY_RATE_LIMIT_PER_MIN:-600}
+  # Kanal email: SMTP_HOST kosong = kanal email dimatikan (PRD §7.3).
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-notifications@adatrackgps.io}
+  # Kanal SMS: kosong = kanal SMS dimatikan.
+  SMS_PROVIDER: ${SMS_PROVIDER:-}
+  SMS_TWILIO_ACCOUNT_SID: ${SMS_TWILIO_ACCOUNT_SID:-}
+  SMS_AUTH_TOKEN: ${SMS_AUTH_TOKEN:-}
+  SMS_FROM: ${SMS_FROM:-}
+  # --- service-websocket / api-vehicle (HTTP) ---
+  HTTP_ADDR: ${HTTP_ADDR:-:8082}
+  API_VEHICLE_HTTP_ADDR: ${API_VEHICLE_HTTP_ADDR:-:8081}
+  # --- JWT + auth (WAJIB sama di service-websocket & api-vehicle) ---
+  JWT_SECRET: ${JWT_SECRET}
+  JWT_ISSUER: ${JWT_ISSUER:-adatrack}
+  JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
+  JWT_REFRESH_EXPIRY_HOURS: ${JWT_REFRESH_EXPIRY_HOURS:-168}
+  JWT_REVOCATION_ENABLED: ${JWT_REVOCATION_ENABLED:-true}
+  JWT_CLOCK_SKEW_SEC: ${JWT_CLOCK_SKEW_SEC:-30}
+  AUTH_REFRESH_PREFIX: ${AUTH_REFRESH_PREFIX:-adatrack_gps:auth:refresh:}
+  AUTH_DENYLIST_PREFIX: ${AUTH_DENYLIST_PREFIX:-adatrack_gps:auth:denylist:}
+  BCRYPT_COST: ${BCRYPT_COST:-12}
+  LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-5}
+  LOGIN_RATE_WINDOW_SEC: ${LOGIN_RATE_WINDOW_SEC:-900}
+  LOGIN_LOCKOUT_THRESHOLD: ${LOGIN_LOCKOUT_THRESHOLD:-5}
+  LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+  # --- REST API limits (service-websocket + api-vehicle) ---
+  API_RATE_LIMIT: ${API_RATE_LIMIT:-100}
+  API_RATE_WINDOW_SEC: ${API_RATE_WINDOW_SEC:-60}
+  API_DEFAULT_PAGE_SIZE: ${API_DEFAULT_PAGE_SIZE:-100}
+  API_MAX_PAGE_SIZE: ${API_MAX_PAGE_SIZE:-1000}
+  HISTORY_MAX_RANGE_DAYS: ${HISTORY_MAX_RANGE_DAYS:-90}
+  API_MAX_BODY_BYTES: ${API_MAX_BODY_BYTES:-1048576}
+  # --- WebSocket ---
+  WS_MAX_CONNECTIONS: ${WS_MAX_CONNECTIONS:-5000}
+  WS_SEND_BUFFER_BYTES: ${WS_SEND_BUFFER_BYTES:-262144}
+  WS_MAX_QUEUE: ${WS_MAX_QUEUE:-1000}
+  WS_PING_INTERVAL_SEC: ${WS_PING_INTERVAL_SEC:-30}
+  WS_WRITE_TIMEOUT_SEC: ${WS_WRITE_TIMEOUT_SEC:-10}
+  WS_PONG_TIMEOUT_SEC: ${WS_PONG_TIMEOUT_SEC:-60}
+  WS_MAX_MESSAGE_BYTES: ${WS_MAX_MESSAGE_BYTES:-4096}
+  WS_MAX_SUBSCRIPTIONS: ${WS_MAX_SUBSCRIPTIONS:-5000}
+  # Origin dashboard yang boleh membuka WebSocket / CORS (dipisah koma).
+  WS_ALLOWED_ORIGINS: ${WS_ALLOWED_ORIGINS:-}
+  WS_ALLOW_EMPTY_ORIGIN: ${WS_ALLOW_EMPTY_ORIGIN:-false}
+  # --- tenant & audit ---
+  TENANT_ADMIN_EMAIL_DOMAIN: ${TENANT_ADMIN_EMAIL_DOMAIN:-local}
+  PASSWORD_DEFAULT_TENANT_ADMIN: ${PASSWORD_DEFAULT_TENANT_ADMIN:-}
+  AUDIT_ENABLED: ${AUDIT_ENABLED:-true}
+  AUDIT_QUEUE_SIZE: ${AUDIT_QUEUE_SIZE:-1000}
+  AUDIT_BATCH_SIZE: ${AUDIT_BATCH_SIZE:-100}
+  AUDIT_FLUSH_MS: ${AUDIT_FLUSH_MS:-1000}
+  # --- retensi & migrasi otomatis (§11, §14.5) ---
+  SOFT_DELETE_RETENTION_DAYS: ${SOFT_DELETE_RETENTION_DAYS:-180}
+  MIGRATE_ON_BOOT: ${MIGRATE_ON_BOOT:-true}
+  MIGRATE_LOCK_TIMEOUT_SEC: ${MIGRATE_LOCK_TIMEOUT_SEC:-60}
+  MIGRATION_LEDGER_TABLE: ${MIGRATION_LEDGER_TABLE:-tm_schema_migrations}
 
 services:
-  # ---------------------------------------------------------------------------
-  # Infra (managed as Coolify resources; internal-only networking)
-  # ---------------------------------------------------------------------------
+  # =========================================================================
+  # Infra (internal-only; tidak ada port yang di-publish ke host)
+  # =========================================================================
   postgres:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.coolify}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.coolify}
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.coolify}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Collation reproducible untuk seed referensi (kode wilayah BPS).
       LANG: C.UTF-8
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Bootstrap idempoten: schemas + master setup + template company (§14.5).
       - ../database/init-pg:/docker-entrypoint-initdb.d:ro
       - ../database/migrations:/db/migrations:ro
       - ../database/seed:/db/seed:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -71,6 +212,7 @@ services:
   nats:
     image: nats:2.10-alpine
     restart: always
+    # JetStream wajib (PRD §4.1); limit file/memory ada di nats.conf.
     command: ["-c", "/etc/nats/nats.conf"]
     volumes:
       - natsdata:/data
@@ -82,24 +224,25 @@ services:
       retries: 12
     networks: [adatrack]
 
-  # ---------------------------------------------------------------------------
-  # Pipeline services (B1)
-  # ---------------------------------------------------------------------------
+  # =========================================================================
+  # Pipeline services (B1) + B3
+  # =========================================================================
   ingestion-tcp:
     build:
       context: ../
       dockerfile: services/ingestion-tcp/Dockerfile
     image: adatrack/ingestion-tcp:${IMAGE_TAG:-latest}
     restart: always
-    env_file: [../.env.coolify]
-    environment:
-      MIGRATE_ON_BOOT: "true"
+    environment: *app-env
+    # SATU-SATUNYA service yang mem-publish port host: device GPS (GT06 /
+    # Teltonika) connect TCP langsung, tidak lewat proxy HTTP Coolify.
+    ports:
+      - "${TCP_PORT:-9003}:${TCP_PORT:-9003}"
+      - "${TELTONIKA_TCP_PORT:-9011}:${TELTONIKA_TCP_PORT:-9011}"
     expose:
-      - "${TCP_PORT:-9003}"
-      - "${TELTONIKA_TCP_PORT:-9011}"
-      - "8090"
+      - "8090" # /healthz + /metrics (internal, di-scrape Prometheus)
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8090/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${INGESTION_METRICS_ADDR#:}/healthz | grep -q ok"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -116,11 +259,11 @@ services:
       dockerfile: services/worker-live/Dockerfile
     image: adatrack/worker-live:${IMAGE_TAG:-latest}
     restart: always
-    env_file: [../.env.coolify]
+    environment: *app-env
     expose:
       - "8091"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8091/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${LIVE_METRICS_ADDR#:}/healthz | grep -q ok"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -136,13 +279,11 @@ services:
       dockerfile: services/worker-persistence/Dockerfile
     image: adatrack/worker-persistence:${IMAGE_TAG:-latest}
     restart: always
-    env_file: [../.env.coolify]
-    environment:
-      MIGRATE_ON_BOOT: "true"
+    environment: *app-env
     expose:
       - "8092"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8092/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${PERSISTENCE_METRICS_ADDR#:}/healthz | grep -q ok"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -152,27 +293,18 @@ services:
       nats: {condition: service_healthy}
     networks: [adatrack]
 
-  # ---------------------------------------------------------------------------
-  # service-websocket (B2) — REST + WebSocket + RBAC + auth
-  # ---------------------------------------------------------------------------
-  service-websocket:
+  # worker-alert (B3) — engine alarm: offline, fuel, geofence, route, speed.
+  worker-alert:
     build:
       context: ../
-      dockerfile: services/service-websocket/Dockerfile
-    image: adatrack/service-websocket:${IMAGE_TAG:-latest}
+      dockerfile: services/worker-alert/Dockerfile
+    image: adatrack/worker-alert:${IMAGE_TAG:-latest}
     restart: always
-    env_file: [../.env.coolify]
-    environment:
-      # Master migrations run on boot so the auth schema is always current
-      # (§14.5 step 3); the JWT secret comes from Coolify secrets via .env.coolify.
-      MIGRATE_ON_BOOT: "true"
+    environment: *app-env
     expose:
-      - "${HTTP_ADDR_PORT:-8082}"
-    ports:
-      # The dashboard/WS client must reach this service through Coolify's proxy.
-      - "${HTTP_ADDR_PORT:-8082}:${HTTP_ADDR_PORT:-8082}"
+      - "8094"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:${HTTP_ADDR_PORT:-8082}/healthz | grep -q ok"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${ALERT_METRICS_ADDR#:}/healthz | grep -q ok"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -183,18 +315,62 @@ services:
       nats: {condition: service_healthy}
     networks: [adatrack]
 
-  # ---------------------------------------------------------------------------
-  # Monitoring stack (B4, PRD §10.4) — internal network only.
-  #
-  # Same services as the canonical docker-compose.yml; the differences are
-  # deliberate and variant-specific:
-  #   * `expose` instead of `ports` — nothing new is published on the host. The
-  #     Coolify proxy maps a domain to Grafana's 3000 / Prometheus' 9090 when an
-  #     operator actually needs the UI.
-  #   * Grafana's admin password is a Coolify secret (${VAR:?} aborts a deploy
-  #     that forgot it) instead of the LOCAL `admin` fallback.
-  #   * Config is mounted from ../monitoring (this file lives in deployments/).
-  # ---------------------------------------------------------------------------
+  # service-websocket (B2) — REST + WebSocket + RBAC + auth.
+  service-websocket:
+    build:
+      context: ../
+      dockerfile: services/service-websocket/Dockerfile
+    image: adatrack/service-websocket:${IMAGE_TAG:-latest}
+    restart: always
+    environment: *app-env
+    # expose saja: akses publik lewat proxy Coolify (isi kolom Domains dengan
+    # port internal 8082). Mem-publish port di sini akan melewati proxy/TLS.
+    expose:
+      - "8082"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${HTTP_ADDR#:}/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+    networks: [adatrack]
+
+  # api-vehicle (B3) — REST fleet management: vehicles/geofences/routes/
+  # speed-configs/alerts. JWT + denylist Redis HARUS sama dengan
+  # service-websocket (dipakai dari x-app-env yang sama).
+  api-vehicle:
+    build:
+      context: ../
+      dockerfile: services/api-vehicle/Dockerfile
+    image: adatrack/api-vehicle:${IMAGE_TAG:-latest}
+    restart: always
+    environment: *app-env
+    # expose saja: akses publik lewat proxy Coolify (Domains + port internal 8081).
+    expose:
+      - "8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${API_VEHICLE_HTTP_ADDR#:}/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+    networks: [adatrack]
+
+  # =========================================================================
+  # Monitoring (B4, §10.4) — internal-only.
+  # Tanpa port host: dashboard Grafana diakses lewat proxy Coolify (isi kolom
+  # Domains dengan port internal 3000 bila perlu). Prometheus memakai config
+  # khusus container (prometheus.coolify.yml) yang men-scrape nama service,
+  # bukan file_sd hasil generate host-run seperti di LOCAL.
+  # =========================================================================
   prometheus:
     image: prom/prometheus:v2.53.0
     restart: always
@@ -206,9 +382,8 @@ services:
     expose:
       - "9090"
     volumes:
-      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/prometheus.coolify.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/prometheus/rules:/etc/prometheus/rules:ro
-      - ../monitoring/targets:/etc/prometheus/targets:ro
       - promdata:/prometheus
     depends_on:
       postgres: {condition: service_healthy}
@@ -230,8 +405,9 @@ services:
     image: grafana/grafana:11.1.0
     restart: always
     environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env.coolify}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      # WAJIB dari secret Coolify (§7): jangan pakai placeholder .env.coolify.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
     expose:
       - "3000"
@@ -255,13 +431,10 @@ services:
     command:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
-      # `$$` is required — Compose would otherwise interpolate $| itself.
       - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
     networks: [adatrack]
 
   cadvisor:
-    # Container resource metrics (PRD §10.4). Needs the host cgroup/docker paths
-    # and privileged access, which Coolify grants for a service defined here.
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     restart: always
     privileged: true
@@ -279,8 +452,7 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     restart: always
     environment:
-      # Service-name DSN over the internal network, credentials from Coolify.
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env.coolify}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.coolify}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB in .env.coolify}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:?}?sslmode=${POSTGRES_SSLMODE:-disable}
     expose:
       - "9187"
     depends_on:
@@ -291,7 +463,7 @@ services:
     image: oliver006/redis_exporter:v1.62.0
     restart: always
     environment:
-      REDIS_ADDR: redis://redis:6379
+      REDIS_ADDR: redis://${REDIS_HOST:-redis}:${REDIS_PORT:-6379}
     expose:
       - "9121"
     depends_on:
@@ -307,6 +479,7 @@ volumes:
   grafanadata:
 
 networks:
+  # Tanpa `name:` hardcoded — Coolify memberi prefix unik per resource sehingga
+  # dua environment bisa berjalan di server yang sama tanpa saling bentrok.
   adatrack:
-    name: adatrack_gps_net
     driver: bridge
