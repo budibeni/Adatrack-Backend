@@ -414,6 +414,11 @@ Suite IT-nya sendiri: 5/5 PASS (`TestITStore*`), fixture dibersihkan di
 `t.Cleanup` (diverifikasi 0 baris sisa di `th_media_events` dan `tm_users`),
 coverage modul 48,9 % → **67,1 %**
 
+**Run ulang 2026-09-22T19:31:56Z** (setelah perbaikan indeks FR-3.5 + patch gate):
+log `logs/b4-verify-20260922T193156Z.log`, endurance
+`logs/b4-endurance-20260922T193156Z` — `chunks=24 chunk=3600s`. Step 0–3 PASS
+(termasuk 400/1000/2000 msg/s 0 loss), step 1 kini mengukur 8 modul dengan patch gate.
+
 ## 3. Cara Menjalankan Ulang
 
 ```bash
