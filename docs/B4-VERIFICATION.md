@@ -289,7 +289,7 @@ Infrastruktur: `deployments/docker-compose.ha.yml` (overlay varian LOCAL) —
 | Prober | `Manager.Run()` mem-ping replika tiap 15 s (membuka pool lebih dulu) sehingga breaker pulih tanpa trafik |
 | Metrik | `db_read_queries_total{company_code,route}` (route `replica`/`primary`), `db_replica_up`, `db_replica_fallbacks_total` |
 | Default | `POSTGRES_REPLICA_HOST` kosong = split mati; kredensial/DB mewarisi primary |
-| Wiring | `api-vehicle`: `ListVehicles` + `ListAlerts` (list-read GET). `*ByID`/detail sengaja tetap di primary karena handler PATCH memakainya ulang (menghindari lost-update akibat lag) |
+| Wiring | `api-vehicle`: `ListVehicles` + `ListAlerts`. `service-websocket`: `VehicleHistory` (baca terberat — playback), `ListVehicles`, `VehicleByID` (service ini tidak punya endpoint tulis kendaraan). **Sengaja tetap di primary:** `*ByID` di `api-vehicle` (handler PATCH memakainya ulang → hindari lost-update akibat lag) dan seluruh query `worker-alert` (querynya guard dedup yang langsung diikuti penulisan) |
 
 Bukti eksekusi (2026-09-22):
 
@@ -302,6 +302,8 @@ Bukti eksekusi (2026-09-22):
   `sql.ErrNoRows` saat kosong). Jalankan: `make ha-up` lalu
   `ADATRACK_IT=1 ADATRACK_IT_PG_REPLICA=127.0.0.1:5433 go test ./internal/tenant/`.
 - Suite `api-vehicle` dengan IT tetap hijau: `ok … coverage 80,1 %`.
+- Suite `service-websocket` dengan IT tetap hijau: `ok … coverage 67,4 %` (naik
+  dari 66,9 % karena jalur router ikut ter-cover).
 
 ## 3. Cara Menjalankan Ulang
 
@@ -322,11 +324,13 @@ make retention-purge                           # dry-run (APPLY=1 untuk drop)
    Yang sudah terbukti: 1 jam kumulatif (6 chunk × 600 s, 1.438.418 pesan,
    0 loss/chunk, plateau heap+goroutine). Progres 24 jam dapat dipantau di
    `logs/b4-endurance-<stamp>/resume.log` (satu baris per chunk yang PASS).
-2. **Read/Write split app-level (§13)** — **router + wiring inti SELESAI** (§2.12),
-   tetap *default-off*. Sisa pekerjaan: memakai router yang sama di endpoint
-   list-read `service-websocket`/`worker-alert` (pola satu baris per metode) dan
-   `cmd/db-replica-probe` dari PRD — fungsi diagnosisnya kini sudah dicakup metrik
-   `db_replica_up{company_code}` + test IT `TestITReadWriteSplit`.
+2. **Read/Write split app-level (§13)** — **router + wiring SELESAI** (§2.12),
+   tetap *default-off*. Yang **sengaja** tidak dirutekan ke replika: `*ByID` di
+   `api-vehicle` (dipakai ulang oleh handler PATCH) dan query `worker-alert`
+   (guard dedup sebelum penulisan) — keduanya demi menghindari lost-update akibat
+   replication lag. `cmd/db-replica-probe` dari PRD juga tidak dibuat: fungsi
+   diagnosisnya kini dicakup metrik `db_replica_up{company_code}` + test IT
+   `TestITReadWriteSplit`.
 3. **Coverage di luar gate** — `service-websocket` 66,9 % dan `ingestion-tcp`
    48,3 % tidak termasuk loop coverage `b4-verify` (gate hanya mengukur service
    inti + `internal/tenant`). Bukan bagian target gate ≥ 80 % service inti.

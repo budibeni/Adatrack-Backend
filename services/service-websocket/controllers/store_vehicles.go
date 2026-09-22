@@ -20,10 +20,9 @@ const vehicleColumns = `id, imei, plate_number, COALESCE(make, ''), COALESCE(mod
 
 // ListVehicles returns the row-level filtered fleet page plus the total count.
 func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]models.Vehicle, int64, error) {
-	pool, err := s.tenantPool(q.CompanyCode)
-	if err != nil {
-		return nil, 0, err
-	}
+	// Read/write split (PRD §13): pure read -> replica first (when configured),
+	// primary on error. service-websocket has no vehicle write endpoint, so every
+	// read here may be served by the standby.
 
 	where := []string{}
 	args := []any{}
@@ -73,7 +72,7 @@ func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]mod
 	}
 
 	var total int64
-	if err := pool.DB.QueryRowContext(ctx, "SELECT count(*) FROM tm_vehicles"+filter, args...).Scan(&total); err != nil {
+	if err := s.tenants.ReadQueryRow(ctx, q.CompanyCode, "SELECT count(*) FROM tm_vehicles"+filter, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: count vehicles: %w", err)
 	}
 
@@ -83,7 +82,7 @@ func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]mod
 	query := "SELECT " + vehicleColumns + " FROM tm_vehicles" + filter +
 		" ORDER BY plate_number, id LIMIT $" + itoa(int64(len(args)+1)) + " OFFSET $" + itoa(int64(len(args)+2))
 
-	rows, err := pool.DB.QueryContext(ctx, query, argsPage...)
+	rows, err := s.tenants.ReadQuery(ctx, q.CompanyCode, query, argsPage...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: list vehicles: %w", err)
 	}
@@ -106,15 +105,14 @@ func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]mod
 // VehicleByID loads one vehicle (nil when absent) so the caller can distinguish
 // 404 (not found) from 403 (found but not assigned — PRD §3.1).
 func (s *PostgresStore) VehicleByID(ctx context.Context, companyCode string, id int64, includeDeleted bool) (*models.Vehicle, error) {
-	pool, err := s.tenantPool(companyCode)
-	if err != nil {
-		return nil, err
-	}
+	// Read/write split (PRD §13): pure read -> replica first (when configured),
+	// primary on error. service-websocket has no vehicle write endpoint, so every
+	// read here may be served by the standby.
 	query := "SELECT " + vehicleColumns + " FROM tm_vehicles WHERE id = $1"
 	if !includeDeleted {
 		query += " AND deleted_at IS NULL"
 	}
-	rows, err := pool.DB.QueryContext(ctx, query, id)
+	rows, err := s.tenants.ReadQuery(ctx, companyCode, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("store: vehicle by id: %w", err)
 	}

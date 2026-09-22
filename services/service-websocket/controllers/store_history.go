@@ -13,20 +13,19 @@ import (
 // (FR-5.1 history playback, PRD §8.2). The partitions are pruned by the
 // timestamp range, and the range itself is validated upstream (PRD §8.5).
 func (s *PostgresStore) VehicleHistory(ctx context.Context, q HistoryQuery) ([]models.Position, int64, error) {
-	pool, err := s.tenantPool(q.CompanyCode)
-	if err != nil {
-		return nil, 0, err
-	}
+	// Read/write split (PRD §13): pure read -> replica first (when configured),
+	// primary on error. service-websocket has no vehicle write endpoint, so every
+	// read here may be served by the standby.
 
 	var total int64
-	if err := pool.DB.QueryRowContext(ctx, `
+	if err := s.tenants.ReadQueryRow(ctx, q.CompanyCode, `
 		SELECT count(*) FROM th_telemetry_logs
 		WHERE vehicle_id = $1 AND "timestamp" >= $2 AND "timestamp" <= $3`,
 		q.VehicleID, q.From.UTC(), q.To.UTC()).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: count history: %w", err)
 	}
 
-	rows, err := pool.DB.QueryContext(ctx, `
+	rows, err := s.tenants.ReadQuery(ctx, q.CompanyCode, `
 		SELECT to_char("timestamp" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
 		       latitude::float8, longitude::float8, speed, heading, altitude,
 		       acc_status, battery_level
