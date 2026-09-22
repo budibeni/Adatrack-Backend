@@ -2,6 +2,14 @@
 # service-websocket — Dockerfile (build context: backend/)
 # ============================================================================
 # Serves REST + WebSocket + /healthz + /metrics on HTTP_ADDR (8082, PRD §14.2).
+#
+# PRD §14.5 step 1: database/ (migrasi + seed) WAJIB ikut ke dalam image.
+# MIGRATE_ON_BOOT membaca ./database/migrations/{master,company}_pg relatif ke
+# WORKDIR, jadi tanpa COPY di bawah service gagal boot dengan
+# "migrate: read dir ./database/migrations/master_pg: no such file or directory"
+# lalu restart tanpa henti. Fail-fast itu disengaja (jangan pernah jalan dengan
+# schema lama) — yang perlu diperbaiki adalah artefak migrasinya ikut ke image.
+# ============================================================================
 FROM golang:1.25-alpine AS build
 
 WORKDIR /src
@@ -19,6 +27,10 @@ RUN apk add --no-cache ca-certificates tzdata wget && \
     adduser -D -u 10001 adatrack
 
 WORKDIR /app
+
+# Artefak migrasi + helper wait (§14.5 step 1) untuk MIGRATE_ON_BOOT.
+COPY database/ ./database/
+COPY scripts/pg-wait.sh ./scripts/pg-wait.sh
 COPY --from=build /out/service-websocket /app/service-websocket
 
 USER adatrack
