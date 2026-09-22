@@ -120,12 +120,10 @@ services:
     networks:
     - coolify
   prometheus:
-    image: prom/prometheus:v2.45.0
+    build:
+      context: .
+      dockerfile: ./deployments/prometheus/Dockerfile
     container_name: adatrack_prometheus
-    volumes:
-    - ./deployments/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    - ./deployments/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
-    - ./deployments/prometheus/targets:/etc/prometheus/targets
     restart: unless-stopped
     networks:
     - coolify
@@ -297,7 +295,9 @@ services:
     - 8085:8085
     restart: unless-stopped
   grafana:
-    image: grafana/grafana:10.0.3
+    build:
+      context: .
+      dockerfile: ./deployments/grafana/Dockerfile
     container_name: adatrack_grafana
     ports:
     - 3000:3000
@@ -306,9 +306,6 @@ services:
     - GF_SECURITY_ALLOW_EMBEDDING=true
     - GF_AUTH_ANONYMOUS_ENABLED=true
     - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-    volumes:
-    - ./deployments/grafana/provisioning:/etc/grafana/provisioning
-    - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
     restart: unless-stopped
     networks:
     - coolify
