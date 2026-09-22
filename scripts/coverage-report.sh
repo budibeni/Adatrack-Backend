@@ -50,7 +50,9 @@ fi
 export ADATRACK_IT=1
 
 # Modul yang TIDAK ada di loop coverage b4-verify.sh (celah gate yang diketahui).
-GATE_OMITS=" services/service-websocket services/ingestion-tcp services/service-media services/worker-live "
+# Daftar gate saat ini: internal, worker-live, worker-persistence, worker-alert,
+# api-vehicle — jadi sisanya ditandai di sini.
+GATE_OMITS=" services/service-websocket services/ingestion-tcp services/service-media "
 
 printf '%-34s %8s  %s\n' 'module' 'cover' 'status'
 printf '%-34s %8s  %s\n' '----------------------------------' '--------' '------'
