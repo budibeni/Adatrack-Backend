@@ -21,7 +21,15 @@ type DBPool struct {
 // into the DSN) using the PRD §7.1 pool sizing: Min 20 / Max 50 / conn lifetime
 // 5 min / statement timeout 30 s.
 func OpenPostgresPool(cfg *Config, schema, poolName string) (*DBPool, error) {
-	db, err := sql.Open("pgx", cfg.PostgresDSN(schema))
+	return OpenPostgresPoolDSN(cfg, cfg.PostgresDSN(schema), poolName)
+}
+
+// OpenPostgresPoolDSN opens a pool from an explicit DSN with the same sizing as
+// OpenPostgresPool. Used by the optional read replica (PRD §13), whose URL points
+// at a different host than the primary and therefore cannot be derived from
+// cfg.PostgresDSN.
+func OpenPostgresPoolDSN(cfg *Config, dsn, poolName string) (*DBPool, error) {
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres pool %s: %w", poolName, err)
 	}

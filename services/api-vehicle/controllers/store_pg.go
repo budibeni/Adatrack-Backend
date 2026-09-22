@@ -147,10 +147,10 @@ func scanVehicle(row interface{ Scan(...any) error }) (models.Vehicle, error) {
 
 // ListVehicles returns the fleet page honouring the row-level grants.
 func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]models.Vehicle, int64, error) {
-	pool, err := s.tenantPool(q.CompanyCode)
-	if err != nil {
-		return nil, 0, err
-	}
+	// Read/write split (PRD §13): a pure list read goes through the tenant read
+	// router — replica first (when configured), primary on failure. Detail
+	// lookups (`*ByID`) deliberately stay on the primary because the PATCH
+	// handlers reuse them and a stale replica read there could lose an update.
 	where := []string{}
 	args := []any{}
 	add := func(clause string, value any) {
@@ -188,7 +188,8 @@ func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]mod
 	}
 
 	var total int64
-	if err := pool.DB.QueryRowContext(ctx, "SELECT count(*) FROM tm_vehicles"+filter, args...).Scan(&total); err != nil {
+	if err := s.tenants.ReadQueryRow(ctx, q.CompanyCode,
+		"SELECT count(*) FROM tm_vehicles"+filter, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: count vehicles: %w", err)
 	}
 	limit := q.Limit
@@ -197,7 +198,7 @@ func (s *PostgresStore) ListVehicles(ctx context.Context, q VehicleQuery) ([]mod
 	query := "SELECT " + vehicleColumns + " FROM tm_vehicles" + filter +
 		" ORDER BY plate_number, id LIMIT $" + itoa(len(args)+1) + " OFFSET $" + itoa(len(args)+2)
 
-	rows, err := pool.DB.QueryContext(ctx, query, argsPage...)
+	rows, err := s.tenants.ReadQuery(ctx, q.CompanyCode, query, argsPage...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("store: list vehicles: %w", err)
 	}
@@ -1158,10 +1159,9 @@ func scanAlert(row interface{ Scan(...any) error }) (models.Alert, error) {
 
 // ListAlerts returns the alert page with row-level filtering.
 func (s *PostgresStore) ListAlerts(ctx context.Context, q AlertQuery) ([]models.Alert, int64, error) {
-	pool, err := s.tenantPool(q.CompanyCode)
-	if err != nil {
-		return nil, 0, err
-	}
+	// Read/write split (PRD §13): pure list read → replica first, primary on error.
+	// Detail/`*ByID` lookups stay on the primary because the acknowledge/resolve
+	// handlers reuse them.
 	where := []string{}
 	args := []any{}
 	add := func(clause string, value any) {
@@ -1199,11 +1199,11 @@ func (s *PostgresStore) ListAlerts(ctx context.Context, q AlertQuery) ([]models.
 		filter = " WHERE " + strings.Join(where, " AND ")
 	}
 	var total int64
-	if err := pool.DB.QueryRowContext(ctx, "SELECT count(*) FROM th_alerts"+filter, args...).Scan(&total); err != nil {
+	if err := s.tenants.ReadQueryRow(ctx, q.CompanyCode, "SELECT count(*) FROM th_alerts"+filter, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("store: count alerts: %w", err)
 	}
 	argsPage := append(append([]any{}, args...), q.Limit, (q.Page-1)*q.Limit)
-	rows, err := pool.DB.QueryContext(ctx,
+	rows, err := s.tenants.ReadQuery(ctx, q.CompanyCode,
 		"SELECT "+alertColumns+" FROM th_alerts"+filter+
 			" ORDER BY detected_at DESC, id DESC LIMIT $"+itoa(len(args)+1)+
 			" OFFSET $"+itoa(len(args)+2), argsPage...)

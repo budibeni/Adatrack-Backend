@@ -56,6 +56,10 @@ type Config struct {
 		ConnMaxLifetime                time.Duration
 		StatementTimeout               time.Duration
 		ConnectTimeout                 time.Duration
+		// Replica is the optional read-replica endpoint (PRD §13 read/write
+		// split). Empty Host disables the split entirely — every read keeps
+		// going to the primary, i.e. exactly the pre-B4 behaviour.
+		Replica ReplicaPostgres
 	}
 
 	Redis struct {
@@ -237,11 +241,55 @@ func (c *Config) PostgresDSN(schema string) string {
 	return c.postgresDSNHost(c.Postgres.Host, c.Postgres.Port, schema)
 }
 
+// ReplicaPostgres is the optional read-replica endpoint (PRD §13). Any field left
+// empty inherits the primary's value, so a standby that only differs by host/port
+// needs just POSTGRES_REPLICA_HOST (+ PORT).
+type ReplicaPostgres struct {
+	Host, Port, User, Password, DB string
+}
+
+// Enabled reports whether a replica endpoint is configured.
+func (r ReplicaPostgres) Enabled() bool {
+	return strings.TrimSpace(r.Host) != ""
+}
+
+// PostgresReplicaDSN builds the replica connection URL for one schema. Unlike
+// PostgresDSN it deliberately IGNORES DATABASE_URL: that variable points at the
+// primary, and silently sending reads there would defeat the whole split.
+func (c *Config) PostgresReplicaDSN(schema string) string {
+	r := c.Postgres.Replica
+	host := r.Host
+	port := firstNonEmpty(r.Port, c.Postgres.Port)
+	user := firstNonEmpty(r.User, c.Postgres.User)
+	pass := r.Password
+	if pass == "" {
+		pass = c.Postgres.Password
+	}
+	db := firstNonEmpty(r.DB, c.Postgres.DB)
+	return c.postgresDSNHostCreds(host, port, user, pass, db, schema)
+}
+
+// firstNonEmpty returns the first non-empty value (or "" when none).
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // postgresDSNHost builds an explicit host:port DSN for one schema.
 func (c *Config) postgresDSNHost(host, port, schema string) string {
-	cred := c.Postgres.User
-	if c.Postgres.Password != "" {
-		cred += ":" + c.Postgres.Password
+	return c.postgresDSNHostCreds(host, port, c.Postgres.User, c.Postgres.Password, c.Postgres.DB, schema)
+}
+
+// postgresDSNHostCreds builds a DSN with explicit credentials (shared by the
+// primary and the optional replica).
+func (c *Config) postgresDSNHostCreds(host, port, user, password, db, schema string) string {
+	cred := user
+	if password != "" {
+		cred += ":" + password
 	}
 	q := url.Values{}
 	q.Set("sslmode", c.Postgres.SSLMode)
@@ -254,7 +302,7 @@ func (c *Config) postgresDSNHost(host, port, schema string) string {
 	if c.Postgres.ConnectTimeout > 0 {
 		q.Set("connect_timeout", strconv.Itoa(int(c.Postgres.ConnectTimeout.Seconds())))
 	}
-	return fmt.Sprintf("postgres://%s@%s:%s/%s?%s", cred, host, port, c.Postgres.DB, q.Encode())
+	return fmt.Sprintf("postgres://%s@%s:%s/%s?%s", cred, host, port, db, q.Encode())
 }
 
 // forceSearchPath rewrites a DATABASE_URL so its search_path is `schema`.

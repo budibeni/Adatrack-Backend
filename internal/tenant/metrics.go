@@ -34,6 +34,24 @@ var (
 		Name: "tenant_cache_misses_total",
 		Help: "IMEI lookups that had to hit the master database",
 	})
+
+	// Read/write split (PRD §13): where reads were served from, whether the
+	// per-tenant replica is usable, and how often a replica read had to fall
+	// back to the primary.
+	dbReadQueries = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "db_read_queries_total",
+		Help: "Read queries by route: replica (split) or primary (§13)",
+	}, []string{"company_code", "route"})
+
+	dbReplicaUp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "db_replica_up",
+		Help: "1 when the per-tenant read replica is usable, 0 otherwise (§13)",
+	}, []string{"company_code"})
+
+	dbReplicaFallbacks = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "db_replica_fallbacks_total",
+		Help: "Replica read failures that were retried once on the primary (§13)",
+	})
 )
 
 // RegisterMetrics registers the tenant collectors on a service registry.
@@ -42,7 +60,8 @@ func RegisterMetrics(reg prometheus.Registerer) {
 	if reg == nil {
 		return
 	}
-	reg.MustRegister(resolutionDuration, lookupErrors, companyPoolCount, cacheHits, cacheMisses)
+	reg.MustRegister(resolutionDuration, lookupErrors, companyPoolCount, cacheHits, cacheMisses,
+		dbReadQueries, dbReplicaUp, dbReplicaFallbacks)
 }
 
 // observeResolution records a resolution latency (milliseconds).

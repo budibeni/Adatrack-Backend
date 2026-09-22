@@ -55,6 +55,10 @@ type Manager struct {
 	pools     map[string]*internal.DBPool // key: uppercase company code
 	companies map[string]Company
 
+	// reads holds the optional per-company read-replica pool + breaker (PRD §13).
+	reads  map[string]*replicaReads
+	readMu sync.RWMutex
+
 	cache Cache
 	mu    sync.RWMutex
 
@@ -74,6 +78,7 @@ func New(ctx context.Context, baseCfg *internal.Config, cfg Config, cache Cache,
 		cfg:       cfg,
 		pools:     make(map[string]*internal.DBPool),
 		companies: make(map[string]Company),
+		reads:     make(map[string]*replicaReads),
 		cache:     cache,
 	}
 
@@ -301,6 +306,9 @@ func (m *Manager) Run(ctx context.Context) {
 				p.PublishPoolMetrics()
 			}
 			m.mu.RUnlock()
+			// Periodic replica prober (PRD §13): keeps db_replica_up fresh and lets
+			// an open breaker close without waiting for user traffic.
+			m.probeReplicas(ctx)
 		}
 	}
 }
@@ -316,5 +324,6 @@ func (m *Manager) Close() {
 		for _, p := range m.pools {
 			_ = p.Close()
 		}
+		m.closeReplicas()
 	})
 }

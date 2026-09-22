@@ -45,6 +45,12 @@ func loadCoreConfig(c *Config) {
 	c.Postgres.ConnMaxLifetime = time.Duration(envInt("POSTGRES_CONN_MAX_LIFETIME_MIN", 5)) * time.Minute
 	c.Postgres.StatementTimeout = time.Duration(envInt("POSTGRES_STATEMENT_TIMEOUT_SEC", 30)) * time.Second
 	c.Postgres.ConnectTimeout = time.Duration(envInt("POSTGRES_CONNECT_TIMEOUT_SEC", 10)) * time.Second
+	// Optional read replica (PRD §13). Empty host = read/write split disabled.
+	c.Postgres.Replica.Host = EnvOr("POSTGRES_REPLICA_HOST", "")
+	c.Postgres.Replica.Port = EnvOr("POSTGRES_REPLICA_PORT", "")
+	c.Postgres.Replica.User = EnvOr("POSTGRES_REPLICA_USER", "")
+	c.Postgres.Replica.Password = EnvOr("POSTGRES_REPLICA_PASSWORD", "")
+	c.Postgres.Replica.DB = EnvOr("POSTGRES_REPLICA_DB", "")
 
 	c.Redis.Host = EnvOr("REDIS_HOST", "127.0.0.1")
 	c.Redis.Port = EnvOr("REDIS_PORT", "6379")
