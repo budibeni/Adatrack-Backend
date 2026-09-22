@@ -494,18 +494,31 @@ func TestITSpeedConfigs(t *testing.T) {
 	vidSC := h.itSpeedConfig(vid, false) // vehicle-specific
 
 	list, err := h.store.ListSpeedConfigs(h.ctx, itCompany, false)
-	if err != nil || len(list) != 2 {
-		t.Fatalf("ListSpeedConfigs = %v (want 2); err %v", list, err)
+	if err != nil {
+		t.Fatalf("ListSpeedConfigs: %v", err)
 	}
-
-	// Global row is nil-VehicleID; vehicle row is not.
+	// Assert pada fixture test INI, bukan jumlah baris total: schema dev bersama
+	// bisa sudah berisi baris dari run manual/E2E, dan hitungan absolut membuat
+	// test gagal padahal kode yang diuji benar.
+	foundGlobal, foundVehicle := false, false
 	for _, sc := range list {
-		if sc.ID == gid && sc.VehicleID != nil {
-			t.Fatalf("global speed config has vehicle_id=%v want nil", *sc.VehicleID)
+		switch sc.ID {
+		case gid:
+			foundGlobal = true
+			// Global row is nil-VehicleID; the vehicle row is not.
+			if sc.VehicleID != nil {
+				t.Fatalf("global speed config has vehicle_id=%v want nil", *sc.VehicleID)
+			}
+		case vidSC:
+			foundVehicle = true
+			if sc.VehicleID == nil {
+				t.Fatal("vehicle speed config missing vehicle_id")
+			}
 		}
-		if sc.ID == vidSC && sc.VehicleID == nil {
-			t.Fatal("vehicle speed config missing vehicle_id")
-		}
+	}
+	if !foundGlobal || !foundVehicle {
+		t.Fatalf("fixtures missing from ListSpeedConfigs (global=%v vehicle=%v, rows=%d)",
+			foundGlobal, foundVehicle, len(list))
 	}
 
 	// includeDeleted surfaces the soft-deleted global row.
@@ -513,12 +526,18 @@ func TestITSpeedConfigs(t *testing.T) {
 		t.Fatalf("SoftDeleteSpeedConfig: %v", err)
 	}
 	inc, err := h.store.ListSpeedConfigs(h.ctx, itCompany, true)
-	if err != nil || len(inc) != 2 {
-		t.Fatalf("ListSpeedConfigs(deleted=true) = %v (want 2 after soft delete); err %v", inc, err)
+	if err != nil {
+		t.Fatalf("ListSpeedConfigs(deleted=true): %v", err)
 	}
-	out, _ := h.store.ListSpeedConfigs(h.ctx, itCompany, false)
-	if len(out) != 1 {
-		t.Fatalf("ListSpeedConfigs(deleted=false) = %v (want 1)", out)
+	if !containsSpeedConfigID(inc, gid) {
+		t.Fatalf("ListSpeedConfigs(deleted=true) tidak memuat baris terhapus id=%d", gid)
+	}
+	out, err := h.store.ListSpeedConfigs(h.ctx, itCompany, false)
+	if err != nil {
+		t.Fatalf("ListSpeedConfigs(deleted=false): %v", err)
+	}
+	if containsSpeedConfigID(out, gid) {
+		t.Fatalf("ListSpeedConfigs(deleted=false) masih memuat baris terhapus id=%d", gid)
 	}
 	if err := h.store.RestoreSpeedConfig(h.ctx, itCompany, gid); err != nil {
 		t.Fatalf("RestoreSpeedConfig: %v", err)
@@ -537,16 +556,30 @@ func TestITFuelConfigsAndHistory(t *testing.T) {
 	vidFC := h.itFuelConfig(vid, false)
 
 	list, err := h.store.ListFuelConfigs(h.ctx, itCompany, false)
-	if err != nil || len(list) != 2 {
-		t.Fatalf("ListFuelConfigs = %v (want 2); err %v", list, err)
+	if err != nil {
+		t.Fatalf("ListFuelConfigs: %v", err)
 	}
+	// Fixture-based (bukan jumlah absolut): dataset dev bisa berisi fuel config
+	// dari run manual/E2E, dan hitungan absolut membuat test gagal padahal kode
+	// yang diuji benar.
+	foundGlobal, foundVehicle := false, false
 	for _, fc := range list {
-		if fc.ID == gid && fc.VehicleID != nil {
-			t.Fatalf("global fuel config has vehicle_id=%v want nil", *fc.VehicleID)
+		switch fc.ID {
+		case gid:
+			foundGlobal = true
+			if fc.VehicleID != nil {
+				t.Fatalf("global fuel config has vehicle_id=%v want nil", *fc.VehicleID)
+			}
+		case vidFC:
+			foundVehicle = true
+			if fc.VehicleID == nil {
+				t.Fatal("vehicle fuel config missing vehicle_id")
+			}
 		}
-		if fc.ID == vidFC && fc.VehicleID == nil {
-			t.Fatal("vehicle fuel config missing vehicle_id")
-		}
+	}
+	if !foundGlobal || !foundVehicle {
+		t.Fatalf("fixtures missing from ListFuelConfigs (global=%v vehicle=%v, rows=%d)",
+			foundGlobal, foundVehicle, len(list))
 	}
 
 	// UpdateFuelConfig round-trip.
@@ -591,6 +624,17 @@ func TestITFuelConfigsAndHistory(t *testing.T) {
 func containsAlertID(rows []models.Alert, id int64) bool {
 	for _, a := range rows {
 		if a.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// containsSpeedConfigID reports whether the page holds the id (order-agnostic,
+// robust against other rows already living in the shared dev schema).
+func containsSpeedConfigID(rows []models.SpeedConfig, id int64) bool {
+	for _, sc := range rows {
+		if sc.ID == id {
 			return true
 		}
 	}
