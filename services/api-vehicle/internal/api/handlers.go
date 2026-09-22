@@ -93,7 +93,7 @@ func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
 		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can create vehicles")
 		return
 	}
@@ -284,7 +284,7 @@ func (h *Handler) UpdateVehicle(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
 		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can update vehicles")
 		return
 	}
@@ -320,7 +320,7 @@ func (h *Handler) SoftDeleteVehicle(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
 		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can delete vehicles")
 		return
 	}
@@ -344,7 +344,7 @@ func (h *Handler) RestoreVehicle(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
 		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can restore vehicles")
 		return
 	}
@@ -381,7 +381,7 @@ func (h *Handler) CreateGeofence(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
 		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can manage geofences")
 		return
 	}
@@ -589,7 +589,7 @@ func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	if claims.Role != "Admin" && claims.Role != "SuperAdmin" && claims.Role != "Manager" {
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
 		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can manage routes")
 		return
 	}
