@@ -10,7 +10,7 @@ VARIANT ?= local
 MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/api-vehicle services/service-media services/worker-alert services/foundation-check tools/e2e tools/e2ews tools/e2e-media tools/e2e-fuel tools/querybench
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +48,9 @@ test: ## Run unit + integration tests (all modules)
 
 test-race: ## Run tests with the race detector
 	@scripts/test.sh --race
+
+cover: ## Coverage for every app service, incl. those the B4 gate misses
+	@scripts/coverage-report.sh $(COVER_ARGS)
 
 fmt: ## gofmt every module
 	@set -e; for m in $(MODULES); do (cd $$m && gofmt -l -w .); done

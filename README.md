@@ -180,6 +180,7 @@ make e2e-ws                # login → RBAC → live push WebSocket
 make e2e-fuel              # B5a: frame fuel 0x0D → td_fuel_logs → alert → WS
 make e2e-media             # B5b: HMAC → MinIO → katalog → WS MEDIA_EVENT → retensi
 make test / test-race      # unit + integration semua modul
+make cover                 # coverage semua service aplikasi (termasuk yang di luar gate b4-verify)
 ```
 
 | Target | Fungsi |
@@ -193,6 +194,7 @@ make test / test-race      # unit + integration semua modul
 | `make build` / `fmt` / `vet` | build / format / analisis semua modul |
 | `make querybench CODE=DEV001` | bench SLA query |
 | `make b4-verify` | rantai acceptance B4 (`QUICK=1` untuk smoke cepat) |
+| `make cover` | coverage per service aplikasi (`COVER_ARGS=…` untuk subset, `COVER_STRICT=1` untuk menggagalkan build) |
 | `make backup-db` / `restore-db` / `retention-purge` | backup, drill restore, retensi partisi |
 
 **Production (Coolify):** lihat [`docs/DEPLOY_COOLIFY.md`](docs/DEPLOY_COOLIFY.md) —

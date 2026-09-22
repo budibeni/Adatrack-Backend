@@ -378,6 +378,24 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ### Acceptance
 - [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
+- [x] Coverage service non-inti (2026-09-22): `service-websocket` **67,4 % → 78,4 %** dan
+      `ingestion-tcp` **49,0 % → 62,5 %**. Suite baru:
+      `services/service-websocket/controllers/store_pg_it_test.go` (IT `ADATRACK_IT=1`: readiness,
+      siklus hidup user + lockout, filter/paging/history kendaraan, audit append-only termasuk
+      **imutabilitas diuji ke trigger `tm_audit_logs_immutable`**, dan seluruh lapisan row-level
+      RBAC `tm_user_company_access`/`tm_user_vehicles` — upsert idempoten, soft-delete & revive,
+      guard IDOR `ExistingVehicleIDs`; fixture pengguna dihapus di `t.Cleanup`, diverifikasi 0 sisa),
+      `services/ingestion-tcp/controllers/server_test.go` (listener loopback nyata: `AcceptLoop`,
+      `handleConn`, `connClose`, `readDeadlined`, penolakan **FR-1.1** saat budget penuh dengan
+      counter `rejectedTotal{max_conn}`), dan `teltonika_frame_test.go` (framing
+      `readTeltonikaAVLPacket` + ack record-count + encoder tanggal BCD GT06).
+      Alat ukur baru: `scripts/coverage-report.sh` + `make cover` — mengukur **semua** service
+      aplikasi, termasuk `service-websocket`/`ingestion-tcp`/`service-media` yang tidak ada di
+      loop coverage `scripts/b4-verify.sh`.
+      **Temuan gate:** daftar modul di `b4-verify.sh` langkah 1 belum menyertakan kedua service itu;
+      patch-nya sengaja ditunda sampai run endurance 24 jam selesai (skrip 12.983 byte dibaca
+      bertahap oleh bash — menyuntingnya saat berjalan bisa menggeser offset dan merusak run).
+
       → `docs/B4-VERIFICATION.md`: tabel load (0 loss), **load WS 50×1200** (§2.10,
       0 loss/0 drop, p95 17 ms), SLA query, monitoring (target UP + rule + dashboard),
       backup/restore drill (checksum + row-count match), **replika PG/Redis + drill

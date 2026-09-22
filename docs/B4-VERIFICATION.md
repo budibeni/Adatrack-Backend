@@ -112,17 +112,31 @@ dihitung. Hasil per modul (2026-09-21):
 | `services/worker-persistence/controllers` | **91,1 %** | hermetic + IT |
 | `services/worker-alert/controllers` | **84,2 %** (sebelumnya 5,7 %) | engine/notifier/detektor hermetic (`alert_*_test.go`, miniredis) + IT `store_pg` (`store_pg_it_test.go`) |
 | `services/api-vehicle/controllers` | **80,0 %** (sebelumnya 18,3 %) | handler hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`, `http_test.go`, `handlers_update_restore_test.go`, dsb.) |
-| `services/service-websocket/controllers` | 66,9 % | auth/RBAC/WS/audit — **di luar daftar gate** (loop coverage b4-verify mencakup internal + 4 worker/api) |
-| `services/ingestion-tcp/controllers` | 48,3 % | parser GT06/Teltonika golden test — di luar daftar gate |
+| `services/service-websocket/controllers` | **78,4 %** (sebelumnya 66,9 %) | auth/RBAC/WS/audit hermetic + IT `PostgresStore` nyata (`store_pg_it_test.go`): readiness, siklus hidup user + lockout, filter/paging kendaraan, history + window, audit append-only (imutabilitas diuji ke trigger), dan seluruh lapisan row-level RBAC (`tm_user_company_access`/`tm_user_vehicles`: upsert idempoten, soft-delete/revive, guard IDOR) |
+| `services/ingestion-tcp/controllers` | **62,5 %** (sebelumnya 48,3 %) | parser GT06/Teltonika golden test + `server_test.go` (siklus hidup `AcceptLoop`/`handleConn`/`connClose` nyata via listener loopback, penolakan FR-1.1 saat budget penuh, shutdown tanpa goroutine bocor) + `teltonika_frame_test.go` (framing AVL + ack record-count + encoder tanggal BCD) |
 
 Semua suite IT menulis fixture ber-marka unik dan membersihkannya di
 `t.Cleanup` (dataset dev tidak tertinggal artefak — diverifikasi 0 baris
-sisa setelah run). Menjalankan ulang:
+sisa setelah run). **Pengecualian yang disengaja:** baris fixture di
+`tm_audit_logs` tidak dihapus — tabel itu append-only (trigger
+`tm_audit_logs_immutable` menolak `UPDATE`/`DELETE`), dan test-nya justru
+**menguji penolakan itu**. Baris tersebut dikenali dari awalan
+`action = 'it.store.fixture.<pid>'`. Menjalankan ulang:
 
 ```bash
 ADATRACK_IT=1 scripts/test.sh        # semua modul + suite IT
 ADATRACK_IT=1 make b4-verify QUICK=1 # gate B4 dengan coverage IT
+make cover                           # coverage SEMUA service aplikasi (lihat catatan)
+make cover COVER_ARGS="services/service-websocket services/ingestion-tcp"
 ```
+
+> **Catatan gate:** loop coverage di `scripts/b4-verify.sh` langkah 1 hanya
+> mengukur `internal` + `worker-live`/`worker-persistence`/`worker-alert`/
+> `api-vehicle`. `service-websocket`, `ingestion-tcp`, dan `service-media`
+> **di luar daftar itu**, sehingga `make cover` dibuat sebagai pelengkap yang
+> mengukur seluruh service aplikasi (aturan pembanding tetap numerik seperti
+> gate: `8.5` tidak dianggap > `100.0`). Ambang peringatan `COVER_MIN=80`,
+> kegagalan hanya bila `COVER_STRICT=1`.
 
 ### 2.6 Monitoring & Observability
 
@@ -336,6 +350,18 @@ make retention-purge                           # dry-run (APPLY=1 untuk drop)
    replication lag. `cmd/db-replica-probe` dari PRD juga tidak dibuat: fungsi
    diagnosisnya kini dicakup metrik `db_replica_up{company_code}` + test IT
    `TestITReadWriteSplit`.
-3. **Coverage di luar gate** — `service-websocket` 66,9 % dan `ingestion-tcp`
-   48,3 % tidak termasuk loop coverage `b4-verify` (gate hanya mengukur service
-   inti + `internal/tenant`). Bukan bagian target gate ≥ 80 % service inti.
+3. **Coverage service non-inti** — `service-websocket` 78,4 % dan
+   `ingestion-tcp` 62,5 % (naik dari 66,9 % / 48,3 %; suite baru: IT
+   `PostgresStore` + RBAC row-level, dan test siklus hidup server TCP + framing
+   Teltonika). Keduanya **tetap di luar loop coverage `b4-verify`**, jadi
+   diukur lewat `make cover` (lihat catatan §2.5). Bukan bagian target gate
+   ≥ 80 % service inti.
+4. **Patch gate coverage tertunda (sengaja)** — menambahkan
+   `services/service-websocket` + `services/ingestion-tcp` ke daftar modul di
+   `scripts/b4-verify.sh` langkah 1 sudah disiapkan, tetapi **belum diterapkan**
+   karena run endurance 24 jam sedang mengeksekusi file itu: skripnya 12.983 byte
+   sehingga bash membacanya bertahap (`yy_readline_get`, buffer 8 KiB) dan
+   menyuntingnya di tengah eksekusi dapat menggeser offset pembacaan lalu
+   merusak run. Urutan yang benar: tunggu run selesai → tambahkan kedua modul →
+   jalankan `make cover` untuk memastikan angka pasca-patch.
+
