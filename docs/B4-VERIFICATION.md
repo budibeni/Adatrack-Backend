@@ -105,9 +105,9 @@ dihitung. Hasil per modul (2026-09-21):
 
 | Modul | Coverage | Isi suite |
 |---|---|---|
-| `internal/tenant` | **80,8 %** (sebelumnya 8,5 %) | IT nyata: routing pool, `ResolveDeviceByIMEI` + cache Redis, Health, provisioning tenant + idempotensi + ledger (`internal/tenant/tenant_it_test.go`) |
-| `internal/storage` | 100 % | unit |
-| `internal` (pkg utama) | 42,3 % | config/env/logging (di luar gate: gate mengukur max antar-paket) |
+| `internal/tenant` | **76,1 %** dengan replika aktif / 71,6 % tanpa (`POSTGRES_REPLICA` off) | IT nyata: routing pool, `ResolveDeviceByIMEI` + cache Redis, Health, provisioning tenant + idempotensi + ledger, read/write split vs standby (`internal/tenant/tenant_it_test.go`, `replica_it_test.go`). Catatan: angka dokumen sebelumnya (80,8 %) diukur **sebelum** `replica.go` ada; kode baru itu hanya tertutup penuh saat `ADATRACK_IT_PG_REPLICA` di-set (`make ha-up`). |
+| `internal/storage` | **91,9 %** dengan MinIO (kondisi gate) / **82,3 % hermetik** | unit + stub S3 `httptest` (`s3_ops_test.go`: verb/path/header Put-Head-Get-Delete, ETag, pemetaan 4xx→`ErrNotFound` vs 5xx→`ErrUnavailable`, `EnsureBucket` idempoten 200/201/204/409/400, presign V4, `Mem.Head`/`PresignPut`) + IT MinIO nyata (`s3_it_test.go`). Sebelum suite stub, paket ini hanya 50 % saat MinIO tidak diset. |
+| `internal` (pkg utama) | 42,3 % | config/env/logging — **nilai modul yang dipakai gate = 91,9 %** (max antar-paket, dari `internal/storage`) |
 | `services/worker-live/controllers` | **86,8 %** | hermetic + IT (`ADATRACK_IT=1`) |
 | `services/worker-persistence/controllers` | **91,1 %** | hermetic + IT |
 | `services/worker-alert/controllers` | **84,2 %** (sebelumnya 5,7 %) | engine/notifier/detektor hermetic (`alert_*_test.go`, miniredis) + IT `store_pg` (`store_pg_it_test.go`) |

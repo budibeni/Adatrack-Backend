@@ -395,6 +395,16 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       **Temuan gate:** daftar modul di `b4-verify.sh` langkah 1 belum menyertakan kedua service itu;
       patch-nya sengaja ditunda sampai run endurance 24 jam selesai (skrip 12.983 byte dibaca
       bertahap oleh bash — menyuntingnya saat berjalan bisa menggeser offset dan merusak run).
+- [x] `internal/storage` pulih di atas ambang (2026-09-22): **50 % → 82,3 % hermetik / 91,9 % dengan MinIO**.
+      Penyebab turunnya angka modul `internal` (79,2 % → di bawah ambang 80 %) adalah paket ini, bukan
+      `internal/tenant`: `s3_ops.go` (Put/Head/Get/Delete/PresignGet/Health/EnsureBucket) hanya tersentuh
+      suite IT yang butuh MinIO hidup, sehingga pengukuran tanpa MinIO = 50 %.
+      `internal/storage/s3_ops_test.go` menutupnya dengan **stub S3 `httptest`** (hermetik):
+      kontrak verb/path/header + byte-exact, ETag tanpa kutip, pemetaan 404 → `ErrNotFound`
+      vs 5xx/transport-matot → `ErrUnavailable` (bukan not-found), `EnsureBucket` idempoten
+      (200/201/204/409/400) vs 5xx error, presign V4 (parameter `X-Amz-*`), `Mem.Head` + `Mem.PresignPut`.
+      Angka `internal/tenant` juga dikoreksi di dokumen: 76,1 % (replika aktif) / 71,6 % (tanpa) —
+      angka lama 80,8 % diukur sebelum `replica.go` ada.
 
       → `docs/B4-VERIFICATION.md`: tabel load (0 loss), **load WS 50×1200** (§2.10,
       0 loss/0 drop, p95 17 ms), SLA query, monitoring (target UP + rule + dashboard),
