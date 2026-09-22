@@ -1,9 +1,7 @@
 FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
-COPY go.work go.work.sum ./
-COPY tools/migrate/ ./tools/migrate/
-COPY database/ ./database/
+COPY . .
 
 RUN cd tools/migrate && go mod download && go build -o /migrate main.go
 
