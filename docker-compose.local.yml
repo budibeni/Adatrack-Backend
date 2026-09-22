@@ -4,7 +4,7 @@
 # Selected automatically by scripts/compose-up.sh when COMPOSE_VARIANT=local
 # (default). Extends the canonical stack with dev-only concerns:
 #   * host ports bound to 127.0.0.1 (never exposed to the LAN)
-#   * MinIO profile stays opt-in (B5b)
+#   * MinIO runs by default (B5b media flow is exercised locally)
 #
 # Usage:
 #   docker compose -f docker-compose.local.yml --env-file .env.local up -d
@@ -15,15 +15,57 @@ include:
   - ./docker-compose.yml
 
 services:
+  # `!override` is mandatory here: Compose merges `ports` sequences by APPENDING,
+  # so a plain re-declaration would leave BOTH the canonical 0.0.0.0 binding
+  # (docker-compose.yml) and this loopback one for the same target port. Docker
+  # then fails to program the endpoint, leaving the container with no published
+  # port at all. `!override` replaces the inherited list instead.
   postgres:
-    ports:
+    ports: !override
       - "127.0.0.1:${HOST_PG_PORT:-5533}:5432"
 
   redis:
-    ports:
+    ports: !override
       - "127.0.0.1:${HOST_REDIS_PORT:-6380}:6379"
 
   nats:
-    ports:
+    ports: !override
       - "127.0.0.1:${HOST_NATS_PORT:-4222}:4222"
       - "127.0.0.1:${HOST_NATS_MONITOR_PORT:-8222}:8222"
+
+  # ---------------------------------------------------------------------------
+  # MinIO — B5b Dashcam Event Media object storage (PRD Module 8 / FR-8.1).
+  #
+  # Defined in FULL here (no profile gate): compose `profiles` are additive, so
+  # a `profiles: []` override cannot release a gate inherited from an included
+  # file — LOCAL therefore owns the service outright and runs it by default,
+  # while the canonical core stack (docker-compose.yml) and the Coolify variant
+  # stay object-storage-free. API/console bind to loopback like every other
+  # service in this variant; credentials come from MEDIA_S3_* in .env.local.
+  # ---------------------------------------------------------------------------
+  minio:
+    # Pinned release, never `latest`: MinIO stopped publishing a `latest` tag
+    # (the reference now lives on quay.io/minio/minio) and a floating tag would
+    # make the media flow untestable across machines. Bump deliberately.
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: adatrack_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MEDIA_S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "127.0.0.1:${HOST_MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${HOST_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [adatrack]
+
+volumes:
+  miniodata:

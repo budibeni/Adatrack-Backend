@@ -4,14 +4,16 @@
 # Services: PostgreSQL 15 · Redis 7 · NATS 2 (JetStream)
 #
 # Variant selection (§7):
-#   LOCAL   : backend/docker-compose.local.yml  (this file) + backend/.env.local
+#   LOCAL   : backend/docker-compose.local.yml  (includes this file) + backend/.env.local
 #   COOLIFY : backend/deployments/docker-compose.coolify.yml  + backend/.env.coolify
 #
 # Helper: backend/scripts/compose-up.sh [local|coolify] <compose args...>
 #
-# NOTE: MinIO (service-media / B5b) lives behind the "media" profile so the B0
-# core stack stays green without it:
-#   docker compose --profile media up -d
+# NOTE: this file is the CORE stack only (PostgreSQL + Redis + NATS JetStream).
+# MinIO (B5b Dashcam Event Media, PRD Module 8 / FR-8.1) is a LOCAL-variant
+# service and therefore lives in docker-compose.local.yml, which includes this
+# file. The Coolify variant (deployments/docker-compose.coolify.yml) is
+# self-contained and provisions its own object storage as a Coolify resource.
 #
 # All values fall back to safe dev defaults, so `docker compose up -d` works
 # standalone while still honoring the .env variant file (see compose-up.sh).
@@ -95,36 +97,10 @@ services:
       start_period: 10s
     networks: [adatrack]
 
-  # ---------------------------------------------------------------------------
-  # B5b (Dashcam Event Media) only — disabled by default (profile "media").
-  # ---------------------------------------------------------------------------
-  minio:
-    image: minio/minio:latest
-    container_name: adatrack_minio
-    profiles: ["media"]
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MEDIA_S3_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MEDIA_S3_SECRET_KEY:-minioadmin}
-    ports:
-      - "${HOST_MINIO_PORT:-9000}:9000"
-      - "${HOST_MINIO_CONSOLE_PORT:-9001}:9001"
-    volumes:
-      - miniodata:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-    networks: [adatrack]
-
 volumes:
   pgdata:
   redisdata:
   natsdata:
-  miniodata:
 
 networks:
   adatrack:
