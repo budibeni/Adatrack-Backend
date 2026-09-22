@@ -304,6 +304,11 @@ Bukti eksekusi (2026-09-22):
 - Suite `api-vehicle` dengan IT tetap hijau: `ok … coverage 80,1 %`.
 - Suite `service-websocket` dengan IT tetap hijau: `ok … coverage 67,4 %` (naik
   dari 66,9 % karena jalur router ikut ter-cover).
+- **Jalur fallback** — `TestITReadFallbackToPrimary` (tanpa perlu replika: endpoint
+  replika diarahkan ke port tertutup): baca tetap **berhasil** lewat primary
+  (`route=primary`), breaker tetap tertutup setelah 1 kegagalan (blip transien
+  tidak boleh mematikan split) dan **terbuka** setelah 3 kegagalan — memastikan
+  replika rusak tidak pernah menggagalkan request maupun mengunci sistem.
 
 ## 3. Cara Menjalankan Ulang
 

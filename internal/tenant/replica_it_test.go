@@ -138,3 +138,65 @@ func readActor(t *testing.T, m *Manager, ctx context.Context) string {
 	}
 	return who
 }
+
+// TestITReadFallbackToPrimary pins the guarantee that a BROKEN replica never fails
+// a read: the replica endpoint points at a closed port, so opening its pool fails
+// and ReadQuery must serve the query from the primary (route=primary).
+func TestITReadFallbackToPrimary(t *testing.T) {
+	skipNoDB(t)
+
+	// 127.0.0.1:1 has nothing listening → connect refused, deterministically.
+	t.Setenv("POSTGRES_REPLICA_HOST", "127.0.0.1")
+	t.Setenv("POSTGRES_REPLICA_PORT", "1")
+
+	m, _, _ := itManager(t)
+	t.Cleanup(m.Close)
+
+	if !m.ReplicaEnabled() {
+		t.Fatal("ReplicaEnabled() = false although a replica endpoint is configured")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	rows, route, err := m.readQuery(ctx, "DEFAULT", `SELECT 1`)
+	if err != nil {
+		t.Fatalf("read with an unreachable replica failed (must fall back to primary): %v", err)
+	}
+	var one int
+	if rows.Next() {
+		_ = rows.Scan(&one)
+	}
+	_ = rows.Close()
+	if one != 1 {
+		t.Fatalf("SELECT 1 returned %d", one)
+	}
+	if route != RoutePrimary {
+		t.Fatalf("route = %q want %q (the replica is unreachable)", route, RoutePrimary)
+	}
+
+	// One failure is deliberately NOT enough to open the breaker (transient blips
+	// must not disable the split), so the route is still "replica"…
+	if got := m.ReadRoute("DEFAULT"); got != RouteReplica {
+		t.Fatalf("ReadRoute after 1 failure = %q want %q (threshold is %d)",
+			got, RouteReplica, replicaFailThreshold)
+	}
+
+	// …but after the threshold the breaker opens and reads skip the replica.
+	for i := 1; i < replicaFailThreshold; i++ {
+		r, _, rerr := m.readQuery(ctx, "DEFAULT", `SELECT 1`)
+		if rerr != nil {
+			t.Fatalf("attempt %d with an unreachable replica failed: %v", i+1, rerr)
+		}
+		_ = r.Close()
+	}
+	if got := m.ReadRoute("DEFAULT"); got != RoutePrimary {
+		t.Fatalf("ReadRoute after %d failures = %q want %q", replicaFailThreshold, got, RoutePrimary)
+	}
+
+	var missed int
+	if err := m.ReadQueryRow(ctx, "DEFAULT", `SELECT 1`).Scan(&missed); err != nil {
+		t.Fatalf("ReadQueryRow with an unreachable replica: %v", err)
+	}
+	t.Logf("fallback verified: route=%s breaker=%s", route, m.ReadRoute("DEFAULT"))
+}
