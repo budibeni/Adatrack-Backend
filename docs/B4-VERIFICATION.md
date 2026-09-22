@@ -188,6 +188,15 @@ ADATRACK_IT=1 make b4-verify QUICK=1 # gate B4 dengan coverage IT
   multi-tenant LOADT2 (0 leakage), query SLA, monitoring stack, hardening
   (audit 0 -> 1), backup-db + restore drill row-count match + backup-redis +
   retention dry-run.
+- **Run QUICK setelah konsolidasi compose + rekonsiliasi role DB**
+  (2026-09-22, run `b4-verify-20260922T063758Z.log`): **15 PASS / 0 FAIL —
+  `B4-VERIFY: ALL PASS`** dijalankan pada stack **satu-compose** (monitoring
+  menyatu di `docker-compose.yml`, satu project `adatrack_gps_system`; lihat
+  §2.6) — 11 container up, Prometheus 11/11 target UP. Kredensial
+  `.env.local`/`.env.coolify` kini memakai role aplikasi `adatrack_gps_user`,
+  bukan superuser bootstrap `adatrack` — volumenya sudah ter-init lebih dulu,
+  sehingga role aplikasi dibuat + kepemilikan schema/objek dialihkan agar
+  setara kondisi fresh init.
 
 - **Penyebab FAIL awal:** langkah 8 mengirim password uji `wrong` (5 karakter) →
   ditolak validasi input (§8.5, minimum 8 karakter) sebagai `400 VALIDATION_ERROR`
