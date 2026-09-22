@@ -1,0 +1,82 @@
+# ============================================================================
+# ADATRACK — HA overlay (PRD §13 + docs/HIGH_AVAILABILITY.md)
+# ============================================================================
+# Overlay untuk varian LOCAL: menambah standby PostgreSQL (streaming WAL) dan
+# replika Redis. Bukan pengganti backup dan bukan failover otomatis — replika
+# adalah jalur pemulihan cepat yang WAJIB dilatih lewat drill.
+#
+# Pakai:
+#   docker compose -f docker-compose.local.yml \
+#                  -f deployments/docker-compose.ha.yml up -d
+#   scripts/replication/drill-ha.sh        # drill + verifikasi otomatis
+#   scripts/replication/replication-status.sh
+#
+# Prasyarat di sisi PRIMARY (dibuat idempoten oleh drill-ha.sh karena butuh
+# superuser bootstrap):
+#   * physical replication slot `pg_replica_slot`
+#   * baris `host replication all all scram-sha-256` di pg_hba.conf
+# ============================================================================
+name: adatrack_gps_system
+
+services:
+  # Standby read-only: streaming WAL dari primary via slot pg_replica_slot.
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: adatrack_postgres_replica
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-adatrack}
+      POSTGRES_DB: ${POSTGRES_DB:-adatrack_gps_db}
+      # Dipakai pg_basebackup saat bootstrap (host replication scram).
+      PGPASSWORD: ${POSTGRES_PASSWORD:-adatrack_dev_pw}
+      PRIMARY_HOST: postgres
+      REPLICATION_SLOT: pg_replica_slot
+    volumes:
+      - pgreplicadata:/var/lib/postgresql/data
+      # CATATAN PATH: jalur relatif di Compose di-resolve terhadap PROJECT
+      # DIRECTORY, bukan direktori file compose. Karena overlay ini dipakai
+      # berlapis dengan docker-compose.local.yml (project dir = backend/),
+      # jalurnya harus ./deployments/ha/... — bukan ./ha/...
+      - ./deployments/ha/postgres-replica-entrypoint.sh:/usr/local/bin/ha-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/ha-entrypoint.sh"]
+    ports:
+      - "127.0.0.1:${HOST_PG_REPLICA_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-adatrack} -d ${POSTGRES_DB:-adatrack_gps_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [adatrack]
+
+  # Replika Redis (jalur failover cepat state live; bukan untuk baca latency-
+  # sensitive). Promote + fail-back dilatih oleh drill-ha.sh.
+  redis-replica:
+    image: redis:7-alpine
+    container_name: adatrack_redis_replica
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --replicaof
+      - redis
+      - "6379"
+    volumes:
+      - redisreplicadata:/data
+    ports:
+      - "127.0.0.1:${HOST_REDIS_REPLICA_PORT:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      redis: {condition: service_healthy}
+    networks: [adatrack]
+
+volumes:
+  pgreplicadata:
+  redisreplicadata:

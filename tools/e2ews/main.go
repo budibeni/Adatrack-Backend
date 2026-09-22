@@ -19,12 +19,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 )
 
 func main() {
 	opt := parseFlags()
 
-	ctx, cancel := context.WithTimeout(context.Background(), opt.timeout*12)
+	// The §16 load profile publishes wsMessages frames at wsRate msg/s, so the
+	// run needs minutes rather than the seconds a functional pass needs.
+	budget := opt.timeout * 12
+	if opt.wsLoad && opt.wsRate > 0 {
+		budget += time.Duration(opt.wsMessages/opt.wsRate+60) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 
 	results := runChecks(ctx, opt)
@@ -84,6 +91,26 @@ func runChecks(ctx context.Context, opt options) []checkResult {
 
 	api := newHTTPClient(opt)
 
+	// Focused profile run (`--ws-only`, used by scripts/b4-verify.sh): one login,
+	// resolve the vehicle, run the fan-out profile — nothing else, so the B4 gate
+	// measures the profile instead of re-running the whole B2 functional flow.
+	if opt.wsOnly {
+		admin, r := checkLogin(ctx, api, opt.adminEmail, opt.adminPassword)
+		add(r)
+		if admin == nil {
+			add(fail("ws.load", "tenant admin session required for the load profile", nil))
+			return results
+		}
+		vehicleID, r := resolveVehicleID(ctx, api, admin, opt)
+		add(r)
+		if vehicleID <= 0 {
+			add(fail("ws.load", "vehicle id unresolved — load profile not verified", nil))
+			return results
+		}
+		add(runWSLoad(ctx, opt, admin, vehicleID))
+		return results
+	}
+
 	// --- 1. readiness ------------------------------------------------------
 	add(checkHealthz(ctx, api))
 
@@ -135,11 +162,18 @@ func runChecks(ctx context.Context, opt options) []checkResult {
 		add(checkWSPushUnderOneSecond(ctx, opt, admin, vehicleID))
 		add(checkWSReconnectResubscribe(ctx, opt, admin, vehicleID))
 		add(checkHistoryPagination(ctx, api, admin, vehicleID))
+		if opt.wsLoad {
+			// Opt-in (§16): 50 subscribers × 1200 frames fan-out profile.
+			add(runWSLoad(ctx, opt, admin, vehicleID))
+		}
 	} else {
 		add(fail("rest.live_enrichment", "vehicle id unresolved — live path not verified", nil))
 		add(fail("ws.push_under_1s", "vehicle id unresolved — WS push not verified", nil))
 		add(fail("ws.reconnect_resubscribe", "vehicle id unresolved — reconnect not verified", nil))
 		add(fail("rest.history_pagination", "vehicle id unresolved — history not verified", nil))
+		if opt.wsLoad {
+			add(fail("ws.load", "vehicle id unresolved — WS load profile not verified", nil))
+		}
 	}
 
 	// --- 6. revocation + audit --------------------------------------------

@@ -95,6 +95,19 @@ monitoring-down: ## Stop the stack, monitoring included (alias for `down`)
 prom-targets: ## Regenerate Prometheus file_sd targets from the service ports
 	@scripts/gen-prom-targets.sh
 
+# --- HA overlay & drill (PRD §13) — varian LOCAL ---------------------------
+ha-up: ## Start the HA overlay: PG standby + Redis replica (VARIANT=local)
+	@docker compose -f docker-compose.local.yml -f deployments/docker-compose.ha.yml --env-file .env.$(VARIANT) up -d postgres-replica redis-replica
+
+ha-down: ## Stop the HA overlay (primary stack keeps running)
+	@docker compose -f docker-compose.local.yml -f deployments/docker-compose.ha.yml --env-file .env.$(VARIANT) rm -sf postgres-replica redis-replica
+
+ha-status: ## Replication status: PG slot/streaming/lag + Redis link
+	@scripts/replication/replication-status.sh
+
+replica-drill: ## HA drill: PG streaming + read/write split + Redis promote & fail-back
+	@scripts/replication/drill-ha.sh $(DRILL_ARGS)
+
 b4-verify: ## Run the B4 acceptance chain (QUICK=1 for a fast smoke)
 	@test -n "$(QUICK)" && scripts/b4-verify.sh --quick || scripts/b4-verify.sh
 

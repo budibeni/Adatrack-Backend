@@ -23,6 +23,12 @@ type options struct {
 	timeout                         time.Duration
 	pg                              pgConfig
 	masterSchema                    string
+	// §16 WebSocket fan-out load profile (opt-in via --ws-load).
+	wsLoad     bool
+	wsOnly     bool
+	wsClients  int
+	wsMessages int
+	wsRate     int
 }
 
 // pgConfig holds the PostgreSQL connection parameters (audit assertions).
@@ -59,7 +65,20 @@ func parseFlags() options {
 	flag.StringVar(&opt.pg.password, "pg-password", envOr("POSTGRES_PASSWORD", ""), "PostgreSQL password")
 	flag.StringVar(&opt.pg.db, "pg-db", envOr("POSTGRES_DB", "adatrack_gps_db"), "PostgreSQL database")
 	flag.StringVar(&opt.masterSchema, "master-schema", envOr("MASTER_DB_NAME", "adatrack_gps_master"), "master schema")
+	flag.BoolVar(&opt.wsLoad, "ws-load", envBool("E2E_WS_LOAD", false),
+		"run the §16 WebSocket fan-out load profile (clients x messages)")
+	flag.IntVar(&opt.wsClients, "ws-clients", envInt("E2E_WS_CLIENTS", 50),
+		"WS load: concurrent subscribers")
+	flag.IntVar(&opt.wsMessages, "ws-messages", envInt("E2E_WS_MESSAGES", 1200),
+		"WS load: device frames every subscriber must receive")
+	flag.IntVar(&opt.wsRate, "ws-rate", envInt("E2E_WS_RATE", 50),
+		"WS load: published device frames per second")
+	flag.BoolVar(&opt.wsOnly, "ws-only", envBool("E2E_WS_ONLY", false),
+		"run ONLY the WebSocket load profile (implies --ws-load), used by b4-verify")
 	flag.Parse()
+	if opt.wsOnly {
+		opt.wsLoad = true
+	}
 	return opt
 }
 
@@ -95,6 +114,16 @@ func envInt(key string, def int) int {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return def
+}
+
+// envBool reads a boolean env var with a default.
+func envBool(key string, def bool) bool {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
 		}
 	}
 	return def

@@ -288,10 +288,11 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 > **Catatan jujur:** setiap item yang dicentang punya bukti eksekusi nyata pada
 > environment lokal (PostgreSQL 15 Docker `:5533`, Redis `:6380`, NATS `:4222`,
-> 6 service host-run). Item yang **belum** memenuhi target (coverage ≥80% service
-> inti, endurance 24 jam penuh, drill replika) **tidak** dicentang dan dirangkum di
-> `docs/B4-VERIFICATION.md` §4.
-> Runner: `scripts/b4-verify.sh` (10 langkah, log `logs/b4-verify-<stamp>.log`).
+> 6 service host-run). Yang **belum** memenuhi target — endurance 24 jam penuh
+> (run bertahap sedang berjalan) dan read/write split app-level (§13) — **tidak**
+> dicentang dan dirangkum di `docs/B4-VERIFICATION.md` §4.
+> Runner: `scripts/b4-verify.sh` (langkah 0–10 + 4b WS load + 9b HA drill,
+> log `logs/b4-verify-<stamp>.log`).
 
 ### Tasks
 - [x] Load test bertahap: 400 → 1000 → 2000 msg/s, 0 data loss (delta persist vs sent).
@@ -304,9 +305,11 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       `persisted == sent` (0 loss), write error 0, `load.live_state` PASS per chunk;
       plateau resource (FR-4.4): heap `5,23 MB → 4,45 MB`, goroutines `16 → 15`;
       jejak resume `logs/b4-endurance-*/{resume.log,chunk-<n>.log}` (04:15→05:08 UTC).
-      **24 jam penuh belum dijalankan** di environment ini — jalurnya siap
-      (`B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`)
-      → item belum dicentang penuh.
+      **24 jam penuh dijalankan bertahap (2026-09-22):**
+      `B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`
+      → satu chunk per jam, `resume.log` bertambah satu baris tiap chunk PASS;
+      proses berjalan di background (log `logs/b4-verify-<stamp>.log`) → item
+      dicentang penuh setelah 24 chunk selesai.
 - [x] Load test multi-tenant: banyak company × perangkat, isolasi schema terverifikasi (0 cross-tenant leakage).
       → tenant kedua **LOADT2** (`scripts/provision-tenant.sh LOADT2`, 16 migrasi + ledger) dengan IMEI
       `864201040599901` + kendaraan sendiri; flow E2E **5/5 PASS** (`company=LOADT2 vehicle=1`);
@@ -350,8 +353,14 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       `scripts/restore-db.sh` (**checksum OK** → restore ke scratch DB `adatrack_gps_restore_test` →
       row-count **match**: master `tm_companies`=3, dev001 `th_telemetry_logs`=86.477, loadt2=1) +
       `scripts/backup-redis.sh` (BGSAVE + RDB/AOF, 3 snapshot terakhir) +
-      `make backup-db|restore-db|backup-redis`. **Belum:** drill replika streaming PG/Redis (butuh stack
-      replika; prosedur di `docs/HIGH_AVAILABILITY.md`).
+      `make backup-db|restore-db|backup-redis`.
+      **Drill replika SELESAI (2026-09-22):** `deployments/docker-compose.ha.yml`
+      (`postgres-replica` streaming WAL via slot `pg_replica_slot` + `redis-replica`)
+      + `scripts/replication/{drill-ha.sh,replication-status.sh,promote-redis-replica.sh}`
+      + `make ha-up|ha-status|replica-drill` → **20/20 assertion PASS**: standby
+      streaming & in-recovery, INSERT primary terpropagasi, tulis langsung ke standby
+      ditolak, lag 0 byte, slot aktif, Redis `role:slave`/link up, promote → tulis
+      diterima → fail-back resync (bukti `docs/B4-VERIFICATION.md` §2.11).
 - [x] Retensi DB: partisi/purge telemetry sesuai §11.
       → `scripts/retention-purge.sh`: deteksi partisi bulanan > `HOT_RETENTION_DAYS` (default 30) per tenant,
       **hitung baris sebelum drop** (no silent loss), dry-run default + `--apply`, dan selalu memanggil
@@ -359,9 +368,12 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ### Acceptance
 - [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
-      → `docs/B4-VERIFICATION.md`: tabel load (0 loss), SLA query, monitoring (target UP + rule + dashboard),
-      backup/restore drill (checksum + row-count match), retensi, dan daftar gap yang tersisa
-      (endurance 24 jam penuh, drill replika, load WS 50×1200 — coverage ≥80% ✅ 2026-09-21).
+      → `docs/B4-VERIFICATION.md`: tabel load (0 loss), **load WS 50×1200** (§2.10,
+      0 loss/0 drop, p95 17 ms), SLA query, monitoring (target UP + rule + dashboard),
+      backup/restore drill (checksum + row-count match), **replika PG/Redis + drill
+      failover** (§2.11, 20/20), retensi, dan gap yang tersisa (endurance 24 jam
+      sedang berjalan; read/write split app-level §13 belum ada di kode —
+      coverage ≥80% service inti ✅ 2026-09-21).
 
 ---
 

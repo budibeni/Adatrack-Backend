@@ -13,15 +13,17 @@
 | # | Item B4 | Target | Hasil | Status |
 |---|---|---|---|---|
 | 1 | Load bertahap | 400 → 1000 → 2000 msg/s, 0 loss | 7.897 / 19.947 / 58.631 frame, **0 loss**, 0 write error | ✅ |
-| 2 | Endurance chunked resume-safe | 24 jam kumulatif | **1.438.418 pesan @ 400 msg/s selama 1 jam (6 chunk, 0 loss/chunk), heap & goroutine plateau**; jalur 24 jam siap | ⚠️ 1 jam / 24 jam |
+| 2 | Endurance chunked resume-safe | 24 jam kumulatif | 1 jam kumulatif terbukti (1.438.418 pesan @400 msg/s, 0 loss/chunk, plateau heap+goroutine); **run 24 jam @3600 s/chunk dijalankan bertahap** — progres di `logs/b4-endurance-<stamp>/resume.log` | 🟡 berjalan |
 | 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: 0 leakage dua arah | ✅ |
 | 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | 792 ms (1000 baris dari ≈1,44 juta baris) / 201 ms / 3 ms / 4 ms | ✅ |
 | 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): worker-live **86,8 %**, worker-persistence **91,1 %**, worker-alert **84,2 %**, api-vehicle **80,0 %**, internal/tenant **80,8 %** | ✅ |
 | 6 | `go vet` + build bersih | exit 0 | `scripts/test.sh` exit 0 (8 modul), `go vet` bersih | ✅ |
 | 7 | Monitoring | Prometheus + dashboard SLO Grafana + alert rule inti | 11/11 target UP, 20 rule, dashboard `adatrack-core` | ✅ |
 | 8 | Hardening | JWT revocation, rate limit, audit menyeluruh; retensi JetStream | unit test + audit live append + 6/6 stream 48 h/4 GiB | ✅ |
-| 9 | Backup / DR | dump harian + checksum + uji restore; replika + drill | dump 4 schema + SHA256; restore row-count match | ✅ |
+| 9 | Backup / DR | dump harian + checksum + uji restore | dump 4 schema + SHA256; restore row-count match | ✅ |
 | 10 | Retensi DB | partisi/purge telemetry (§11) | `retention-purge.sh` + fungsi `tm_ensure_telemetry_partition` | ✅ |
+| 11 | **Load WS 50×1200 (§16)** | 50 subscriber × 1200 frame, 0 loss / 0 drop | `ws.load_50x1200`: `recv[1201..1201]`, `server_sent_delta=60050` (= 50×1201), `drops_delta=0`, `conns_after=0 subs_after=0`, p50 16 ms · p95 17 ms · max 17 ms, goroutine 25→100(transien)→**23** (settle) | ✅ |
+| 12 | **Replika + drill failover (§13)** | PG streaming + standby read-only + Redis promote/fail-back | `make replica-drill`: **20/20 PASS** — `state=streaming` + wal receiver streaming, baris primary terpropagasi ke replay, tulis langsung ke standby **ditolak**, lag **0 byte**, slot `pg_replica_slot` aktif, Redis `role:slave` + `master_link_status:up`, promote → tulis diterima → fail-back resync | ✅ |
 
 ## 2. Detail Bukti
 
@@ -218,6 +220,58 @@ resume-safe · multi-tenant LOADT2 (0 leakage) · query SLA · monitoring stack 
 hardening (unit test + audit live + JetStream) · backup-db · restore drill
 row-count match · backup-redis · retention dry-run.
 
+### 2.10 Load WebSocket 50×1200 (PRD §16)
+
+Profil fan-out ada di `tools/e2ews` (mode `--ws-only`): 50 subscriber bersamaan,
+1200 frame device dipublikasikan lewat jalur nyata (GT06 → `ingestion-tcp` →
+NATS → `worker-live` → `service-websocket` → klien), lalu satu frame **marker**
+dipublikasikan sendirian supaya setiap klien bisa mengukur latensi end-to-end-nya
+tanpa nomor urut di dalam payload GT06.
+
+Tiga sudut bukti untuk aturan "0 loss":
+
+| Sisi | Assertion | Hasil |
+|---|---|---|
+| Klien | tiap subscriber menerima tepat 1201 frame (1200 + marker) | `recv[1201..1201]` |
+| Server | `ws_message_sent_total{event="VEHICLE_UPDATE"}` naik tepat clients × published | `60050` = 50 × 1201 |
+| Backpressure | `ws_message_dropped_total` tidak bergerak (drop-oldest, FR-5.4) | `drops_delta=0` |
+
+Plus: latensi marker p50 **16 ms** · p95 **17 ms** · max **17 ms** (kriteria < 1 s),
+`ws_connections_active` dan `ws_subscriptions_active` kembali **0** (hub melepas
+seluruh koneksi & langganan), dan goroutine kembali di bawah baseline
+(25 → 100 saat koneksi ditutup → **23** setelah settle) → tidak ada indikasi leak
+(FR-4.4). Profil QUICK memakai 10×200 supaya gate tetap cepat.
+
+Rerun: `cd tools/e2ews && go run . --ws-only --ws-clients 50 --ws-messages 1200 --ws-rate 50`
+atau lewat gate `scripts/b4-verify.sh` langkah 4b.
+
+### 2.11 Replika PostgreSQL/Redis + drill failover (PRD §13)
+
+Infrastruktur: `deployments/docker-compose.ha.yml` (overlay varian LOCAL) —
+`postgres-replica` (streaming WAL dari slot `pg_replica_slot`, dibootstrap
+`pg_basebackup -R` oleh `deployments/ha/postgres-replica-entrypoint.sh`) dan
+`redis-replica` (`replicaof`). Tooling: `scripts/replication/drill-ha.sh`,
+`replication-status.sh`, `promote-redis-replica.sh`, plus target `make ha-up`,
+`ha-status`, `replica-drill`.
+
+`make replica-drill` (2026-09-22) — **20/20 PASS**:
+
+| Grup | Assertion | Hasil |
+|---|---|---|
+| Prasyarat | slot `pg_replica_slot` + baris `host replication` di `pg_hba.conf` primary | dibuat + dimuat ulang |
+| Streaming | primary `pg_stat_replication.state=streaming`; replika `pg_stat_wal_receiver.status=streaming` | PASS |
+| Propagasi | `INSERT` di primary muncul di standby | PASS |
+| Proteksi | `INSERT` langsung ke standby **ditolak** (`read-only transaction`) | PASS |
+| Konsistensi | standby `pg_is_in_recovery()=t`, slot aktif, lag `pg_wal_lsn_diff` = **0 byte** | PASS |
+| Redis | replika `role:slave`, `master_link_status:up`, nilai primary terpropagasi | PASS |
+| Drill failover | promote (`REPLICAOF NO ONE`) → replika **menerima tulis** → fail-back (`REPLICAOF redis 6379`) → link `up` → propagasi normal kembali | PASS |
+
+> **Catatan jujur:** *Read/Write split app-level* yang disebut PRD §13
+> (`Manager.ReadPool()`, `ReadRouter`, metrik `db_read_queries_total`/
+> `db_replica_up`, probe `cmd/db-replica-probe`) **belum ada di kode** — pencarian
+> di `internal/tenant` tidak menemukan simbol tersebut. Yang terverifikasi di sini
+> adalah lapisan infra + drill replikasi; lihat §4.
+
 ## 3. Cara Menjalankan Ulang
 
 ```bash
@@ -232,16 +286,19 @@ make retention-purge                           # dry-run (APPLY=1 untuk drop)
 
 ## 4. Gap yang Tersisa (belum dicentang)
 
-1. **Endurance 24 jam penuh** — **1 jam kumulatif terbukti** (6 chunk × 600 s,
-   1.438.418 pesan, 0 loss/chunk, plateau heap+goroutine, jejak resume
-   `logs/b4-endurance-*/resume.log`); eksekusi 24 jam penuh belum dijalankan di
-   environment ini — jalurnya siap
+1. **Endurance 24 jam penuh** — run bertahap sedang berjalan
    (`B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`).
-2. **Drill replika PostgreSQL/Redis + failover** (§13) — belum dijalankan di
-   environment lokal (butuh stack replika); prosedur ada di
-   `docs/HIGH_AVAILABILITY.md`.
-3. **Load WS 50×1200 subscriber** (§16) — belum dijalankan sesi ini (harness WS
-   tersedia di `tools/e2ews`).
-4. **Coverage di luar gate** — `service-websocket` 66,9 % dan `ingestion-tcp`
-   48,3 % tidak termasuk loop coverage `b4-verify`; bisa dinaikkan menyusul
-   (bukan bagian target gate ≥ 80 % service inti).
+   Yang sudah terbukti: 1 jam kumulatif (6 chunk × 600 s, 1.438.418 pesan,
+   0 loss/chunk, plateau heap+goroutine). Progres 24 jam dapat dipantau di
+   `logs/b4-endurance-<stamp>/resume.log` (satu baris per chunk yang PASS).
+2. **Read/Write split app-level (§13)** — **belum diimplementasi**. PRD §13
+   menyebut `internal/tenant.Manager.ReadPool()`/`ReadRouter` (GET → replika
+   dengan fallback one-shot ke primary, `Exec` selalu primary), breaker per-tenant,
+   dan metrik `db_read_queries_total{company_code,route}` /
+   `db_replica_up{company_code}`, tetapi tidak ada di kode; `cmd/db-replica-probe`
+   (yang diklaim "verified live" di PRD) juga tidak ada. Lapisan **infra** replika
+   sudah jalan dan terverifikasi (`make replica-drill`, 20/20, §2.11), jadi sisa
+   pekerjaan murni di sisi aplikasi + wiring handler GET.
+3. **Coverage di luar gate** — `service-websocket` 66,9 % dan `ingestion-tcp`
+   48,3 % tidak termasuk loop coverage `b4-verify` (gate hanya mengukur service
+   inti + `internal/tenant`). Bukan bagian target gate ≥ 80 % service inti.

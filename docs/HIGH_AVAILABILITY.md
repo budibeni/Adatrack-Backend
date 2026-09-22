@@ -18,9 +18,13 @@
 >
 > **PENGECUALIAN REDIS:** sesuai §3 di bawah (*state live TTL 5 mnt,
 > kehilangan ≤5 mnt diterima*), replika Redis **tetap memakai jalur
-> failover-cepat** — `promote-redis-replica.sh` dipertahankan dan prosedurnya
-> wajib dilatih via `backend/scripts/replication/drill-redis-failover.sh`
-> (sudah LIVE ✓ 2026-08-25).
+> failover-cepat** — `scripts/replication/promote-redis-replica.sh`
+> (`promote|failback --yes`) dipertahankan, dan prosedurnya dilatih lewat
+> `scripts/replication/drill-ha.sh` (`make replica-drill`) yang sekaligus
+> memverifikasi replikasi PostgreSQL (streaming WAL, standby read-only,
+> propagasi tulis, lag).
+> Status: **LIVE ✓ 2026-09-22** — drill 20/20 assertion PASS
+> (lihat `docs/B4-VERIFICATION.md` §2.11).
 >
 > ### Playbook: jika syarat penjagaan read-replica terlanggar (2026-08-25)
 > | Syarat dilanggar | Gejala/sinyal | Tindakan |

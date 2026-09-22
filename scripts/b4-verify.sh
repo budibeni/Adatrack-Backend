@@ -83,6 +83,28 @@ g_after="$(curl -fsS http://127.0.0.1:8091/metrics 2>/dev/null | awk '/^adatrack
 echo "endurance resources: heap ${heap_before:-?} -> ${heap_after:-?}, goroutines ${g_before:-?} -> ${g_after:-?}"
 ok "endurance $CHUNKS chunk(s) resume-safe (logs $END_DIR)"
 
+step 4b "WebSocket fan-out load profile (PRD §16: 50×1200)"
+# The profile logs in once per run, and the login limiter (LOGIN_RATE_LIMIT per
+# email per window) is a deliberate product guard — reset ONLY its counters here
+# instead of weakening the limit, otherwise repeated b4-verify runs would trip a
+# 429 and the gate would flake for the wrong reason.
+if command -v redis-cli >/dev/null 2>&1; then
+  redis-cli -h 127.0.0.1 -p "${HOST_REDIS_PORT:-6380}" --scan --pattern "${REDIS_KEY_PREFIX:-adatrack_gps:}auth:login:*" 2>/dev/null \
+    | xargs -r redis-cli -h 127.0.0.1 -p "${HOST_REDIS_PORT:-6380}" del >/dev/null 2>&1 || true
+fi
+WS_BASE="http://127.0.0.1:${HTTP_ADDR#:}"
+[[ "$WS_BASE" == "http://127.0.0.1" ]] && WS_BASE="http://127.0.0.1:8082"
+WS_CLIENTS=50; WS_MESSAGES=1200
+[[ "$QUICK" == true ]] && { WS_CLIENTS=10; WS_MESSAGES=200; }
+if (cd "$ROOT/tools/e2ews" && go run . --ws-only --ws-clients "$WS_CLIENTS" --ws-messages "$WS_MESSAGES" --ws-rate 50 \
+      --base "$WS_BASE" --tcp "127.0.0.1:$TCP_PORT_E" \
+      --pg-host 127.0.0.1 --pg-port "${HOST_PG_PORT:-5533}" --pg-user "${POSTGRES_USER:-adatrack}" \
+      --pg-password "${POSTGRES_PASSWORD:-}" --pg-db "${POSTGRES_DB:-adatrack_gps_db}" 2>&1 | tee -a "$LOG" | grep -q "\[PASS\] ws.load_"); then
+  ok "WS fan-out ${WS_CLIENTS}x${WS_MESSAGES} (0 loss, 0 drop, p95 < 1s)"
+else
+  bad "WS fan-out ${WS_CLIENTS}x${WS_MESSAGES}"
+fi
+
 step 5 "multi-tenant isolation (0 leakage)"
 COMPOSE_VARIANT="$VARIANT" "$ROOT/scripts/provision-tenant.sh" LOADT2 "Load Test Tenant 2" b2b >/dev/null
 export PGPASSWORD="${POSTGRES_PASSWORD:-}"
@@ -145,6 +167,16 @@ else
   bad "restore drill"
 fi
 "$ROOT/scripts/backup-redis.sh" "$BDIR" >/dev/null 2>&1 && ok "backup-redis snapshot" || echo "backup-redis: WARN (best-effort)"
+
+step 9b "HA replication drill (PRD §13)"
+if [[ "$QUICK" == true ]]; then
+  echo "HA drill dilewati di QUICK — jalankan: make replica-drill"
+  ok "HA drill dilewati (QUICK)"
+elif "$ROOT/scripts/replication/drill-ha.sh" >>"$LOG" 2>&1; then
+  ok "HA drill: PG streaming + standby read-only + Redis promote/fail-back"
+else
+  bad "HA drill (lihat $LOG)"
+fi
 
 step 10 "retention purge dry-run + partition helper"
 if "$ROOT/scripts/retention-purge.sh" >>"$LOG" 2>&1; then ok "retention-purge dry-run"; else bad "retention-purge dry-run"; fi
