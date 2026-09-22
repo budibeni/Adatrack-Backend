@@ -134,8 +134,13 @@ ADATRACK_IT=1 make b4-verify QUICK=1 # gate B4 dengan coverage IT
   `worker-persistence`, `worker-alert`, `service-websocket`, `api-vehicle`) +
   postgres/redis/node/cadvisor/prometheus.
 - **file_sd:** `monitoring/targets/adatrack-services.json` di-generate oleh
-  `scripts/gen-prom-targets.sh` (auto-detect host address agar Prometheus
-  container bisa scrape service host-run; override via `PROM_SCRAPE_HOST`).
+  `scripts/gen-prom-targets.sh`. Alamat host dipilih **empiris**, bukan ditebak:
+  kandidat `host.docker.internal` lalu IPv4 utama host, masing-masing diuji
+  dengan menembak `/healthz` dari dalam container Prometheus — di Docker Desktop
+  Windows/WSL2 `host.docker.internal` menunjuk gateway VM (mis. `192.168.65.254`)
+  sehingga yang terpakai adalah IP distro tempat service host-run berjalan.
+  Override manual lewat `PROM_SCRAPE_HOST`. File hasil generate **tidak
+  di-track git** (machine-specific) dan diregenerasi otomatis oleh `make up`.
 - **Rule:** `adatrack-slo.yml` (5 rule: recording availability/budget, fast burn,
   budget exhausted) + `alert-rules.yml` (15 alert sesuai PRD §10.3 — NATS pending,
   insert latency, tenant resolution, WS broadcast, HTTP p95 > 800 ms, error rate,

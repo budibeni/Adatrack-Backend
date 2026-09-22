@@ -261,7 +261,8 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
       budget exhausted) + `alert-rules.yml` (15 alert PRD §10.3) **dimuat Prometheus tanpa error**; dashboard
       **ADATRACK Core** (uid `adatrack-core`, 8 panel) + datasource Prometheus ter-provision otomatis;
       `scripts/gen-prom-targets.sh` menulis file_sd `monitoring/targets/adatrack-services.json`
-      (auto-detect alamat host agar Prometheus container bisa scrape service host-run;
+      (alamat host dipilih empiris: host.docker.internal lalu IPv4 host, masing-masing
+      diuji /healthz dari dalam container Prometheus;
       `PROM_SCRAPE_HOST` untuk override); `make monitoring-up|monitoring-down` kini alias `up|down`
       karena monitoring bagian dari satu stack, plus `make prom-targets`.
 - [x] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).

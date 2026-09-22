@@ -16,6 +16,7 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 up: ## Start the system stack — infra + monitoring (compose) — VARIANT=local|coolify
+	@scripts/gen-prom-targets.sh >/dev/null || true
 	@scripts/compose-up.sh $(VARIANT) up -d
 
 down: ## Stop the system stack — infra + monitoring (compose)

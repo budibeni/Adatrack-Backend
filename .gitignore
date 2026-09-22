@@ -41,3 +41,8 @@ tmp/
 .env.*.secret
 *.pem
 *.key
+# Prometheus file_sd hasil generate — isinya machine-specific (alamat host yang
+# bisa dijangkau container Prometheus). Diregenerasi otomatis oleh
+# `make up` / `make monitoring-up` / `make prom-targets`; lihat
+# scripts/gen-prom-targets.sh.
+/monitoring/targets/*.json
