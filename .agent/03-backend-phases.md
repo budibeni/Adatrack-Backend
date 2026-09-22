@@ -241,12 +241,15 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
       cek silang SQL: IMEI DEV001 di schema LOADT2 = **0**, IMEI LOADT2 di schema DEV001 = **0**,
       IMEI LOADT2 di schema platform `adatrack_gps_default` = **0** (isolasi struktural:
       schema per-tenant + `search_path` dipaksa per pool).
-- [~] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
-      → `go vet` + `scripts/test.sh` **exit 0** (semua modul hijau). Coverage **belum** memenuhi target,
-      diukur apa adanya: service-websocket **67,1 %**, ingestion-tcp 48,3 %, worker-persistence 34,2 %,
-      api-vehicle 18,3 %, worker-live 13,2 %, worker-alert 5,7 %, `internal` 42,3 % (`internal/storage` 100 %).
-      Penyebab: lapisan DB/Redis (`store_pg*.go`, pool `internal/tenant`) hanya diverifikasi E2E live.
-      Rencana penutup (mock store per service) ada di `docs/B4-VERIFICATION.md` §2.5 — **belum dicentang**.
+- [x] Coverage ≥80% service inti (worker-live, worker-persistence, api-vehicle, worker-alert); `go vet` + build bersih.
+      → `go vet` + `scripts/test.sh` **exit 0** (semua modul hijau). Gate coverage di `b4-verify.sh`
+      kini diukur dengan `ADATRACK_IT=1` (suite integrasi PostgreSQL/NATS/Redis, pola
+      `worker-persistence`/`worker-live`): worker-persistence **91,1 %**, worker-live **86,8 %**,
+      worker-alert **84,2 %** (sebelumnya 5,7 % — engine/notifier/detektor hermetic + IT `store_pg`),
+      api-vehicle **80,0 %** (sebelumnya 18,3 % — handler hermetic + IT `PostgresStore` nyata),
+      `internal/tenant` **80,8 %** (sebelumnya 8,5 % — IT routing/resolve/provision). Bukti dan
+      detail per modul: `docs/B4-VERIFICATION.md` §2.5 (2026-09-21). Di luar gate:
+      service-websocket 66,9 %, ingestion-tcp 48,3 %.
 - [x] Query SLA: history 30 hari < 1,5 s (index & tuning).
       → `tools/querybench` (baru) vs data nyata: history 30 hari (1000 baris) **24 ms**, count 24 jam
       **32 ms**, daftar geofence **3 ms**, daftar kendaraan **4 ms**; indeks
@@ -284,7 +287,7 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
 - [x] Load/endurance PASS terdokumentasi; SLO dashboard sehat; backup/restore & drill sukses.
       → `docs/B4-VERIFICATION.md`: tabel load (0 loss), SLA query, monitoring (target UP + rule + dashboard),
       backup/restore drill (checksum + row-count match), retensi, dan daftar gap yang tersisa
-      (endurance 24 jam penuh, coverage ≥80%, drill replika, load WS 50×1200 **belum**).
+      (endurance 24 jam penuh, drill replika, load WS 50×1200 — coverage ≥80% ✅ 2026-09-21).
 
 ---
 
