@@ -124,9 +124,12 @@ ADATRACK_IT=1 make b4-verify QUICK=1 # gate B4 dengan coverage IT
 
 ### 2.6 Monitoring & Observability
 
-- **Stack nyata:** `monitoring/docker-compose.monitoring.yml` — Prometheus
+- **Stack nyata:** `docker-compose.yml` — satu file untuk seluruh sistem (infra
+  `postgres`/`redis`/`nats` **+** monitoring terus aktif): Prometheus
   (`:9095`), Alertmanager (`:9093`), Grafana (`:3001`), node-exporter (`:9100`),
   cAdvisor (`:8084`), postgres-exporter (`:9187`), redis-exporter (`:9121`).
+  Varian LOCAL (`docker-compose.local.yml`) menambah MinIO dan mem-bind seluruh
+  port ke `127.0.0.1`; varian Coolify memakai `expose` (internal saja).
 - **Target UP 11/11:** 6 service aplikasi (`ingestion-tcp`, `worker-live`,
   `worker-persistence`, `worker-alert`, `service-websocket`, `api-vehicle`) +
   postgres/redis/node/cadvisor/prometheus.
@@ -205,7 +208,7 @@ row-count match · backup-redis · retention dry-run.
 
 ```bash
 make up && make migrate && make services-up   # infra + service host-run
-make prom-targets && make monitoring-up        # monitoring stack (§10)
+make up && make prom-targets                     # infra + monitoring (satu stack, §10)
 make b4-verify                                 # rantai acceptance B4 penuh
 make b4-verify QUICK=1                         # smoke cepat
 make querybench CODE=DEV001                    # SLA query

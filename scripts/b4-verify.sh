@@ -105,7 +105,7 @@ fi
 
 step 7 "monitoring stack verify"
 "$ROOT/scripts/gen-prom-targets.sh" >/dev/null && echo "targets: regenerated"
-for f in monitoring/prometheus/prometheus.yml monitoring/prometheus/rules/alert-rules.yml monitoring/prometheus/rules/adatrack-slo.yml monitoring/alertmanager/alertmanager.yml monitoring/grafana/dashboards/adatrack-core.json monitoring/docker-compose.monitoring.yml; do
+for f in monitoring/prometheus/prometheus.yml monitoring/prometheus/rules/alert-rules.yml monitoring/prometheus/rules/adatrack-slo.yml monitoring/alertmanager/alertmanager.yml monitoring/grafana/dashboards/adatrack-core.json; do
   if [[ -f "$ROOT/$f" ]]; then echo "present: $f"; else bad "missing $f"; fi
 done
 if python3 -c "import json; json.load(open('$ROOT/monitoring/grafana/dashboards/adatrack-core.json')); json.load(open('$ROOT/monitoring/targets/adatrack-services.json'))"; then

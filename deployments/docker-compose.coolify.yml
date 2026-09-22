@@ -11,6 +11,12 @@
 #     migration artifacts (database/) travel inside the image (§14.5 step 1).
 #   * MIGRATE_ON_BOOT=true + pre-deploy hook runs scripts/migrate.sh (§14.5).
 #
+# Monitoring (B4, PRD §10.4) is part of the stack — the same seven services the
+# canonical docker-compose.yml defines — but here they are `expose`d on the
+# internal network only (plus Grafana's admin password comes from a Coolify
+# secret). Coolify's proxy maps a domain to the port when an operator needs the
+# Grafana dashboard; nothing is published on the host by default.
+#
 # NEVER mix this file with .env.local (§7 "tidak ada config campuran").
 # ============================================================================
 name: adatrack_gps_prod
@@ -177,10 +183,128 @@ services:
       nats: {condition: service_healthy}
     networks: [adatrack]
 
+  # ---------------------------------------------------------------------------
+  # Monitoring stack (B4, PRD §10.4) — internal network only.
+  #
+  # Same services as the canonical docker-compose.yml; the differences are
+  # deliberate and variant-specific:
+  #   * `expose` instead of `ports` — nothing new is published on the host. The
+  #     Coolify proxy maps a domain to Grafana's 3000 / Prometheus' 9090 when an
+  #     operator actually needs the UI.
+  #   * Grafana's admin password is a Coolify secret (${VAR:?} aborts a deploy
+  #     that forgot it) instead of the LOCAL `admin` fallback.
+  #   * Config is mounted from ../monitoring (this file lives in deployments/).
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: always
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROM_RETENTION:-15d}
+      - --web.enable-lifecycle
+    expose:
+      - "9090"
+    volumes:
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - ../monitoring/targets:/etc/prometheus/targets:ro
+      - promdata:/prometheus
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [adatrack]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: always
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+    expose:
+      - "9093"
+    volumes:
+      - ../monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertdata:/alertmanager
+    networks: [adatrack]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env.coolify}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    expose:
+      - "3000"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks: [adatrack]
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: always
+    expose:
+      - "9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      # `$$` is required — Compose would otherwise interpolate $| itself.
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    networks: [adatrack]
+
+  cadvisor:
+    # Container resource metrics (PRD §10.4). Needs the host cgroup/docker paths
+    # and privileged access, which Coolify grants for a service defined here.
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: always
+    privileged: true
+    expose:
+      - "8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [adatrack]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    restart: always
+    environment:
+      # Service-name DSN over the internal network, credentials from Coolify.
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env.coolify}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.coolify}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB in .env.coolify}?sslmode=disable
+    expose:
+      - "9187"
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [adatrack]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    restart: always
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    expose:
+      - "9121"
+    depends_on:
+      redis: {condition: service_healthy}
+    networks: [adatrack]
+
 volumes:
   pgdata:
   redisdata:
   natsdata:
+  promdata:
+  alertdata:
+  grafanadata:
 
 networks:
   adatrack:

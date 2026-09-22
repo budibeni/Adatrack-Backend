@@ -15,10 +15,10 @@ MODULES := internal services/ingestion-tcp services/worker-live services/worker-
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-up: ## Start infra (compose) — VARIANT=local|coolify
+up: ## Start the system stack — infra + monitoring (compose) — VARIANT=local|coolify
 	@scripts/compose-up.sh $(VARIANT) up -d
 
-down: ## Stop infra (compose)
+down: ## Stop the system stack — infra + monitoring (compose)
 	@scripts/compose-up.sh $(VARIANT) down
 
 ps: ## Show infra container status + health
@@ -72,13 +72,18 @@ clean: ## Remove build artifacts
 
 # --- B4: performance, monitoring, hardening, DR (PRD §10–§13, §16–§17) -------
 
-monitoring-up: ## Start the monitoring stack (Prometheus/Alertmanager/Grafana/exporters)
+# Monitoring is NOT a separate stack anymore: Prometheus/Alertmanager/Grafana and
+# the exporters are defined in docker-compose.yml next to postgres/redis/nats, so
+# a single `up`/`down` owns everything. These two targets are kept as the
+# documented entry points (docs, b4-verify) and simply delegate to `up`/`down`
+# after regenerating the Prometheus file_sd targets.
+monitoring-up: ## Start the stack incl. monitoring (alias for `up`)
 	@scripts/gen-prom-targets.sh >/dev/null
-	@docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.$(VARIANT) up -d
-	@echo "monitoring-up: Prometheus :${HOST_PROM_PORT:-9095} — Alertmanager :9093 — Grafana :3001 (dashboard uid adatrack-core)"
+	@scripts/compose-up.sh $(VARIANT) up -d
+	@echo "monitoring-up: Prometheus :$${HOST_PROM_PORT:-9095} — Alertmanager :$${HOST_ALERTMANAGER_PORT:-9093} — Grafana :$${HOST_GRAFANA_PORT:-3001} (dashboard uid adatrack-core)"
 
-monitoring-down: ## Stop the monitoring stack
-	@docker compose -f monitoring/docker-compose.monitoring.yml --env-file .env.$(VARIANT) down
+monitoring-down: ## Stop the stack, monitoring included (alias for `down`)
+	@scripts/compose-up.sh $(VARIANT) down
 
 prom-targets: ## Regenerate Prometheus file_sd targets from the service ports
 	@scripts/gen-prom-targets.sh

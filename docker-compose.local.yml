@@ -3,8 +3,13 @@
 # ============================================================================
 # Selected automatically by scripts/compose-up.sh when COMPOSE_VARIANT=local
 # (default). Extends the canonical stack with dev-only concerns:
-#   * host ports bound to 127.0.0.1 (never exposed to the LAN)
+#   * host ports bound to 127.0.0.1 (never exposed to the LAN) — infra AND
+#     monitoring, every service published by docker-compose.yml
 #   * MinIO runs by default (B5b media flow is exercised locally)
+#
+# The monitoring services come from the included canonical file; this file only
+# re-binds their ports (see the `!override` note below), so there is no second
+# compose file to layer with `-f` anymore.
 #
 # Usage:
 #   docker compose -f docker-compose.local.yml --env-file .env.local up -d
@@ -32,6 +37,39 @@ services:
     ports: !override
       - "127.0.0.1:${HOST_NATS_PORT:-4222}:4222"
       - "127.0.0.1:${HOST_NATS_MONITOR_PORT:-8222}:8222"
+
+  # ---------------------------------------------------------------------------
+  # Monitoring (B4, PRD §10.4) — same `!override` reasoning as the infra above.
+  # The canonical file publishes these on 0.0.0.0; this variant must never expose
+  # Prometheus / Grafana / Alertmanager (unauthenticated by default) to the LAN.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    ports: !override
+      - "127.0.0.1:${HOST_PROM_PORT:-9095}:9090"
+
+  alertmanager:
+    ports: !override
+      - "127.0.0.1:${HOST_ALERTMANAGER_PORT:-9093}:9093"
+
+  grafana:
+    ports: !override
+      - "127.0.0.1:${HOST_GRAFANA_PORT:-3001}:3000"
+
+  node-exporter:
+    ports: !override
+      - "127.0.0.1:${HOST_NODE_EXPORTER_PORT:-9100}:9100"
+
+  cadvisor:
+    ports: !override
+      - "127.0.0.1:${HOST_CADVISOR_PORT:-8084}:8080"
+
+  postgres-exporter:
+    ports: !override
+      - "127.0.0.1:${HOST_PG_EXPORTER_PORT:-9187}:9187"
+
+  redis-exporter:
+    ports: !override
+      - "127.0.0.1:${HOST_REDIS_EXPORTER_PORT:-9121}:9121"
 
   # ---------------------------------------------------------------------------
   # MinIO — B5b Dashcam Event Media object storage (PRD Module 8 / FR-8.1).

@@ -35,8 +35,8 @@ detect_host_ip() {
 # PROM_SCRAPE_HOST selects the host address a (possibly containerised)
 # Prometheus scrapes. When unset it is auto-detected: the host's primary
 # non-loopback IPv4 is reachable from a bridge container on a normal Linux
-# Docker host, while `host.docker.internal` (extra_hosts:host-gateway, see
-# monitoring/docker-compose.monitoring.yml) covers Docker Desktop.
+# Docker host, while `host.docker.internal` (extra_hosts:host-gateway, set on
+# the `prometheus` service in backend/docker-compose.yml) covers Docker Desktop.
 TARGET_HOST="${PROM_SCRAPE_HOST:-$(detect_host_ip)}"
 mkdir -p "$(dirname "$TARGETS_FILE")"
 

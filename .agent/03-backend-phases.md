@@ -255,14 +255,15 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
       **32 ms**, daftar geofence **3 ms**, daftar kendaraan **4 ms**; indeks
       `idx_th_telemetry_logs_{vehicle,imei,company}_time` + partisi bulanan (migrasi company `007`).
 - [x] Monitoring: Prometheus metrics + dashboard SLO Grafana + alert rule inti.
-      → `monitoring/docker-compose.monitoring.yml` (Prometheus `:9095` · Alertmanager `:9093` · Grafana `:3001`
+      → satu compose (tidak ada file monitoring terpisah): `docker-compose.yml` (Prometheus `:9095` · Alertmanager `:9093` · Grafana `:3001`
       · node-exporter · cAdvisor · postgres-exporter · redis-exporter) — **11/11 target UP** (6 service + 5 infra);
       `monitoring/prometheus/rules/adatrack-slo.yml` (5 rule: recording availability/error-budget, fast burn,
       budget exhausted) + `alert-rules.yml` (15 alert PRD §10.3) **dimuat Prometheus tanpa error**; dashboard
       **ADATRACK Core** (uid `adatrack-core`, 8 panel) + datasource Prometheus ter-provision otomatis;
       `scripts/gen-prom-targets.sh` menulis file_sd `monitoring/targets/adatrack-services.json`
       (auto-detect alamat host agar Prometheus container bisa scrape service host-run;
-      `PROM_SCRAPE_HOST` untuk override); `make monitoring-up|monitoring-down|prom-targets`.
+      `PROM_SCRAPE_HOST` untuk override); `make monitoring-up|monitoring-down` kini alias `up|down`
+      karena monitoring bagian dari satu stack, plus `make prom-targets`.
 - [x] Hardening: JWT revocation, rate limit, audit DB menyeluruh; retensi JetStream (max_age/max_bytes).
       → unit test fail-closed hijau (`TestRefreshRotationAndLogout`, `TestLogoutIsFailClosedWhenAuditFails`,
       `TestLoginRateLimited`, `TestLoginLockoutAfterRepeatedFailures`, `TestAPIRateLimitPerUser`); audit trail

@@ -82,7 +82,8 @@ Alur B3 (alert & fleet): stream `telemetry.raw.>` juga dikonsumsi **worker-alert
 │       └── company_pg/        # Migrasi schema per-tenant (dijalankan saat provisioning)
 ├── deployments/
 │   └── docker-compose.coolify.yml   # Varian produksi (Coolify)
-├── docker-compose.yml         # Infra LOCAL (postgres, redis, nats, minio)
+├── docker-compose.yml         # Stack kanonik: postgres, redis, nats + monitoring
+├── docker-compose.local.yml   # Varian LOCAL (bind 127.0.0.1 + MinIO) — include file di atas
 ├── scripts/                   # compose-up, migrate, reset-db, e2e-*, start-services, test
 ├── docs/                      # Arsitektur DB, HA, runbook, panduan perangkat, acuan frontend
 └── Makefile                   # Entry point developer (make help)
@@ -164,7 +165,7 @@ make e2e              # E2E pipeline (frame → NATS → Redis + PG)
 make e2e-ws           # E2E REST + WS (login → RBAC → live push)
 # B4 — performance, monitoring, hardening, DR
 make b4-verify        # rantai acceptance B4 (QUICK=1 untuk smoke cepat)
-make monitoring-up / monitoring-down   # stack Prometheus+Alertmanager+Grafana
+make monitoring-up / monitoring-down   # alias `up`/`down` — monitoring sudah satu stack
 make prom-targets     # regenerate file_sd targets (monitoring/targets/*.json)
 make querybench CODE=DEV001            # SLA query (30 hari < 1,5 s)
 make backup-db / backup-redis          # dump PG per schema / snapshot Redis
