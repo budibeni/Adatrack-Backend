@@ -4,6 +4,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 . "$ROOT/scripts/lib-db.sh"
+
+# Endurance knobs dari CALLER harus menang: load_variant_env men-source
+# .env.<variant> dengan `set -a`, sehingga B4_ENDURANCE_* yang di-export di command
+# line diam-diam ditimpa nilai default di file — perintah 24 jam yang terdokumentasi
+# pun berjalan 6×600 s tanpa peringatan. Simpan nilai caller dulu, pakai setelahnya.
+ENDURANCE_CHUNKS="${B4_ENDURANCE_CHUNKS:-}"
+ENDURANCE_CHUNK_SEC="${B4_ENDURANCE_CHUNK_SEC:-}"
+
 load_variant_env "${COMPOSE_VARIANT:-local}"
 QUICK=false
 [[ "${1:-}" == "--quick" ]] && QUICK=true
@@ -63,7 +71,7 @@ for rung in $RUNGS; do
 done
 
 step 4 "endurance chunked resume-safe"
-CHUNKS="${B4_ENDURANCE_CHUNKS:-6}"; CHUNK_SEC="${B4_ENDURANCE_CHUNK_SEC:-600}"
+CHUNKS="${ENDURANCE_CHUNKS:-${B4_ENDURANCE_CHUNKS:-6}}"; CHUNK_SEC="${ENDURANCE_CHUNK_SEC:-${B4_ENDURANCE_CHUNK_SEC:-600}}"
 [[ "$QUICK" == true ]] && { CHUNKS=1; CHUNK_SEC=120; }
 END_DIR="$ROOT/logs/b4-endurance-$STAMP"; mkdir -p "$END_DIR"
 echo "endurance: chunks=$CHUNKS chunk=${CHUNK_SEC}s dir=$END_DIR"
