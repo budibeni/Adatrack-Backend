@@ -3,6 +3,8 @@
 // contract, FR-5.2 VehicleUpdateData).
 package models
 
+import "encoding/json"
+
 // Role names (master `tm_users.global_role`, PRD §3.1).
 const (
 	RoleSuperAdmin = "SuperAdmin"
@@ -226,13 +228,49 @@ type ErrorEnvelope struct {
 	Errors map[string]string `json:"errors,omitempty"`
 }
 
+// MediaEventData is the `MEDIA_EVENT` payload (PRD Module 8 / FR-8.5) published
+// by service-media on `media.event.<company_code>`.
+type MediaEventData struct {
+	ID          int64  `json:"id"`
+	CompanyCode string `json:"company_code"`
+	VehicleID   int64  `json:"vehicle_id"`
+	IMEI        string `json:"imei"`
+	EventType   string `json:"event_type"`
+	ObjectKey   string `json:"object_key"`
+	MimeType    string `json:"mime_type"`
+	FileSize    int64  `json:"file_size"`
+	Status      string `json:"status"`
+	URL         string `json:"url,omitempty"`
+	CapturedAt  string `json:"captured_at"`
+}
+
+// AlertNotify is the `notify.alert.<vehicle_id>` payload published by
+// worker-alert (PRD §5.9.8) and fanned out to entitled clients.
+type AlertNotify struct {
+	AlertID    int64           `json:"alert_id"`
+	Type       string          `json:"type"`
+	Severity   string          `json:"severity"`
+	Company    string          `json:"company"`
+	VehicleID  int64           `json:"vehicle_id"`
+	IMEI       string          `json:"imei"`
+	Lat        *float64        `json:"lat,omitempty"`
+	Lon        *float64        `json:"lon,omitempty"`
+	Metadata   json.RawMessage `json:"metadata,omitempty"`
+	DetectedAt string          `json:"detected_at"`
+}
+
 // WebSocket event names (PRD §8.3 + FR-5.2).
 const (
 	EventVehicleUpdate = "VEHICLE_UPDATE"
+	EventMediaEvent    = "MEDIA_EVENT"
 	EventError         = "ERROR"
 	EventSubscribed    = "SUBSCRIBED"
 	EventUnsubscribed  = "UNSUBSCRIBED"
 	EventHeartbeat     = "HEARTBEAT"
+	// EventNotifyAlertPrefix mirrors the documented `notify.alert.<vehicle_id>`
+	// event name (PRD §8.3): the client sees exactly the subject it would
+	// subscribe to on the bus.
+	EventNotifyAlertPrefix = "notify.alert."
 )
 
 // WSEnvelope is every server→client WebSocket frame (PRD §8.3).

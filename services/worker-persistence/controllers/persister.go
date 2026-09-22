@@ -173,8 +173,12 @@ func (p *Persister) flusher() {
 		case <-p.flushCh:
 			p.flush()
 		case <-tick.C:
+			// The ticker must drain EITHER buffer: a fuel-only packet never
+			// populates `pending` (no position), so gating the tick on the
+			// telemetry buffer alone would hold fuel rows indefinitely — the
+			// B5a acceptance finding (fuel rows must land within BATCH_TIMEOUT).
 			p.mu.Lock()
-			nonEmpty := len(p.pending) > 0
+			nonEmpty := len(p.pending) > 0 || len(p.fuelPending) > 0
 			p.mu.Unlock()
 			if nonEmpty {
 				p.flush()

@@ -192,23 +192,85 @@ Fase frontend (F1–F4) menunggu B0–B6 selesai (gate PRD §20.2); B7–B12 tid
       → `services/api-vehicle/controllers/{live,kv,service}.go` (`LiveStateReader`, `enrichLiveStates` di list+detail, `RedisKV.MGet/LiveStateKey` via `internal.LiveStateKeyFor` + `NewRedisKVWithPrefix(red.Client(), cfg.Redis.KeyPrefix)`), `models.LiveState` (+`Vehicle.Live`); unit test: `live_test.go` (unit `applyLiveState` + key-layout + HTTP detail/list/batch/fuel-only/degrade/corrupt/round-trip) + `fuel_test_helpers_test.go` (list/detail) + `handlers_fuel_{create,update,delete,history}_test.go` (CRUD + riwayat) + `internal/redclient_test.go` (key layout/normalisasi/prefix).
 
 ### Acceptance
-- [ ] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference. *(butuh infra live — menyusul)*
+- [x] E2E: device kirim fuel → tersimpan → alert ter-publish → terkirim via WS sesuai preference.
+      ✅ *terverifikasi live 2026-09-22 — `make e2e-fuel` (`scripts/e2e-fuel.sh` + `tools/e2e-fuel`)
+      **11/11 PASS** pada stack host-mode: login → fuel config → WS subscribe →
+      frame GT06 `0x94/0x0D` (`!AIOIL`, 90 cm → 40 cm → settle) → `td_fuel_logs` 3 baris
+      (fuel_level/fuel_volume terkalibrasi) → live state Redis (`fuel_level=40`) →
+      `alert.fuel.DEV001` (`fuel_drop`, critical) → `notify.alert.1` diterima WS dalam **0 ms** →
+      `GET /vehicles/1/fuel/history` (12 baris). Dua temuan ditutup saat verifikasi:
+      (1) kalibrasi `FUEL_TANK_HEIGHT_CM` kini benar-benar diterapkan di ingestion
+      (`ApplyFuelCalibration` → fuel_level/fuel_volume, `controllers/fuel.go` + unit test),
+      (2) flusher worker-persistence kini membuang **buffer fuel-only** juga
+      (`BATCH_TIMEOUT` tidak lagi hanya melihat buffer telemetry — lihat `TestFlusherDrainsFuelOnlyBuffer`).
+      Catatan harness: alert dievaluasi atas reading yang SUDAH ada di sliding window, jadi
+      harness mengirim high→low→settle; `scripts/e2e-fuel.sh` juga menyetel
+      `ALERT_DEDUP_WINDOW_SEC=5` (dedup engine in-memory) + membersihkan counter rate-limit.*
 - [x] Unit test threshold/dedup (worker-alert fuel tests) + parser kanal fuel hijau (`TestParseInfoTransmit` frame `!AIOIL`).
 - [x] Unit test REST overlay hijau: `live_test.go` + fuel handler tests lolos (`go test ./controllers/ -run 'Test(ListFuelConfigs|FuelConfigDetail|CreateFuelConfig|UpdateFuelConfig|DeleteFuelConfig|RestoreFuelConfig|VehicleFuelHistory|ApplyLiveState|RedisKV|RedisKVMGet|VehicleDetailLiveOverlay|VehicleDetailWithoutLive|VehicleListBatch|LiveOverlay|LiveStateJSON)'` PASS; full `go test ./...` + `go vet` api-vehicle & internal hijau).
 
 ---
 
-## Phase B5b — Dashcam Event Media — Scope A (PRD Module 8) ⬜
+## Phase B5b — Dashcam Event Media — Scope A (PRD Module 8) ✅ (selesai 2026-09-22)
+
+**Tujuan:** event media dashcam (foto/clip pendek) end-to-end: ingest ber-HMAC →
+object storage S3-compatible → katalog per-tenant ber-RBAC → presigned GET →
+WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ### Tasks
-- [ ] MinIO/S3 (bucket + policy) + storage layer `internal/storage`.
-- [ ] Upload multipart + JSON(HMAC) → lifecycle complete; katalog media per-tenant ber-RBAC row-level.
-- [ ] WS `MEDIA_EVENT` (fan-out ke user berhak) + presigned GET (round-trip byte-persis).
-- [ ] Retensi: job penanda `expired` + penghapusan objek sesuai policy; endpoint complete (+audit).
+- [x] MinIO/S3 (bucket + policy) + storage layer `internal/storage`.
+      → `internal/storage`: `Store` (Put/Head/Get/Delete/PresignGet/PresignPut/Health) dengan
+      **dua implementasi**: `Mem` (dev/unit test) + `S3Store` (MinIO/S3, **SigV4 ditulis sendiri
+      dengan standard library**, tanpa AWS SDK; path-style). Bucket dibuat idempoten saat boot
+      (`EnsureBucket`, sama seperti task "minio-init" Coolify). Bukti: `go test ./storage/...`
+      (vektor referensi SigV4 AWS = oracle independen, `TestSignatureMatchesAWSReferenceVector`)
+      + IT live MinIO `ADATRACK_IT=1` (`TestITS3RoundTripPresignedByteExact`, bucket adatrack-media).
+- [x] Upload multipart + JSON(HMAC) → lifecycle complete; katalog media per-tenant ber-RBAC row-level.
+      → `services/service-media` (`:8095` REST + `/healthz` + `/metrics`, `:8096` health/metrics kedua):
+      `POST /api/v1/media/events` (multipart = objek langsung tersimpan `complete`; JSON = tiket +
+      presigned PUT + `POST /media/events/:id/complete` menandai `complete`), HMAC-SHA256 per-company
+      (`X-Company-Code`/`X-Signature`/`X-Timestamp`, anti-replay `MEDIA_HMAC_MAX_SKEW_SEC`; multipart
+      menandatangani `imei\n event_type\n file-bytes`), IMEI divalidasi ke `tm_vehicle_imei_map`
+      (anti-spoofing + cross-tenant), allowlist mime `image/jpeg`·`video/mp4`, katalog `th_media_events`
+      (lifecycle `pending → complete → expired → deleted`), RBAC row-level `tm_user_vehicles`
+      (+`GET /media`, `GET /media/:id`, `DELETE /media/:id` soft delete, `POST /media/:id/restore`).
+      Migrasi additive `company_pg/016_media_events_governance.sql` (deleted_by, upload_source,
+      object_etag, retention_days, notified_at + index pending).
+      Bukti unit: `controllers/media_ingest_test.go` + `media_flow_test.go` + `media_rbac_test.go`
+      (happy path multipart/JSON, 401 tanda tangan, allowlist mime, oversize, complete idempoten,
+      soft delete/restore Admin-only, retensi).
+- [x] WS `MEDIA_EVENT` (fan-out ke user berhak) + presigned GET (round-trip byte-persis).
+      → service-media publishes `media.event.<company_code>` (FR-8.5) dengan presigned URL pendek;
+      `service-websocket` bridge diperluas: `notify.alert.>` → event `notify.alert.<vehicle_id>`
+      (PRD §8.3) dan `media.event.>` → `MEDIA_EVENT`, keduanya difan-out per (tenant, vehicle) yang
+      sudah lolos RBAC row-level di subscribe (`Hub.PublishEvent`, metrik `ws_alert_bridge_messages_total`).
+      `GET /api/v1/media/:id/url` = presigned GET TTL pendek + audit **MEDIA_URL_ACCESS yang fail-closed**
+      (audit gagal ⇒ 503, URL tidak diberikan). Bukti: `bridge_test.go`
+      (`TestBridgeFansOutMediaEvent`, `TestBridgeFansOutAlertNotify`), `media_rbac_test.go`
+      (`TestMediaURLIsAuditedAndFailClosed`), E2E byte-persis (multipart 518 B & JSON 390 B).
+- [x] Retensi: job penanda `expired` + penghapusan objek sesuai policy; endpoint complete (+audit).
+      → `controllers/retention.go`: scheduler cron 5-field (`MEDIA_CLEANUP_CRON`, default `0 3 * * *`,
+      override interval `MEDIA_RETENTION_SWEEP_SEC` untuk dev/E2E), sweep saat boot + periodik:
+      hapus objek → tandai `expired` → audit `HARD_DELETE` (§6.0.1/§11) → metrik
+      `media_cleanup_deleted_total`; kandidat = `complete/deleted` lewat `expires_at`, baris legacy
+      tanpa `expires_at`, dan `pending` lebih tua dari `MEDIA_PENDING_TTL_HOURS`.
+      Bukti: `TestRetentionSweepDeletesObjectsAndExpiresRows` + E2E `retention.sweep` PASS.
+      Endpoint `complete` + audit `ENTITY_UPDATED` tercakup di atas (fail-closed MEDIA_URL_ACCESS).
 
 ### Acceptance
-- [ ] E2E multipart & JSON(HMAC) → MinIO → katalog → WS → retensi.
-- [ ] Negatif: 401/400/404/oversize ditolak; audit + metrics media tercatat.
+- [x] E2E multipart & JSON(HMAC) → MinIO → katalog → WS → retensi.
+      ✅ *terverifikasi live 2026-09-22 — `make e2e-media` (`scripts/e2e-media.sh` + `tools/e2e-media`)
+      **18/18 PASS** pada MinIO+PostgreSQL+Redis+NATS live: multipart (HMAC) → MinIO → `th_media_events`
+      (`complete`, key `dev001/1/202609/<uuid>.jpg`) → presigned GET **byte-persis** → `MEDIA_EVENT`
+      (0 ms); JSON + presigned PUT → `complete` → presigned GET byte-persis → `MEDIA_EVENT`; retensi
+      (backdate `expires_at`) → objek terhapus + status `expired`.*
+- [x] Negatif: 401/400/404/oversize ditolak; audit + metrics media tercatat.
+      ✅ *E2E `negative.paths` PASS — 401 (tanda tangan hilang/salah, `MEDIA_SIGNATURE_INVALID`),
+      400 allowlist mime (`MEDIA_TYPE_NOT_ALLOWED`), 404 (`MEDIA_NOT_FOUND`), 400 oversize
+      (`MEDIA_TOO_LARGE` dengan `max_file_mb` per-company diturunkan sementara). Audit
+      `MEDIA_URL_ACCESS`/`ENTITY_CREATED` terverifikasi di `tm_audit_logs` master, dan
+      `/metrics` memuat `media_uploads_total`, `media_upload_bytes_total`, `media_presigned_total`,
+      `storage_objects`.*
 
 ---
 

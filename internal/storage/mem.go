@@ -41,6 +41,17 @@ func (m *Mem) Put(_ context.Context, key string, data []byte, contentType string
 	return Object{Key: key, Size: int64(len(cp)), ETag: obj.etag}, nil
 }
 
+// Head returns the metadata of one object (ErrNotFound when absent).
+func (m *Mem) Head(_ context.Context, key string) (Object, error) {
+	m.mu.RLock()
+	obj, ok := m.objects[key]
+	m.mu.RUnlock()
+	if !ok {
+		return Object{}, ErrNotFound
+	}
+	return Object{Key: key, Size: int64(len(obj.data)), ETag: obj.etag}, nil
+}
+
 // Get returns a copy of the stored bytes (byte-exact round trip).
 func (m *Mem) Get(_ context.Context, key string) ([]byte, error) {
 	m.mu.RLock()
@@ -58,6 +69,17 @@ func (m *Mem) Delete(_ context.Context, key string) error {
 	delete(m.objects, key)
 	m.mu.Unlock()
 	return nil
+}
+
+// PresignPut returns a symbolic upload URL for the dev/test store. Retrieval in
+// dev always goes through the in-process Put, so the URL only documents the
+// intent (`mem://bucket/key?upload=1&expires=<unix>`); the live MinIO/S3 path
+// signs a real URL.
+func (m *Mem) PresignPut(_ context.Context, key, contentType string, ttl time.Duration) (string, error) {
+	if contentType == "" {
+		return "", ErrNotFound
+	}
+	return fmt.Sprintf("mem://%s/%s?upload=1&expires=%d", m.bucket, key, time.Now().Add(ttl).Unix()), nil
 }
 
 // PresignGet returns a symbolic URL carrying the expiry (dev/test only); the

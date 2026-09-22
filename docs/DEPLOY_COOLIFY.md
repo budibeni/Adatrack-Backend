@@ -171,9 +171,13 @@ init membuat bucket, roundtrip upload → list → baca kembali berhasil.
 4. Deploy ulang. **Tidak ada perubahan kode** — semua akses lewat antarmuka S3
    (`internal/storage`), jadi hanya konfigurasi yang berubah.
 
-> Sampai `service-media` (B5b) dirilis, kredensial `MEDIA_S3_*` belum dibaca
-> service mana pun; nilainya sudah disiapkan di `x-app-env` supaya service itu
-> bisa langsung jalan tanpa mengubah compose lagi.
+> `service-media` (B5b) **sudah dirilis** (2026-09-22): service membaca
+> `MEDIA_S3_*` + `MEDIA_HMAC_SECRET` dari `x-app-env`, membuat bucket secara
+> idempoten saat boot (`EnsureBucket`, jadi service `minio-init` bersifat
+> opsional/belt-and-braces), dan membuka `/healthz` pada port internal **8095**
+> (+ **8096** untuk scrape Prometheus). Isi kolom Domains Coolify dengan port
+> internal 8095 bila API media perlu diakses publik (biasanya cukup lewat proxy
+> service-websocket/api-vehicle).
 
 ## 8. Catatan
 

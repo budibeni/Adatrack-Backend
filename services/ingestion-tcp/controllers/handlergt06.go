@@ -132,6 +132,11 @@ func (s *Server) handleGT06(c net.Conn) {
 				continue
 			}
 			tele.IMEI, tele.CompanyCode, tele.VehicleID = imei, company, vehicleID
+			// FR-7.3/FR-7.8: with FUEL_TANK_HEIGHT_CM configured the raw sensor
+			// height is also expressed as fuel_level (%) + fuel_volume so the
+			// persistence/live/alert chain has a comparable level (uncalibrated
+			// deployments keep the raw height only).
+			ApplyFuelCalibration(&tele, s.cfg.Fuel.TankHeightCM)
 			fuelReadingsTotal.WithLabelValues(protoName).Inc()
 			if err := s.publishTelemetry(tele, protoName); err != nil {
 				slog.Error("gt06: fuel publish failed", "imei", imei, "error", err)

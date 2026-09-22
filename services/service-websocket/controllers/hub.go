@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -208,6 +209,39 @@ func (h *Hub) Broadcast(data models.VehicleUpdateData) {
 	wsMessagesSent.WithLabelValues(models.EventVehicleUpdate).Add(float64(len(targets)))
 	h.setQueueDepth()
 	observeBroadcast(start)
+}
+
+// PublishEvent delivers one pre-decoded payload to every client subscribed to a
+// (company, vehicle) pair — the shared fan-out used by the alert-notification and
+// media-event bridges (FR-8.5, `notify.alert.<vehicle_id>`). The tenant is always
+// part of the bucket key, so cross-tenant leakage stays structurally impossible.
+func (h *Hub) PublishEvent(companyCode string, vehicleID int64, event string, data any) int {
+	envelope := models.WSEnvelope{
+		Event:     event,
+		Data:      data,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		slog.Error("service-websocket: could not encode event", "event", event, "error", err)
+		return 0
+	}
+
+	key := subKey{company: strings.ToUpper(strings.TrimSpace(companyCode)), vehicleID: vehicleID}
+	h.mu.RLock()
+	bucket := h.index[key]
+	targets := make([]*Client, 0, len(bucket))
+	for c := range bucket {
+		targets = append(targets, c)
+	}
+	h.mu.RUnlock()
+
+	for _, c := range targets {
+		c.enqueue(event, payload)
+	}
+	wsMessagesSent.WithLabelValues(event).Add(float64(len(targets)))
+	h.setQueueDepth()
+	return len(targets)
 }
 
 // setQueueDepth publishes the pending-queue gauge.

@@ -41,6 +41,9 @@ scrape_configs:
         labels: {service: service-websocket, env: coolify}
       - targets: ["api-vehicle:8081"]
         labels: {service: api-vehicle, env: coolify}
+      # service-media (B5b): /healthz + /metrics pada MEDIA_METRICS_ADDR (8096).
+      - targets: ["service-media:8096"]
+        labels: {service: service-media, env: coolify}
 
   - job_name: postgres
     static_configs:

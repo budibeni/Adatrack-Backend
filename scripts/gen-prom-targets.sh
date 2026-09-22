@@ -72,6 +72,7 @@ probe_port_list() {
     "${ALERT_METRICS_ADDR:-:8094}"
     "${HTTP_ADDR:-:8082}"
     "${API_VEHICLE_HTTP_ADDR:-:8081}"
+    "${MEDIA_METRICS_ADDR:-:8096}"
   )
   local a
   for a in "${addrs[@]}"; do echo "${a#:}"; done
@@ -120,6 +121,7 @@ addr() { local v="$1" d="$2"; v="${v:-$d}"; v="${v#:}"; echo "$TARGET_HOST:$v"; 
   printf ',\n  {"targets": ["%s"], "labels": {"service": "worker-alert", "env": "local"}}' "$(addr "${ALERT_METRICS_ADDR:-}" 8094)"
   printf ',\n  {"targets": ["%s"], "labels": {"service": "service-websocket", "env": "local"}}' "$(addr "${HTTP_ADDR:-}" 8082)"
   printf ',\n  {"targets": ["%s"], "labels": {"service": "api-vehicle", "env": "local"}}' "$(addr "${API_VEHICLE_HTTP_ADDR:-}" 8081)"
+  printf ',\n  {"targets": ["%s"], "labels": {"service": "service-media", "env": "local"}}' "$(addr "${MEDIA_METRICS_ADDR:-}" 8096)"
   printf '\n]\n'
 } > "$TARGETS_FILE"
 

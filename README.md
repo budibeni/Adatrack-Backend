@@ -97,6 +97,7 @@ backend/
 │   ├── worker-alert/             # engine alarm + notifikasi (WS/email/SMS) + audit
 │   ├── service-websocket/        # REST auth/tenant + WebSocket realtime
 │   ├── api-vehicle/              # REST fleet management (CRUD + alert lifecycle)
+│   ├── service-media/            # event media dashcam: HMAC ingest → MinIO/S3 (B5b)
 │   └── foundation-check/         # CLI diagnosa kesiapan stack
 │
 ├── database/
@@ -176,6 +177,8 @@ Uji end-to-end:
 ```bash
 make e2e                   # frame perangkat → NATS → Redis + PostgreSQL
 make e2e-ws                # login → RBAC → live push WebSocket
+make e2e-fuel              # B5a: frame fuel 0x0D → td_fuel_logs → alert → WS
+make e2e-media             # B5b: HMAC → MinIO → katalog → WS MEDIA_EVENT → retensi
 make test / test-race      # unit + integration semua modul
 ```
 
@@ -207,8 +210,9 @@ paste environment lalu satu klik Deploy; migrasi dijalankan otomatis saat servic
 | `worker-alert` | Detektor alarm + notifikasi + audit | — (consumer) | `:8094` | `ALERT_METRICS_ADDR`, `OFFLINE_AFTER_MINUTES`, `SMTP_*`, `SMS_*` |
 | `api-vehicle` | REST fleet management (CRUD + alert lifecycle) | **HTTP 8081** | `:8081` | `API_VEHICLE_HTTP_ADDR` |
 | `service-websocket` | REST auth/provisioning + WebSocket realtime | **HTTP/WS 8082** | `:8082` | `HTTP_ADDR` |
+| `service-media` | Event media dashcam (ingest HMAC, katalog, presigned GET, retensi) | **HTTP 8095** | `:8095` + `:8096` | `MEDIA_HTTP_ADDR`, `MEDIA_METRICS_ADDR`, `MEDIA_S3_*`, `MEDIA_CLEANUP_CRON` |
 
-Semua service mengekspos `/healthz` (readiness) dan `/metrics` (Prometheus). Untuk `api-vehicle` dan `service-websocket` keduanya berada di listener yang sama dengan port HTTP-nya; empat service pipeline (`ingestion-tcp` + 3 worker) memakai port metrics terpisah seperti tabel di atas.
+Semua service mengekspos `/healthz` (readiness) dan `/metrics` (Prometheus). Untuk `api-vehicle`, `service-websocket`, dan `service-media` keduanya berada di listener yang sama dengan port HTTP-nya (service-media juga membuka listener kedua `MEDIA_METRICS_ADDR` untuk scrape); empat service pipeline (`ingestion-tcp` + 3 worker) memakai port metrics terpisah seperti tabel di atas.
 
 ### Infra & monitoring (container, `make up`) — port host di varian LOCAL
 
@@ -289,6 +293,29 @@ Semua endpoint butuh JWT dan berlaku RBAC row-level (kecuali disebut lain).
 
 Pagination: `?page=&limit=` (`API_DEFAULT_PAGE_SIZE` 100, `API_MAX_PAGE_SIZE` 1000). Tabel master memakai **soft delete**, sehingga `?include_deleted=true` + endpoint `restore` tersedia.
 
+### service-media — `:8095` (B5b)
+
+Ingest memakai **HMAC-SHA256 per-company** (bukan JWT); endpoint katalog memakai JWT + RBAC
+row-level. `X-Signature` dihitung atas: **file bytes** untuk multipart (`imei\n event_type\n file`)
+atau **raw body JSON** untuk alur presigned PUT; `X-Timestamp` (RFC3339) wajib dan dibatasi
+`MEDIA_HMAC_MAX_SKEW_SEC` (anti-replay).
+
+| Method | Path | Akses | Fungsi |
+|---|---|---|---|
+| POST | `/api/v1/media/events` | HMAC | Multipart (objek langsung tersimpan) **atau** JSON → tiket `upload_url` (presigned PUT) |
+| POST | `/api/v1/media/events/:id/complete` | HMAC | Finalisasi alur JSON (`pending → complete`, `expires_at` dari `retention_days`) |
+| GET | `/api/v1/media` | JWT + row-level | Katalog (filter `vehicle_id`/`event_type`/`status`/`imei`/`from`/`to`, pagination) |
+| GET | `/api/v1/media/:id` | JWT + row-level | Detail satu event |
+| GET | `/api/v1/media/:id/url` | JWT + row-level | Presigned GET TTL pendek + audit **`MEDIA_URL_ACCESS`** (fail-closed) |
+| DELETE | `/api/v1/media/:id` | Admin | **Soft delete** (objek fisik dihapus job retensi) |
+| POST | `/api/v1/media/:id/restore` | Admin | Restore + audit `ENTITY_RESTORED` (alasan wajib) |
+| GET | `/healthz`, `/livez`, `/metrics` | — | Kesehatan (object storage + pool + NATS), liveness, metrik |
+
+Retensi: job `MEDIA_CLEANUP_CRON` (default `0 3 * * *`) menghapus objek lewat `expires_at`,
+menandai baris `expired`, dan menulis audit `HARD_DELETE`. `MEDIA_RETENTION_SWEEP_SEC` menimpa
+jadwal dengan interval detik (dipakai E2E). WS: publish `media.event.<company_code>` →
+`service-websocket` mem-fan-out `MEDIA_EVENT` ke klien yang berhak.
+
 ### WebSocket — live tracking
 
 ```
@@ -310,6 +337,8 @@ Event dari server (`models.Event*`):
 |---|---|
 | `SUBSCRIBED` / `UNSUBSCRIBED` | Konfirmasi langganan + daftar `vehicle_ids` yang **diizinkan** (langganan di luar hak akses dibuang, bukan error) |
 | `VEHICLE_UPDATE` | Fan-out dari `telemetry.live.<IMEI>`: posisi, speed, ACC, satellites, altitude, gsm_signal, battery, fuel, `plate_number` |
+| `MEDIA_EVENT` | Fan-out dari `media.event.<company>`: event media dashcam baru (ID, tipe, object key, presigned URL) |
+| `notify.alert.<vehicle_id>` | Fan-out dari `notify.alert.<vehicle_id>` (worker-alert): notifikasi alert sesuai preferensi user (mis. `fuel_drop`, `sos`) |
 | `HEARTBEAT` | Balasan `action: ping` (keepalive) |
 | `ERROR` | Pesan tidak valid / melampaui batas |
 
@@ -335,4 +364,6 @@ Akses menu per role disimpan di tabel `tm_role_menu_access` (schema tenant, di-s
 | `telemetry.error.>` | service mana pun | frame gagal parse (dead-letter) |
 | `alert.>` | `worker-alert` | event alarm (`th_alerts`) |
 | `notify.alert.<vehicle_id>` | `worker-alert` → kanal notifikasi | notifikasi per kendaraan |
-| `media.>` | (B5b) `service-media` | event media dashcam |
+| `media.>` | `service-media` | event media dashcam (B5b) — ingest HMAC, presigned PUT/GET |
+| `media.event.<company>` | `service-media` → `service-websocket` | fan-out `MEDIA_EVENT` ke klien berhak |
+| `notify.alert.<vehicle_id>` | `worker-alert` → `service-websocket` | notifikasi alert per kendaraan (event WS `notify.alert.<vehicle_id>`) |

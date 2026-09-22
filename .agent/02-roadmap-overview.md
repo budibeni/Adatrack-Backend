@@ -2,12 +2,20 @@
 
 Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 
-> **PROGRESS 2026-09-19:** **B0 ✅**, **B1 ✅**, **B2 ✅**, **B3 ✅**, **B5a ✅** selesai,
+> **PROGRESS 2026-09-22:** **B0 ✅**, **B1 ✅**, **B2 ✅**, **B3 ✅**, **B5a ✅**, **B5b ✅** selesai,
 > dan **B4 🟡 sebagian** (performance/monitoring/hardening/DR terverifikasi nyata —
 > load 400/1000/2000 msg/s **0 data loss**, SLA query 24–32 ms, Prometheus+Grafana+20 rule,
 > backup/restore drill row-count match, retensi partisi; **gap**: coverage ≥80% service inti,
 > endurance 24 jam penuh, drill replika). Bukti: `docs/B4-VERIFICATION.md`.
-> Fase berikutnya: **B5b / B6 / B7**.
+> **B5b (2026-09-22):** `internal/storage` (S3 SigV4 stdlib + Mem), service baru
+> `services/service-media` (HMAC ingest multipart/JSON+presigned PUT, katalog `th_media_events`
+> ber-RBAC, presigned GET + audit fail-closed `MEDIA_URL_ACCESS`, soft delete/restore, retensi
+> cron + `HARD_DELETE`), bridge `service-websocket` (`MEDIA_EVENT` + `notify.alert.<vehicle_id>`),
+> wiring compose/env/Makefile/prometheus, migrasi additive `016_media_events_governance`.
+> **B5a dituntaskan:** kalibrasi `FUEL_TANK_HEIGHT_CM` kini diterapkan di ingestion +
+> flusher fuel-only worker-persistence diperbaiki. E2E live: `make e2e-fuel` **11/11 PASS** dan
+> `make e2e-media` **18/18 PASS** (MinIO/PostgreSQL/Redis/NATS nyata) — checklist: `.agent/03-backend-phases.md`.
+> Fase berikutnya: **B6 / B7**.
 > (compose/migrations/`internal`/`foundation-check` + pipeline ingestion-tcp →
 > worker-live → worker-persistence: load 1000 msg/s tanpa data loss, isolasi
 > tenant 0 leakage, unit+integration test hijau; **service-websocket**: login
@@ -35,7 +43,7 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B2** | service-websocket (REST API + WebSocket + RBAC) | `backend/services/service-websocket` | ✅ Selesai 2026-09-15 |
 | **B3** | Alerts, Geofence, & API Vehicle | `backend/services/worker-alert`, `backend/services/api-vehicle` | ✅ Selesai 2026-09-16 (live DB drift diperbaiki, migrasi `020`+`013`) |
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ✅ Selesai (unit + REST overlay; E2E live fuel menyusul) |
-| **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ⬜ Belum dimulai |
+| **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ✅ Selesai 2026-09-22 (`make e2e-media` 18/18 PASS) |
 | **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | 🟡 Sebagian (2026-09-19) — load 400→2000 msg/s 0 loss, SLA query, monitoring stack + rule SLO/alert, backup/restore drill, retensi; **gap**: coverage ≥80% service inti, endurance 24 jam penuh, drill replika, load WS 50×1200. Bukti: `docs/B4-VERIFICATION.md` |
 | **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` | ⬜ Belum dimulai |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ⬜ Belum dimulai |

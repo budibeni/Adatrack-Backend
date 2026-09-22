@@ -304,6 +304,7 @@ services:
   # =========================================================================
   # Pipeline services (B1) + B3
   # =========================================================================
+  # =========================================================================
   ingestion-tcp:
     build:
       context: ../
@@ -439,6 +440,33 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
       nats: {condition: service_healthy}
+    networks: [adatrack]
+
+  # service-media (B5b) — Dashcam event media (PRD Modul 8 / Scope A).
+  # Ingest HMAC + katalog ber-RBAC + presigned GET (MinIO/S3). Sama seperti
+  # service-websocket/api-vehicle: JWT + denylist Redis dari x-app-env yang sama.
+  service-media:
+    build:
+      context: ../
+      dockerfile: services/service-media/Dockerfile
+    image: adatrack/service-media:${IMAGE_TAG:-latest}
+    restart: always
+    environment: *app-env
+    # expose saja: akses publik lewat proxy Coolify (Domains + port internal 8095).
+    expose:
+      - "8095"
+      - "8096" # /healthz + /metrics (internal, di-scrape Prometheus)
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:$${MEDIA_HTTP_ADDR#:}/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      nats: {condition: service_healthy}
+      minio: {condition: service_healthy}
     networks: [adatrack]
 
   # =========================================================================

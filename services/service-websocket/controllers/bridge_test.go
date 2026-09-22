@@ -129,3 +129,95 @@ func TestBridgeUsesDeviceTimeFallback(t *testing.T) {
 		t.Fatalf("timestamp fallback used the epoch: %v", ts)
 	}
 }
+
+// TestBridgeFansOutAlertNotify covers FR-8.5's sibling contract: a
+// `notify.alert.<vehicle_id>` frame reaches the clients subscribed to that
+// vehicle with the documented event name (PRD §8.3).
+func TestBridgeFansOutAlertNotify(t *testing.T) {
+	hub := NewHub(Settings{WSMaxQueueSize: 8, WSMaxConnections: 10}, newPlateCache(newFakeStore()))
+	client := &Client{hub: hub, companyCode: "DEV001", send: make(chan []byte, 8), subs: map[int64]struct{}{}}
+	hub.register(client)
+	defer hub.unregister(client)
+	hub.subscribe(client, 5, true)
+
+	// A client subscribed to a different vehicle must NOT receive the frame.
+	other := &Client{hub: hub, companyCode: "DEV001", send: make(chan []byte, 8), subs: map[int64]struct{}{}}
+	hub.register(other)
+	defer hub.unregister(other)
+	hub.subscribe(other, 6, true)
+
+	bridge := NewBridge(internal.LoadConfig(), nil, hub)
+	payload, _ := json.Marshal(map[string]any{
+		"alert_id": 42, "type": "fuel_drop", "severity": "critical",
+		"company": "DEV001", "vehicle_id": 5, "imei": "864201040512345",
+		"detected_at": time.Now().UTC().Format(time.RFC3339),
+	})
+	if err := bridge.handleAlertNotify(&nats.Msg{Subject: "notify.alert.5", Data: payload}); err != nil {
+		t.Fatalf("handleAlertNotify: %v", err)
+	}
+	if client.queueDepth() != 1 {
+		t.Fatalf("subscribed client queue = %d, want 1", client.queueDepth())
+	}
+	if other.queueDepth() != 0 {
+		t.Fatalf("unrelated subscriber queue = %d, want 0 (RBAC fan-out)", other.queueDepth())
+	}
+
+	var envelope models.WSEnvelope
+	if err := json.Unmarshal(<-client.send, &envelope); err != nil {
+		t.Fatalf("decode frame: %v", err)
+	}
+	if envelope.Event != models.EventNotifyAlertPrefix+"5" {
+		t.Fatalf("event = %q, want notify.alert.5", envelope.Event)
+	}
+}
+
+// TestBridgeFansOutMediaEvent covers FR-8.5: `media.event.<company>` becomes a
+// MEDIA_EVENT frame for the clients subscribed to the affected vehicle.
+func TestBridgeFansOutMediaEvent(t *testing.T) {
+	hub := NewHub(Settings{WSMaxQueueSize: 8, WSMaxConnections: 10}, newPlateCache(newFakeStore()))
+	client := &Client{hub: hub, companyCode: "DEV001", send: make(chan []byte, 8), subs: map[int64]struct{}{}}
+	hub.register(client)
+	defer hub.unregister(client)
+	hub.subscribe(client, 3, true)
+
+	bridge := NewBridge(internal.LoadConfig(), nil, hub)
+	payload, _ := json.Marshal(models.MediaEventData{
+		ID: 9, CompanyCode: "DEV001", VehicleID: 3, IMEI: "864201040512345",
+		EventType: "sos", ObjectKey: "dev001/3/202609/abc.jpg", MimeType: "image/jpeg",
+		FileSize: 1024, Status: "complete", URL: "http://minio/adhoc",
+		CapturedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err := bridge.handleMediaEvent(&nats.Msg{Subject: "media.event.DEV001", Data: payload}); err != nil {
+		t.Fatalf("handleMediaEvent: %v", err)
+	}
+	if client.queueDepth() != 1 {
+		t.Fatalf("client queue = %d, want 1", client.queueDepth())
+	}
+
+	var envelope models.WSEnvelope
+	if err := json.Unmarshal(<-client.send, &envelope); err != nil {
+		t.Fatalf("decode frame: %v", err)
+	}
+	if envelope.Event != models.EventMediaEvent {
+		t.Fatalf("event = %q, want MEDIA_EVENT", envelope.Event)
+	}
+	data, _ := json.Marshal(envelope.Data)
+	var media models.MediaEventData
+	if err := json.Unmarshal(data, &media); err != nil {
+		t.Fatalf("decode media payload: %v", err)
+	}
+	if media.ID != 9 || media.VehicleID != 3 || media.URL == "" {
+		t.Fatalf("media payload = %+v, want the published frame", media)
+	}
+
+	// A malformed or tenant-less frame is skipped, never broadcast.
+	if err := bridge.handleMediaEvent(&nats.Msg{Subject: "media.event.DEV001", Data: []byte("{not json")}); err != nil {
+		t.Fatalf("malformed media payload returned an error: %v", err)
+	}
+	if err := bridge.handleAlertNotify(&nats.Msg{Subject: "notify.alert.3", Data: []byte(`{}`)}); err != nil {
+		t.Fatalf("incomplete alert payload returned an error: %v", err)
+	}
+	if client.queueDepth() != 0 {
+		t.Fatalf("malformed frames produced %d extra frames, want 0", client.queueDepth())
+	}
+}

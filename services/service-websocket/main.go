@@ -98,12 +98,17 @@ func main() {
 	defer service.Stop()
 
 	bridge := controllers.NewBridge(cfg, nac, service.Hub())
-	sub, err := bridge.Start()
+	subs, err := bridge.Start()
 	if err != nil {
-		slog.Error("failed to subscribe telemetry.live.>", "error", err)
+		slog.Error("failed to subscribe the WebSocket bridges (telemetry.live / notify.alert / media.event)",
+			"error", err)
 		os.Exit(1)
 	}
-	defer nac.Unsubscribe(sub)
+	defer func() {
+		for _, sub := range subs {
+			nac.Unsubscribe(sub)
+		}
+	}()
 
 	server := &http.Server{
 		Addr:              settings.HTTPAddr,

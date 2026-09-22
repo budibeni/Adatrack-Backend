@@ -270,3 +270,36 @@ func TestRegisterMetrics(t *testing.T) {
 		}
 	}
 }
+
+// TestFlusherDrainsFuelOnlyBuffer covers the B5a acceptance finding: a fuel-only
+// packet fills ONLY the fuel buffer, so the BATCH_TIMEOUT ticker must flush when
+// either buffer is non-empty (otherwise the row waits for an unrelated positioned
+// packet and never lands within the documented 5 s window).
+func TestFlusherDrainsFuelOnlyBuffer(t *testing.T) {
+	p, captured := newTestPersister(func(string) (*internal.DBPool, error) {
+		return nil, errors.New("tenant not found")
+	})
+	go p.flusher()
+	defer p.Stop()
+
+	if err := p.handleMessage(telemetryMsg(t, fuelMessage("86099", "DEV001", 42))); err != nil {
+		t.Fatalf("handleMessage: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		p.mu.Lock()
+		pendingFuel := len(p.fuelPending)
+		p.mu.Unlock()
+		if pendingFuel == 0 {
+			// The flush reached the DB seam; with a broken routing the row is
+			// dead-lettered (no silent drop), which is also asserted.
+			if captured.count() == 0 {
+				t.Fatal("fuel row drained without a dead-letter (routing must be attempted)")
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("fuel-only buffer was not flushed by the BATCH_TIMEOUT ticker")
+}
