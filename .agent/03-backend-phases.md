@@ -395,7 +395,28 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       **Temuan gate:** daftar modul di `b4-verify.sh` langkah 1 belum menyertakan kedua service itu;
       patch-nya sengaja ditunda sampai run endurance 24 jam selesai (skrip 12.983 byte dibaca
       bertahap oleh bash — menyuntingnya saat berjalan bisa menggeser offset dan merusak run).
-- [x] `internal/storage` pulih di atas ambang (2026-09-22): **50 % → 82,3 % hermetik / 91,9 % dengan MinIO**.
+- [x] Query SLA dipulihkan + indeks PRD FR-3.5 yang hilang (2026-09-22): bench B4 GAGAL pada
+      **7,77 juta baris** (`history.30d` 5.952 ms vs SLA 1,5 s; sebelumnya 792 ms @1,44 juta baris).
+      Akar masalah: FR-3.5 mensyaratkan `CREATE INDEX idx_timestamp ON th_telemetry_logs (timestamp)`
+      (justifikasinya memang query SLA "ORDER BY timestamp DESC"), tetapi migrasi `007` hanya membuat
+      indeks `(vehicle_id|imei|company_code, timestamp DESC)` + PK → query tanpa filter kendaraan
+      memindai partisi bulan berjalan lalu top-N sort (biaya linear terhadap volume).
+      Migrasi baru `database/migrations/company_pg/017_add_telemetry_timestamp_index.sql`
+      (`idx_th_telemetry_logs_timestamp` pada parent partisi → 100 partisi terindeks, partisi baru
+      mengikuti) → **5.952 ms → 34 ms (175×)**, plan `Index Scan Backward` + pruning 23 partisi,
+      0,46 ms/44 buffer. Residual: `count.24h` ±1,07 s (paling dekat ambang; butuh pra-agregasi bila
+      volume naik lagi — bukan masalah indeks). Bukti: `docs/B4-VERIFICATION.md` §2.4.
+- [x] Patch gate coverage `b4-verify.sh` DITERAPKAN (2026-09-22, setelah rangkaian berhenti):
+      langkah 1 kini juga mengukur `service-websocket`, `ingestion-tcp`, `service-media`
+      (WARN informasional; target ≥80 % tetap untuk service inti). Sebelumnya ditunda karena
+      menyunting skrip 12.983 byte yang sedang dieksekusi bash berisiko merusak run.
+- [ ] **Endurance 24 jam perlu diulang**: run 2026-09-22 mencapai chunk 5 (chunk 1–4 PASS 1,42 juta
+      pesan/chunk 0 loss) lalu chunk 5 GAGAL (`sent=1423811 persisted=1423801`, 10 frame /
+      0,0007 % di luar jendela settle). Sebab teridentifikasi: **pekerjaan berat paralel** di mesin
+      yang sama (coverage/test run) membuat persistence tertinggal melewati timeout settle; bench SLA
+      di run yang sama juga terdistorsi. Aturan operasional: **endurance + bench SLA harus berjalan
+      tanpa beban paralel** — jangan `make cover`/`test.sh`/restart service saat chunk berjalan.
+
       Penyebab turunnya angka modul `internal` (79,2 % → di bawah ambang 80 %) adalah paket ini, bukan
       `internal/tenant`: `s3_ops.go` (Put/Head/Get/Delete/PresignGet/Health/EnsureBucket) hanya tersentuh
       suite IT yang butuh MinIO hidup, sehingga pengukuran tanpa MinIO = 50 %.

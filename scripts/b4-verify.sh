@@ -44,7 +44,11 @@ if "$ROOT/scripts/test.sh" >/dev/null 2>&1; then ok "scripts/test.sh exit 0 all 
 # coverage — infra is up after step 0, so include them (api-vehicle ≥80% only
 # holds with the PostgresStore suite counted).
 export ADATRACK_IT=1
-for mod in internal services/worker-live services/worker-persistence services/worker-alert services/api-vehicle; do
+# Modules measured for the ≥80 % target (core services + shared internal) PLUS the
+# remaining app services (service-websocket, ingestion-tcp, service-media) so their
+# numbers are visible in every run — a WARN below is informational only and never
+# fails the run (the ≥80 % target applies to the core services above).
+for mod in internal services/worker-live services/worker-persistence services/worker-alert services/api-vehicle services/service-websocket services/ingestion-tcp services/service-media; do
   # NOTE: gsub() rebuilds the field as a pure string, so compare NUMERICALLY
   # (max=$i+0) — a plain "max=$i" compared lexicographically ("8.5" > "100.0").
   pct="$(cd "$ROOT/$mod" && go test -count=1 -cover ./... 2>/dev/null | awk '/coverage:/{for(i=1;i<=NF;i++) if($i~/[0-9.]+%/){gsub(/%/,"",$i); if($i+0>max+0) max=$i+0}} END{print max+0}')"

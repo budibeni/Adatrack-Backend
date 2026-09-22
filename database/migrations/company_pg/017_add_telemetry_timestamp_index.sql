@@ -1,0 +1,26 @@
+-- ============================================================================
+-- Migration: COMPANY 017 — indeks `timestamp` untuk query SLA 30 hari (PRD FR-3.5)
+-- ============================================================================
+-- FR-3.5 mensyaratkan, lengkap dengan justifikasinya:
+--
+--   CREATE INDEX idx_timestamp ON th_telemetry_logs (timestamp);
+--   -- Query SLA target (diukur di B4): history 30 hari < 1,5 s
+--   -- (ORDER BY timestamp DESC, reversal in app)
+--
+-- Indeks itu tidak pernah dibuat: 007 hanya membuat (vehicle_id|imei|company_code,
+-- timestamp DESC) + PK (id, timestamp). Akibatnya query SLA tanpa filter kendaraan
+-- (bentuk yang diukur `tools/querybench` dan dipakai playback lintas-kendaraan)
+-- harus memindai seluruh partisi bulan berjalan lalu top-N sort — biayanya tumbuh
+-- linear terhadap volume. Terukur di bench B4 (2026-09-22):
+--
+--   @1,44 juta baris  → 0,79 s   (lolos SLA 1,5 s)
+--   @7,77 juta baris  → 5,95 s   (GAGAL SLA, 4× ambang)
+--
+-- Dengan indeks ini planner berjalan mundur di indeks dari baris terbaru dan
+-- berhenti setelah LIMIT, jadi biayanya tetap ~konstan walau partisi membesar.
+--
+-- `CREATE INDEX IF NOT EXISTS` pada parent partisi membuat indeks di seluruh
+-- partisi dan pada partisi yang dibuat setelahnya (lihat catatan 007), sehingga
+-- aman dijalankan ulang.
+CREATE INDEX IF NOT EXISTS idx_th_telemetry_logs_timestamp
+    ON th_telemetry_logs ("timestamp");

@@ -15,7 +15,7 @@
 | 1 | Load bertahap | 400 → 1000 → 2000 msg/s, 0 loss | 7.897 / 19.947 / 58.631 frame, **0 loss**, 0 write error | ✅ |
 | 2 | Endurance chunked resume-safe | 24 jam kumulatif | 1 jam kumulatif terbukti (1.438.418 pesan @400 msg/s, 0 loss/chunk, plateau heap+goroutine); **run 24 jam @3600 s/chunk dijalankan bertahap** — progres di `logs/b4-endurance-<stamp>/resume.log` | 🟡 berjalan |
 | 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: 0 leakage dua arah | ✅ |
-| 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | 792 ms (1000 baris dari ≈1,44 juta baris) / 201 ms / 3 ms / 4 ms | ✅ |
+| 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | Re-measure 2026-09-22 @**7,77 juta baris**: history 30 hari **34 ms** (sebelumnya 5.952 ms — **GAGAL** karena indeks `timestamp` PRD FR-3.5 tidak pernah dibuat; diperbaiki migrasi company `017`), count 24 jam 1.075 ms, geofence 7 ms, vehicles 4 ms | ✅ |
 | 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): internal **91,9 %** (max antar-paket: `internal/storage`), worker-persistence **91,1 %**, worker-live **85,1 %**, worker-alert **84,2 %**, api-vehicle **80,1 %** — semua ≥ 80 %. Service di luar gate (diukur `make cover`): service-websocket 78,4 %, service-media 67,1 %, ingestion-tcp 62,5 % | ✅ |
 | 6 | `go vet` + build bersih | exit 0 | `scripts/test.sh` exit 0 (8 modul), `go vet` bersih | ✅ |
 | 7 | Monitoring | Prometheus + dashboard SLO Grafana + alert rule inti | 11/11 target UP, 20 rule, dashboard `adatrack-core` | ✅ |
@@ -58,6 +58,16 @@ tidak ada `telemetry.error.>` (dead-letter) selama run.
 | Resource plateau (FR-4.4) | heap `5,23 MB → 4,45 MB` (turun), goroutines `16 → 15` — **tidak ada indikasi leak** |
 | Resume-safe | chunk berikutnya hanya dijalankan setelah chunk sebelumnya PASS; jejak waktu di `resume.log` (04:15 → 05:08 UTC) |
 
+> **Catatan run 2026-09-22 (chunk 3600 s):** run berjalan sampai chunk 5, dengan
+> chunk 1–4 **PASS** (1.42 juta pesan/chunk, 0 loss) dan **chunk 5 GAGAL**:
+> `sent=1423811 persisted=1423801` — 10 frame (0,0007 %) belum terlihat dalam
+> jendela settle. Penyebab yang teridentifikasi: **pekerjaan berat yang berjalan
+> paralel** di mesin yang sama (rangkaian coverage/test) sehingga persistence
+> worker tertinggal melewati timeout settle; pada run yang sama bench SLA juga
+> terdistorsi (lihat §2.4). Karena itu: **endurance dan bench SLA harus dijalankan
+> tanpa beban paralel** (jangan `make cover`/`test.sh`/restart service saat chunk
+> berjalan — restart sempat membuat `sent != persisted` pada run sebelumnya).
+
 - 24 jam penuh: `B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`
   (mekanisme resume sama; dapat dijalankan bertahap).
 - Yang diverifikasi sesi ini adalah **1 jam kumulatif** (bukan 24 jam penuh) karena
@@ -96,6 +106,40 @@ Pada data kecil (2 baris) run pertama mencatat 24/32/3/4 ms — semua jauh di ba
 SLA. Indeks pendukung:
 `idx_th_telemetry_logs_{vehicle,imei,company}_time` pada `th_telemetry_logs`
 (partitioned monthly) — terpasang sejak migrasi company `007`.
+
+**Update 2026-09-22 (setelah endurance; 7,77 juta baris) — SLA 30 hari sempat GAGAL
+dan kini pulih:** bench gagal (`history.30d` **5.952 ms**, 4× ambang) karena
+**indeks `timestamp` yang disyaratkan PRD FR-3.5 tidak pernah dibuat**:
+
+```sql
+-- FR-3.5, dengan justifikasi SLA-nya sendiri:
+CREATE INDEX idx_timestamp ON th_telemetry_logs (timestamp);
+-- Query SLA target (diukur di B4): history 30 hari < 1,5 s (ORDER BY timestamp DESC)
+```
+
+Migrasi company `017` menambahkan `idx_th_telemetry_logs_timestamp` (nama mengikuti
+konvensi repo; PRD menyebutnya `idx_timestamp`) pada parent partisi → otomatis
+tersebar (100 partisi terindeks + partisi baru mengikuti parent). Hasil:
+
+| Query | Baris | SLA | Sebelum (tanpa idx) | Sesudah (017) |
+|---|---|---|---|---|
+| history 30 hari (1000 baris terakhir) | 1000 | 1,5 s | 5.952 ms ❌ | **34 ms** ✅ (175×) |
+| count 24 jam | 1 | 1,5 s | 1.075 ms | **1.075 ms** (batas terdekat) |
+| daftar geofence / kendaraan | 0 / 3 | 500 ms | 5 ms / 9 ms | **7 ms / 4 ms** ✅ |
+
+Bukti plan (planner berhenti setelah LIMIT, biaya tidak lagi tumbuh linear):
+
+```
+Limit (actual time=0.459 ms)
+  ->  Merge Append  (Subplans Removed: 23 → partition pruning)
+        ->  Index Scan Backward using th_telemetry_logs_p202609_timestamp_idx
+              Index Cond: ("timestamp" >= now() - '30 days' AND "timestamp" <= now())
+```
+
+Catatan residual: `count.24h` (±1,07 s) menghitung ~7 juta baris per 24 jam dan
+berada paling dekat dengan ambang; bila volume naik lagi, bentuk query ini perlu
+counter pra-agregasi — bukan masalah indeks.
+
 
 ### 2.5 Coverage (✅ gate ≥ 80 % tercapai)
 
@@ -384,7 +428,9 @@ make retention-purge                           # dry-run (APPLY=1 untuk drop)
 
 ## 4. Gap yang Tersisa (belum dicentang)
 
-1. **Endurance 24 jam penuh** — run bertahap sedang berjalan
+1. **Endurance 24 jam penuh** — run 2026-09-22 berhenti di chunk 5 (4 PASS + 1 GAGAL
+   karena beban paralel, lihat catatan §2.2) sehingga perlu dijalankan ulang
+   pada mesin yang bebas beban; run bertahap resume-safe tetap berlaku
    (`B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`).
    Yang sudah terbukti: 1 jam kumulatif (6 chunk × 600 s, 1.438.418 pesan,
    0 loss/chunk, plateau heap+goroutine). Progres 24 jam dapat dipantau di
