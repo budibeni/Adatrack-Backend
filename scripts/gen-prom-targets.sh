@@ -104,6 +104,14 @@ pick_target_host() {
 
   # Prometheus belum jalan atau belum ada service yang listen: pakai alamat host
   # hasil deteksi (perilaku yang sudah terbukti) dan validasi ulang nanti.
+  # 127.0.0.1 TIDAK PERNAH benar di sini: dari dalam container itu loopback
+  # container sendiri, jadi target pasti DOWN. Kalau deteksi gagal, katakan
+  # dengan lantang alih-alih menulis konfigurasi yang diam-diam rusak.
+  if [[ "$detected" == "127.0.0.1" ]]; then
+    echo "PERINGATAN: deteksi alamat host gagal — 127.0.0.1 adalah loopback container," >&2
+    echo "            sehingga seluruh target adatrack-services akan DOWN." >&2
+    echo "            set PROM_SCRAPE_HOST=<alamat host yang bisa dijangkau container>." >&2
+  fi
   echo "fallback ke '$detected' (container $PROM_CONTAINER belum bisa diprobe)" >&2
   echo "$detected"
 }
