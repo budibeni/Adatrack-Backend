@@ -40,8 +40,6 @@ build_and_start() {
   # listeners and the "new" service would silently fail to bind (idempotent up).
   stop_all
 
-  : > "$TARGETS_FILE.tmp"
-
   for svc in "${SERVICES[@]}"; do
     echo "start-services: building ${svc}"
     mkdir -p "$ROOT/bin"
@@ -54,25 +52,16 @@ build_and_start() {
   done
 
   sleep 2
-  local first=true
-  for svc in "${SERVICES[@]}"; do
-    local addr
-    case "$svc" in
-      ingestion-tcp)      addr="${INGESTION_METRICS_ADDR:-:8090}" ;;
-      worker-live)        addr="${LIVE_METRICS_ADDR:-:8091}" ;;
-      worker-persistence) addr="${PERSISTENCE_METRICS_ADDR:-:8092}" ;;
-      worker-alert)       addr="${ALERT_METRICS_ADDR:-:8094}" ;;
-      service-websocket)  addr="${HTTP_ADDR:-:8082}" ;;
-      api-vehicle)        addr="${API_VEHICLE_HTTP_ADDR:-:8081}" ;;
-      service-media)      addr="${MEDIA_METRICS_ADDR:-:8096}" ;;
-    esac
-    if [[ "$first" == true ]]; then first=false; else printf ',\n' >> "$TARGETS_FILE.tmp"; fi
-    printf '  {"targets": ["127.0.0.1%s"], "labels": {"service": "%s", "env": "local"}}' "$addr" "$svc" >> "$TARGETS_FILE.tmp"
-  done
-  { printf '[\n'; cat "$TARGETS_FILE.tmp"; printf '\n]\n'; } > "$TARGETS_FILE"
-  rm -f "$TARGETS_FILE.tmp"
-
-  echo "start-services: targets written to $TARGETS_FILE"
+  # Target Prometheus di-generate oleh SATU sumber kebenaran: gen-prom-targets.sh.
+  # Sebelumnya blok ini menulis alamat `127.0.0.1` sendiri, dan itu SELALU salah di
+  # sini: dari sudut container Prometheus, 127.0.0.1 adalah loopback container itu
+  # sendiri, sehingga seluruh target aplikasi DOWN (dan menimpa hasil generator yang
+  # sudah benar setiap kali `make services-up` dijalankan).
+  # Non-fatal: target Prometheus itu pelengkap, kegagalan menulisnya tidak boleh
+  # menggagalkan start service (script ini memakai `set -e`).
+  "$ROOT/scripts/gen-prom-targets.sh" >/dev/null \
+    || echo "start-services: PERINGATAN: gagal menulis target Prometheus" >&2
+  echo "start-services: targets ditulis oleh scripts/gen-prom-targets.sh"
   for svc in "${SERVICES[@]}"; do
     local pid
     pid="$(cat "$PID_DIR/$svc.pid")"
