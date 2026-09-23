@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"regexp"
 )
 
 func getDockerClient() *http.Client {
@@ -27,6 +28,7 @@ type DockerContainer struct {
 }
 
 func GetContainers() ([]ServiceInfo, error) {
+	uuidRe := regexp.MustCompile(`-[a-z0-9]{24}$`)
 	client := getDockerClient()
 	resp, err := client.Get("http://localhost/v1.41/containers/json?all=true")
 	if err != nil {
@@ -49,9 +51,17 @@ func GetContainers() ([]ServiceInfo, error) {
 		if strings.HasPrefix(name, "coolify") || strings.Contains(name, "migrate") || strings.Contains(name, "minio-setup") {
 			continue
 		}
+		// Strip Coolify UUID suffix (e.g. -emchckvfnd...)
+		name = uuidRe.ReplaceAllString(name, "")
+		
+		// Strip any preceding ID before adatrack_ if it exists
 		if idx := strings.Index(name, "adatrack_"); idx > 0 {
 			name = name[idx:]
 		}
+		
+		// Strip the adatrack_ prefix to make the UI look cleaner
+		name = strings.TrimPrefix(name, "adatrack_")
+		
 		services = append(services, ServiceInfo{
 			ID:     c.Id[:12],
 			Name:   name,
