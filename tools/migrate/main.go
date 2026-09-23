@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"database/sql"
 	"log"
 	"os"
@@ -144,6 +145,42 @@ func runMigrate(sourceURL, dbURL, targetSchema string, action string) {
 	}
 	
 	if err != nil && err != migrate.ErrNoChange {
+		if strings.Contains(err.Error(), "Dirty database") {
+			log.Printf("[%s] Dirty database detected! Resetting schema to recover...", targetSchema)
+			
+			db, errOpen := sql.Open("postgres", dbURL)
+			if errOpen != nil {
+				log.Fatalf("[%s] Failed to open db for recovery: %v", targetSchema, errOpen)
+			}
+			defer db.Close()
+
+			_, dropErr := db.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE", targetSchema))
+			if dropErr != nil {
+				log.Fatalf("Failed to drop dirty schema %s: %v", targetSchema, dropErr)
+			}
+			_, createErr := db.Exec(fmt.Sprintf("CREATE SCHEMA %s", targetSchema))
+			if createErr != nil {
+				log.Fatalf("Failed to recreate schema %s: %v", targetSchema, createErr)
+			}
+			
+			// Re-instantiate migrate and run again
+			m2, err2 := migrate.New(sourceURL, finalURL)
+			if err2 != nil {
+				log.Fatalf("[%s] Failed to re-initialize migrate: %v", targetSchema, err2)
+			}
+			
+			if action == "down" {
+				err = m2.Down()
+			} else {
+				err = m2.Up()
+			}
+			
+			if err != nil && err != migrate.ErrNoChange {
+				log.Fatalf("[%s] Failed to run migrations after reset: %v", targetSchema, err)
+			}
+			log.Printf("[%s] Successfully recovered from dirty state and applied migrations!", targetSchema)
+			return
+		}
 		log.Fatalf("[%s] Failed to run migrations: %v", targetSchema, err)
 	}
 
