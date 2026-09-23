@@ -8,10 +8,10 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Dummy Active Users (Simulation)",
+      "title": "Active GPS Devices (Live)",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
       "targets": [
-        { "expr": "time() % 5000", "refId": "A" }
+        { "expr": "sum(ingestion_tcp_active_connections) OR vector(0)", "refId": "A" }
       ],
       "fieldConfig": {
         "defaults": {
