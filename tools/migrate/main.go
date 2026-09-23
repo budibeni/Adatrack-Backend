@@ -131,7 +131,7 @@ func runMigrate(sourceURL, dbURL, targetSchema string, action string) {
 	if strings.Contains(dbURL, "?") {
 		sep = "&"
 	}
-	finalURL := dbURL + sep + "search_path=" + targetSchema
+	finalURL := dbURL + sep + "search_path=" + targetSchema + ",public"
 
 	m, err := migrate.New(sourceURL, finalURL)
 	if err != nil {
