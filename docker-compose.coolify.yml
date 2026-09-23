@@ -89,7 +89,7 @@ services:
     image: quay.io/minio/mc:latest
     container_name: adatrack_minio_setup
     restart: "no"
-    exclude_from_hc: true
+     
     depends_on:
       minio:
         condition: service_healthy
@@ -189,7 +189,7 @@ services:
       dockerfile: ./deployments/migrate/Dockerfile
     container_name: adatrack_migrate
     restart: "no"
-    exclude_from_hc: true
+     
     environment:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}

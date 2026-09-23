@@ -4,12 +4,10 @@ FROM golang:alpine AS builder
 WORKDIR /app
 ENV CGO_ENABLED=0 GOOS=linux
 
-# Cache go modules to speed up builds
-COPY go.mod go.sum ./
-RUN go mod download
-
-# Copy the entire source code
+# Cache go modules using go.work
 COPY . .
+# We can optionally run go mod download in each directory, or just let go build handle it.
+# We will just let go build handle it since they share the module cache.
 
 # Build all binaries sequentially to prevent OOM/CPU starvation on the host
 RUN go build -o /app/bin/api-vehicle ./services/api-vehicle/main.go && \
