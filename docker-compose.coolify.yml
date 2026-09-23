@@ -209,7 +209,8 @@ services:
   ingestion-tcp:
     build:
       context: .
-      dockerfile: ./services/ingestion-tcp/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: ingestion-tcp
     container_name: adatrack_ingestion_tcp
     env_file:
     - .env.coolify
@@ -225,7 +226,8 @@ services:
   api-vehicle:
     build:
       context: .
-      dockerfile: ./services/api-vehicle/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: api-vehicle
     container_name: adatrack_api_vehicle
     env_file:
     - .env.coolify
@@ -238,7 +240,8 @@ services:
   worker-live:
     build:
       context: .
-      dockerfile: ./services/worker-live/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: worker-live
     container_name: adatrack_worker_live
     env_file:
     - .env.coolify
@@ -251,7 +254,8 @@ services:
   worker-persistence:
     build:
       context: .
-      dockerfile: ./services/worker-persistence/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: worker-persistence
     container_name: adatrack_worker_persistence
     env_file:
     - .env.coolify
@@ -264,7 +268,8 @@ services:
   worker-alert:
     build:
       context: .
-      dockerfile: ./services/worker-alert/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: worker-alert
     container_name: adatrack_worker_alert
     env_file:
     - .env.coolify
@@ -277,7 +282,8 @@ services:
   service-websocket:
     build:
       context: .
-      dockerfile: ./services/service-websocket/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: service-websocket
     container_name: adatrack_service_websocket
     env_file:
     - .env.coolify
@@ -290,7 +296,8 @@ services:
   foundation-check:
     build:
       context: .
-      dockerfile: ./services/foundation-check/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: foundation-check
     container_name: adatrack_foundation_check
     env_file:
     - .env.coolify
@@ -303,7 +310,8 @@ services:
   service-monitor:
     build:
       context: .
-      dockerfile: ./services/service-monitor/Dockerfile
+      dockerfile: Dockerfile.backend
+      target: service-monitor
     container_name: adatrack_service_monitor
     env_file:
     - .env.coolify
@@ -325,6 +333,10 @@ services:
     restart: unless-stopped
     networks:
     - coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.103.69.106.62.nip.io`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
 volumes:
   pgdata_v4: null
   redisdata: null
