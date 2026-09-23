@@ -132,7 +132,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schema := fmt.Sprintf("adatrack_gps_%s", req.CompanyCode)
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(req.CompanyCode))
 	var roleCode *string
 	var companyActive bool
 	err = dbclient.Pool.QueryRow(r.Context(),
