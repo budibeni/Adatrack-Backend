@@ -49,7 +49,7 @@ func ProvisionStreams(cfg *config.Config) error {
 		},
 		{
 			Name: "MEDIA", Subjects: []string{"media.*"},
-			MaxAge: 168 * time.Hour, MaxBytes: 10 * 1024 * 1024 * 1024, Discard: nats.DiscardOld,
+			MaxAge: 168 * time.Hour, MaxBytes: 1 * 1024 * 1024 * 1024, Discard: nats.DiscardOld,
 		},
 	}
 	for _, scfg := range streamConfigs {
