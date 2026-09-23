@@ -282,8 +282,6 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
-    ports:
-    - 8080:8080
   foundation-check:
     build:
       context: .
@@ -308,16 +306,12 @@ services:
     - coolify
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-    - 8085:8085
     restart: unless-stopped
   grafana:
     build:
       context: .
       dockerfile: ./deployments/grafana/Dockerfile
     container_name: adatrack_grafana
-    ports:
-    - 3000:3000
     environment:
     - GF_SECURITY_ADMIN_PASSWORD=admin
     - GF_SECURITY_ALLOW_EMBEDDING=true
