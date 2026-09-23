@@ -410,6 +410,23 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       langkah 1 kini juga mengukur `service-websocket`, `ingestion-tcp`, `service-media`
       (WARN informasional; target ≥80 % tetap untuk service inti). Sebelumnya ditunda karena
       menyunting skrip 12.983 byte yang sedang dieksekusi bash berisiko merusak run.
+- [x] Insiden saturasi JetStream + kapasitas endurance (2026-09-23): run 24 jam berhenti di
+      **chunk 7** (`sent=1.439.801 persisted=42.503`). Akar masalah BUKAN persistence (chunk 1–6
+      `sent == persisted`; pasca-pemulihan 60 s @400 msg/s = `23.725/23.725`): delivery memakai
+      **core NATS queue group** (`QueueSubscribe`, at-most-once) sedangkan stream JetStream adalah
+      **buffer retensi + sumber sinyal backpressure**; saat stream >90 % budget (4 GiB), guard FR-1.5
+      membuang telemetri — bukti `ERROR nats backpressure DROP ... used_percent=90.00000387895852`.
+      Buffer 4 GiB hanya ~9,6 jam @400 msg/s (rumus: rate × durasi × ~235 B; nominal PRD 250 msg/s = ~43 jam).
+      **Kapasitas diperbaiki**: `.env.local` `JETSTREAM_MAX_BYTES=16 GiB` + NATS `max_file_store=100GB`
+      (>= 6× cap). **Bug kedua** (`internal/natsclient.go`): `ensureStreams` hanya menurunkan MaxBytes
+      pada jalur create — pada jalur update yang ditolak budget fungsinya `return` sehingga
+      `telemetry-raw` tidak bisa dibuat ulang dan hanya meninggalkan WARN (retensi + guard backpressure
+      hilang tanpa terlihat di `/healthz`); sudah diperbaiki (error update memicu degradasi).
+      **Alat baru**: `tools/jsadmin` + `make js-status|js-purge|js-guard` (sebelumnya tidak ada jalur
+      pemulihan: tanpa CLI `nats` dan tanpa kode purge/delete). **Guard rantai acceptance**: pre-flight
+      kapasitas sebelum endurance, step 4c guard saturasi (<85 %), dan laporan chunk jujur
+      (`endurance X/Y` — sebelumnya run yang berhenti di 7/24 tetap tercatat "24 chunk(s) resume-safe").
+      Bukti & prosedur: `docs/B4-VERIFICATION.md` §2.14.
 - [ ] **Endurance 24 jam perlu diulang**: run 2026-09-22 mencapai chunk 5 (chunk 1–4 PASS 1,42 juta
       pesan/chunk 0 loss) lalu chunk 5 GAGAL (`sent=1423811 persisted=1423801`, 10 frame /
       0,0007 % di luar jendela settle). Sebab teridentifikasi: **pekerjaan berat paralel** di mesin

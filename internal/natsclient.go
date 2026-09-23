@@ -138,27 +138,40 @@ func (c *NATSClient) ensureStreams() error {
 func (c *NATSClient) addOrUpdateStream(cfg *nats.StreamConfig) error {
 	const minMaxBytes = 128 * 1024 * 1024 // 128 MiB floor
 	for attempt := 0; attempt < 5; attempt++ {
-		_, err := c.js.AddStream(cfg)
-		if err == nil {
+		addErr := func() error { _, err := c.js.AddStream(cfg); return err }()
+		if addErr == nil {
 			slog.Info("jetstream stream ready", "stream", cfg.Name,
 				"max_age_hours", cfg.MaxAge.Hours(), "max_bytes", cfg.MaxBytes)
 			return nil
 		}
 
-		if strings.Contains(err.Error(), "already in use") {
-			if _, uerr := c.js.UpdateStream(cfg); uerr == nil {
+		// Stream sudah ada → UPDATE dengan konfigurasi yang sama (retention selalu
+		// mengikuti config; stream tanpa batas akan tumbuh tanpa henti, FR-4.1).
+		if strings.Contains(addErr.Error(), "already in use") {
+			_, updErr := c.js.UpdateStream(cfg)
+			if updErr == nil {
+				slog.Info("jetstream stream ready", "stream", cfg.Name,
+					"max_age_hours", cfg.MaxAge.Hours(), "max_bytes", cfg.MaxBytes)
 				return nil
-			} else if !strings.Contains(uerr.Error(), "insufficient storage") {
-				return fmt.Errorf("update: %w", uerr)
 			}
+			if !strings.Contains(updErr.Error(), "insufficient storage") {
+				return fmt.Errorf("update: %w", updErr)
+			}
+			// UPDATE ditolak karena budget server. Sebelumnya cabang ini jatuh ke
+			// `return addErr` ("already in use") sehingga MaxBytes TIDAK pernah
+			// diturunkan pada jalur update — insiden 2026-09-23: setelah budget
+			// habis, `telemetry-raw` gagal dibuat ulang dan hanya meninggalkan
+			// WARN (retensi + guard backpressure hilang tanpa terlihat di /healthz).
+			// Pakai error update sebagai pemicu degradasi.
+			addErr = updErr
 		}
 
-		if !strings.Contains(err.Error(), "insufficient storage") {
-			return err
+		if !strings.Contains(addErr.Error(), "insufficient storage") {
+			return addErr
 		}
 		next := cfg.MaxBytes / 2
 		if next < minMaxBytes {
-			return fmt.Errorf("storage limit too small: %w", err)
+			return fmt.Errorf("storage limit too small: %w", addErr)
 		}
 		slog.Warn("jetstream storage limit reduced (server cannot honour requested MaxBytes)",
 			"stream", cfg.Name, "from_bytes", cfg.MaxBytes, "to_bytes", next)

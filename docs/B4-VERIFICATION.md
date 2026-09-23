@@ -67,6 +67,12 @@ tidak ada `telemetry.error.>` (dead-letter) selama run.
 > terdistorsi (lihat §2.4). Karena itu: **endurance dan bench SLA harus dijalankan
 > tanpa beban paralel** (jangan `make cover`/`test.sh`/restart service saat chunk
 > berjalan — restart sempat membuat `sent != persisted` pada run sebelumnya).
+>
+> **Koreksi + lanjutan (2026-09-23):** run ulang (`b4-verify-20260922T193156Z`) lolos
+> chunk 1–6 (0 loss) lalu **gagal di chunk 7** — bukan karena persistence,
+> melainkan **saturasi buffer JetStream** yang memicu guard drop FR-1.5.
+> Mekanisme lengkap, rumus kapasitas, bug `ensureStreams` yang ikut ketemu, serta
+> prosedur pemulihan ada di **§2.14** (termasuk koreksi diagnosis awal).
 
 - 24 jam penuh: `B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`
   (mekanisme resume sama; dapat dijalankan bertahap).
@@ -419,7 +425,75 @@ log `logs/b4-verify-20260922T193156Z.log`, endurance
 `logs/b4-endurance-20260922T193156Z` — `chunks=24 chunk=3600s`. Step 0–3 PASS
 (termasuk 400/1000/2000 msg/s 0 loss), step 1 kini mengukur 8 modul dengan patch gate.
 
+### 2.14 Insiden saturasi JetStream (run 2026-09-22/23) — mekanisme, koreksi, pemulihan
+
+Run endurance 24 jam berhenti di **chunk 7** (`sent=1.439.801 persisted=42.503`) dan
+langkah 4b/5 ikut gagal. Akar masalahnya **bukan** persistence (persistence sehat:
+chunk 1–6 `sent == persisted`, dan setelah pemulihan 60 s @400 msg/s tercatat
+`sent=23.725 persisted=23.725`, delta baris DB = 23.725 persis).
+
+**Mekanisme sebenarnya (hasil koreksi diagnosis awal):**
+
+1. Pengiriman telemetri antar-service memakai **core NATS dengan queue group**
+   (`internal.NATSClient.Subscribe` → `conn.QueueSubscribe`, at-most-once) — bukan
+   JetStream ack-based. Karena itu `num_pending` pada konsumer JetStream selalu sama
+   dengan total pesan (konsumer durable itu dibuat untuk provisioning, **tidak
+   dipakai** untuk delivery) dan `pending` ≠ indikator stall.
+2. Stream JetStream berperan sebagai **buffer retensi (48 h / MaxBytes)** sekaligus
+   **sumber sinyal backpressure** (`BackpressureLevel` membaca `bytes/MaxBytes`).
+3. Guard FR-1.5: warn >50 %, **drop >90 %**. Saat `telemetry-raw`/`telemetry-live`
+   melewati 90 % dari 4 GiB, ingestion mulai **membuang telemetri** (bukti log):
+
+   ```
+   2026-09-23T02:42:06 ERROR "nats backpressure DROP: telemetry discarded"
+     stream=telemetry-raw used_percent=90.00000387895852 dropped_total=1
+   ```
+
+4. Buffer 4 GiB hanya cukup untuk **±9,6 jam @400 msg/s** (~235 byte/pesan; ±43 jam
+   pada laju nominal PRD 250 msg/s). Endurance 24 jam karena itu menabrak guard di
+   sekitar jam ke-10 → chunk 7 kehilangan 1,4 juta pesan tanpa peringatan lain.
+   **Koreksi atas catatan awal:** sebelumnya (commit `6467cf9`/`20ae761`) kehilangan
+   ini diatribusikan ke "konsumer macet + DiscardOld membuang pesan belum di-ack".
+   Itu **salah**: tidak ada ack-based delivery; penyebabnya adalah guard drop FR-1.5
+   yang aktif karena buffer penuh.
+
+**Bug kedua yang ketemu saat pemulihan** (`internal/natsclient.go`):
+`ensureStreams` menurunkan `MaxBytes` bertahap hanya pada jalur *create*. Pada jalur
+*update* (AddStream → "already in use" → UpdateStream → "insufficient storage") fungsi
+tersebut `return` dengan error AddStream sehingga **tidak pernah menurunkan cap** dan
+tidak membuat stream. Terbukti saat eksperimen cap 16 GiB dengan budget server 32 GB:
+setelah budget habis, `telemetry-raw` **tidak bisa dibuat** dan hanya meninggalkan
+`WARN jetstream stream setup incomplete` — retensi + guard backpressure hilang tanpa
+terlihat di `/healthz`. Sudah diperbaiki (error update kini memicu degradasi).
+
+**Kapasitas yang benar (rumus):**
+
+```
+butuh_bytes/stream ≈ rate (msg/s) × durasi (s) × ~235 byte
+endurance 24 jam @400 msg/s ≈ 400 × 86.400 × 235 ≈ 8,1 GiB  → set 16 GiB (headroom 2x)
+NATS jetstream.max_file_store ≥ 6 × JETSTREAM_MAX_BYTES     → 100GB
+```
+
+**Alat & guard baru** (sebelumnya tidak ada jalur pemulihan sama sekali — tidak ada
+CLI `nats`, tidak ada kode purge/delete):
+
+| Perintah | Fungsi |
+|---|---|
+| `make js-status` | pesan/byte/**% budget** per stream + pending konsumer (`tools/jsadmin`) |
+| `make js-guard` | gagal (exit 1) bila ada stream ≥ `USAGE` % (default 85) — dipakai rantai acceptance (step 4c) |
+| `make js-purge` | kosongkan stream tersaturasi (`STREAMS=…`); pemulihan tanpa menghapus volume NATS |
+
+Rantai acceptance juga: (a) **pre-flight kapasitas** sebelum endurance (gagal cepat
+bila budget < kebutuhan, bukan setelah 10 jam), (b) **guard saturasi step 4c**, dan
+(c) laporan chunk yang jujur — sebelumnya run yang berhenti di chunk 7 dari 24 tetap
+tercatat `endurance 24 chunk(s) resume-safe` (menyesatkan), kini `endurance 6/24`.
+
+**Prosedur pemulihan dari saturasi** (terverifikasi):
+`make js-status` → `make js-purge` → restart service pipeline
+(`scripts/start-services.sh up`) → `make js-guard` + `make e2e`.
+
 ## 3. Cara Menjalankan Ulang
+
 
 ```bash
 make up && make migrate && make services-up   # infra + service host-run
@@ -433,9 +507,12 @@ make retention-purge                           # dry-run (APPLY=1 untuk drop)
 
 ## 4. Gap yang Tersisa (belum dicentang)
 
-1. **Endurance 24 jam penuh** — run 2026-09-22 berhenti di chunk 5 (4 PASS + 1 GAGAL
-   karena beban paralel, lihat catatan §2.2) sehingga perlu dijalankan ulang
-   pada mesin yang bebas beban; run bertahap resume-safe tetap berlaku
+1. **Endurance 24 jam penuh** — dua run berhenti lebih awal: chunk 5 (beban paralel)
+   dan chunk 7 (saturasi JetStream, §2.14). Kapasitas kini sudah benar
+   (`JETSTREAM_MAX_BYTES=16 GiB` + NATS `max_file_store=100GB`) dan rantai acceptance
+   sudah punya **pre-flight kapasitas** + **guard saturasi (step 4c)** + laporan chunk
+   jujur (`endurance X/Y`), jadi re-run tidak lagi bisa "lolos 24 chunk" secara palsu.
+   Jalankan pada mesin bebas beban: `B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`
    (`B4_ENDURANCE_CHUNKS=24 B4_ENDURANCE_CHUNK_SEC=3600 scripts/b4-verify.sh`).
    Yang sudah terbukti: 1 jam kumulatif (6 chunk × 600 s, 1.438.418 pesan,
    0 loss/chunk, plateau heap+goroutine). Progres 24 jam dapat dipantau di

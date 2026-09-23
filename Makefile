@@ -10,7 +10,7 @@ VARIANT ?= local
 MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/api-vehicle services/service-media services/worker-alert services/foundation-check tools/e2e tools/e2ews tools/e2e-media tools/e2e-fuel tools/querybench
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -97,6 +97,16 @@ monitoring-down: ## Stop the stack, monitoring included (alias for `down`)
 
 prom-targets: ## Regenerate Prometheus file_sd targets from the service ports
 	@scripts/gen-prom-targets.sh
+
+# --- JetStream housekeeping (PRD §4.1) — diagnosis & pemulihan saturasi ----
+js-status: ## JetStream per-stream status: messages/bytes/usage + consumer pending
+	@(cd tools/jsadmin && go run . --status)
+
+js-purge: ## Purge saturated streams (STREAMS=telemetry-raw,telemetry-live) — DESTRUKTIF
+	@(cd tools/jsadmin && go run . --purge "$(or $(STREAMS),telemetry-raw,telemetry-live)" --yes)
+
+js-guard: ## Fail if any stream is >= USAGE% of its byte budget (default 85)
+	@(cd tools/jsadmin && go run . --assert-usage-below $(or $(USAGE),85))
 
 # --- HA overlay & drill (PRD §13) — varian LOCAL ---------------------------
 ha-up: ## Start the HA overlay: PG standby + Redis replica (VARIANT=local)

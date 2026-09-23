@@ -79,6 +79,20 @@ CHUNKS="${ENDURANCE_CHUNKS:-${B4_ENDURANCE_CHUNKS:-6}}"; CHUNK_SEC="${ENDURANCE_
 [[ "$QUICK" == true ]] && { CHUNKS=1; CHUNK_SEC=120; }
 END_DIR="$ROOT/logs/b4-endurance-$STAMP"; mkdir -p "$END_DIR"
 echo "endurance: chunks=$CHUNKS chunk=${CHUNK_SEC}s dir=$END_DIR"
+# Pre-flight kapasitas JetStream (insiden 2026-09-23): stream adalah BUFFER
+# RETENSI + sumber sinyal backpressure. Begitu sebuah stream menyentuh 90% budget,
+# ingestion membuang telemetri (FR-1.5) sehingga chunk berikutnya kehilangan data —
+# walau persistence sendiri sehat. Estimasi ukuran pesan terukur ~235 byte.
+REQ_BYTES=$((400 * CHUNK_SEC * CHUNKS * 235))
+CFG_BYTES="${JETSTREAM_MAX_BYTES:-4294967296}"
+REQ_GIB=$((REQ_BYTES / 1073741824 + 1)); CFG_GIB=$((CFG_BYTES / 1073741824))
+if [[ "$REQ_BYTES" -gt "$CFG_BYTES" ]]; then
+  bad "kapasitas JetStream tidak cukup: butuh ~${REQ_GIB} GiB, JETSTREAM_MAX_BYTES=${CFG_GIB} GiB (stream penuh -> drop >90%)"
+  echo "  perbaikan: naikkan JETSTREAM_MAX_BYTES (mis. $((REQ_GIB + 4)) GiB) DAN NATS"
+  echo "  jetstream.max_file_store (deployments/nats/nats.conf) >= 6x nilai itu"
+else
+  ok "kapasitas JetStream cukup (~${REQ_GIB} GiB <= ${CFG_GIB} GiB per stream)"
+fi
 heap_before="$(curl -fsS http://127.0.0.1:8091/metrics 2>/dev/null | awk '/^adatrack_memory_allocated_bytes /{print $2}' | head -n1)"
 g_before="$(curl -fsS http://127.0.0.1:8091/metrics 2>/dev/null | awk '/^adatrack_goroutines /{print $2}' | head -n1)"
 for i in $(seq 1 "$CHUNKS"); do
@@ -93,7 +107,25 @@ done
 heap_after="$(curl -fsS http://127.0.0.1:8091/metrics 2>/dev/null | awk '/^adatrack_memory_allocated_bytes /{print $2}' | head -n1)"
 g_after="$(curl -fsS http://127.0.0.1:8091/metrics 2>/dev/null | awk '/^adatrack_goroutines /{print $2}' | head -n1)"
 echo "endurance resources: heap ${heap_before:-?} -> ${heap_after:-?}, goroutines ${g_before:-?} -> ${g_after:-?}"
-ok "endurance $CHUNKS chunk(s) resume-safe (logs $END_DIR)"
+# Laporan HARUS menyebut jumlah chunk yang benar-benar PASS: sebelumnya baris ini
+# mencetak $CHUNKS (nilai yang diminta), sehingga run yang berhenti di chunk 7 dari
+# 24 tetap tercatat "24 chunk(s) resume-safe" (menyesatkan — insiden 2026-09-22).
+CHUNKS_DONE="$(wc -l < "$END_DIR/resume.log" 2>/dev/null | tr -d ' ' || echo 0)"
+if [[ "${CHUNKS_DONE:-0}" -lt "$CHUNKS" ]]; then
+  bad "endurance incomplete: hanya $CHUNKS_DONE/$CHUNKS chunk PASS (lihat $END_DIR/resume.log)"
+else
+  ok "endurance $CHUNKS_DONE/$CHUNKS chunk(s) resume-safe (logs $END_DIR)"
+fi
+
+step "4c" "JetStream saturation guard (<85% budget — cegah kehilangan data senyap)"
+# Insiden chunk 7: stream mentok 4 GiB -> DiscardOld membuang pesan belum di-ack ->
+# ingestion drop >90% (FR-1.5) lalu pipeline macet permanen. Guard ini membuat
+# kondisi itu GAGAL di rantai acceptance, bukan hilang sebagai "chunk 7 gagal".
+if (cd "$ROOT/tools/jsadmin" && go run . --nats "$NATS_E" --assert-usage-below 85); then
+  ok "jetstream usage sehat (<85% per stream)"
+else
+  bad "jetstream stream saturasi — pemulihan: make js-status, lalu make js-purge + restart service"
+fi
 
 step 4b "WebSocket fan-out load profile (PRD §16: 50×1200)"
 # The profile logs in once per run, and the login limiter (LOGIN_RATE_LIMIT per
