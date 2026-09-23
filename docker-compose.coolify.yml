@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.3-alpine
     container_name: adatrack_postgres
     environment:
       POSTGRES_USER: ${DB_USER}
@@ -139,7 +139,7 @@ services:
     networks:
     - coolify
   postgres-replica:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.3-alpine
     container_name: adatrack_postgres_replica
     environment:
       POSTGRES_USER: ${DB_USER}
