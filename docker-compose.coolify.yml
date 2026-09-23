@@ -289,6 +289,11 @@ services:
     container_name: adatrack_service_websocket
     env_file:
     - .env.coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adatrack-ws.rule=Host(`api.103.69.106.62.nip.io`) && (PathPrefix(`/api/v1/auth`) || PathPrefix(`/api/v1/admin`) || PathPrefix(`/ws`) || PathPrefix(`/api/v1/companies`))"
+      - "traefik.http.routers.adatrack-ws.priority=100"
+      - "traefik.http.services.adatrack-ws.loadbalancer.server.port=8080"
     networks:
     - coolify
     depends_on:
