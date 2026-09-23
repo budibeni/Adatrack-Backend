@@ -60,6 +60,9 @@ func main() {
 	if _, err := db.Exec("CREATE SCHEMA IF NOT EXISTS adatrack_gps_template"); err != nil {
 		log.Printf("Warning: failed to create adatrack_gps_template schema: %v", err)
 	}
+		if _, err := db.Exec("CREATE SCHEMA IF NOT EXISTS adatrack_gps_default"); err != nil {
+			log.Printf("Warning: failed to create adatrack_gps_default schema: %v", err)
+		}
 
 	baseDir := os.Getenv("MIGRATION_DIR")
 	if baseDir == "" {
