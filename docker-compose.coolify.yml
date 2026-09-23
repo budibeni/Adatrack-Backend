@@ -48,8 +48,6 @@ services:
     - -js
     - -sd
     - /data
-    - --max_file
-    - 50G
     volumes:
     - natsdata:/data
     healthcheck:
