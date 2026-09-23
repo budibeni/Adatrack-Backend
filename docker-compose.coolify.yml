@@ -9,7 +9,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-    - pgdata_final:/var/lib/postgresql/data
+    - pgdata_master:/var/lib/postgresql/data
+    - ./database/init-pg-hba:/docker-entrypoint-initdb.d
     healthcheck:
       test:
       - CMD-SHELL
@@ -320,7 +321,7 @@ services:
     networks:
     - coolify
 volumes:
-  pgdata_final: null
+  pgdata_master: null
   redisdata: null
   natsdata: null
   miniodata: null
