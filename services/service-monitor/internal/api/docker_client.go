@@ -46,7 +46,7 @@ func GetContainers() ([]ServiceInfo, error) {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
 		
-		if strings.HasPrefix(name, "adatrack_") || strings.HasPrefix(name, "coolify-") {
+		if true {
 			services = append(services, ServiceInfo{
 				ID:     c.Id[:12],
 				Name:   name,
