@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     volumes:
-    - pgdata_new:/var/lib/postgresql/data
+    - pgdata_postgis:/var/lib/postgresql/data
     healthcheck:
       test:
       - CMD-SHELL
@@ -325,7 +325,7 @@ services:
     networks:
     - coolify
 volumes:
-  pgdata_new: null
+  pgdata_postgis: null
   redisdata: null
   natsdata: null
   miniodata: null
