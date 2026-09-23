@@ -28,7 +28,7 @@ type DockerContainer struct {
 }
 
 func GetContainers() ([]ServiceInfo, error) {
-	uuidRe := regexp.MustCompile(`-[a-z0-9]{24}$`)
+	uuidRe := regexp.MustCompile(`-[a-z0-9]{24}(?:-\d+)?$`)
 	client := getDockerClient()
 	resp, err := client.Get("http://localhost/v1.41/containers/json?all=true")
 	if err != nil {
