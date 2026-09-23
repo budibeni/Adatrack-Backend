@@ -18,7 +18,7 @@ RUN echo '#!/bin/sh' > /app/run.sh && \
     echo 'echo "Running schema migrations..."' >> /app/run.sh && \
     echo '/app/migrate' >> /app/run.sh && \
     echo 'MIGRATE_EXIT=$?' >> /app/run.sh && \
-    echo 'if [ $MIGRATE_EXIT -ne 0 ]; then echo "MIGRATE BINARY FAILED WITH CODE $MIGRATE_EXIT (continuing to test psql...)"; fi' >> /app/run.sh && \
+    echo 'if [ $MIGRATE_EXIT -ne 0 ]; then echo "MIGRATE BINARY FAILED WITH CODE $MIGRATE_EXIT"; exit 1; fi' >> /app/run.sh && \
     echo 'echo "Applying seed data..."' >> /app/run.sh && \
     echo 'psql -f /app/database/init-pg/03_seed_master.sql' >> /app/run.sh && \
     echo 'PSQL_EXIT=$?' >> /app/run.sh && \

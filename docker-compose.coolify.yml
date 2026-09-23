@@ -7,8 +7,9 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-    - pgdata_postgis:/var/lib/postgresql/data
+    - pgdata_trust:/var/lib/postgresql/data
     healthcheck:
       test:
       - CMD-SHELL
@@ -145,6 +146,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      POSTGRES_HOST_AUTH_METHOD: trust
     depends_on:
       postgres:
         condition: service_healthy
@@ -325,7 +327,7 @@ services:
     networks:
     - coolify
 volumes:
-  pgdata_postgis: null
+  pgdata_trust: null
   redisdata: null
   natsdata: null
   miniodata: null
