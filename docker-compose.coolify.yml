@@ -2,6 +2,7 @@ version: '3.8'
 services:
   postgres_db:
     image: postgis/postgis:15-3.3-alpine
+    command: postgres -c max_connections=500
     container_name: adatrack_postgres
     environment:
       POSTGRES_USER: ${DB_USER}
@@ -141,6 +142,7 @@ services:
     - coolify
   postgres-replica:
     image: postgis/postgis:15-3.3-alpine
+    command: postgres -c max_connections=500
     container_name: adatrack_postgres_replica
     environment:
       POSTGRES_USER: ${DB_USER}
