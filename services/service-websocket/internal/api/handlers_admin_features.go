@@ -13,10 +13,10 @@ import (
 
 func (h *Handler) GetGlobalDevices(w http.ResponseWriter, r *http.Request) {
 	query := `
-		SELECT m.imei, m.company_code, m.vehicle_id, c.name, m.updated_at
+		SELECT m.imei, m.company_code, m.vehicle_id, c.name, m.created_at
 		FROM adatrack_gps_master.tm_vehicle_imei_map m
 		LEFT JOIN adatrack_gps_master.tm_companies c ON m.company_code = c.code
-		ORDER BY m.updated_at DESC
+		ORDER BY m.created_at DESC
 	`
 	rows, err := dbclient.Pool.Query(r.Context(), query)
 	if err != nil {
@@ -27,18 +27,27 @@ func (h *Handler) GetGlobalDevices(w http.ResponseWriter, r *http.Request) {
 
 	var devices []map[string]interface{}
 	for rows.Next() {
-		var imei, companyCode, companyName string
+		var imei, companyCode string
+		var companyName *string
 		var vehicleID int
-		var updatedAt string
+		var updatedAt *string
 		if err := rows.Scan(&imei, &companyCode, &vehicleID, &companyName, &updatedAt); err != nil {
 			continue
+		}
+		uTime := ""
+		if updatedAt != nil {
+			uTime = *updatedAt
+		}
+		cName := ""
+		if companyName != nil {
+			cName = *companyName
 		}
 		devices = append(devices, map[string]interface{}{
 			"imei":         imei,
 			"company_code": companyCode,
-			"company_name": companyName,
+			"company_name": cName,
 			"vehicle_id":   vehicleID,
-			"updated_at":   updatedAt,
+			"updated_at":   uTime,
 		})
 	}
 
