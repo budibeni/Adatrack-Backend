@@ -26,6 +26,7 @@ func main() {
 			dbHost = "postgres"
 		}
 		if dbUser != "" && dbPass != "" && dbName != "" {
+			log.Printf("DEBUG: dbUser len=%d, dbPass len=%d, dbName len=%d", len(dbUser), len(dbPass), len(dbName))
 			importURL := url.URL{
 				Scheme: "postgres",
 				User:   url.UserPassword(dbUser, dbPass),
