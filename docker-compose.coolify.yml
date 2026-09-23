@@ -155,7 +155,7 @@ services:
       -p 5432 -U "${DB_USER}"; do sleep 2; done; PGPASSWORD="${DB_PASSWORD}" pg_basebackup
       -h postgres_db -U "${DB_USER}" -D /var/lib/postgresql/data -Fp -Xs -P -R; chown -R
       postgres:postgres /var/lib/postgresql/data; chmod 700 /var/lib/postgresql/data;
-      exec su postgres -c "postgres" ''
+      exec su postgres -c "postgres -c max_connections=500" ''
 
       '
     networks:
