@@ -53,8 +53,20 @@ func ProvisionStreams(cfg *config.Config) error {
 		},
 	}
 	for _, scfg := range streamConfigs {
-		_, err := JS.AddStream(&scfg)
-		if err != nil { return err }
+		_, err := JS.StreamInfo(scfg.Name)
+		if err != nil {
+			// Stream doesn't exist (or other error), try to add it
+			_, err = JS.AddStream(&scfg)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Stream exists, update it
+			_, err = JS.UpdateStream(&scfg)
+			if err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
