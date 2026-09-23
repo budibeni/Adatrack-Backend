@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"net/url"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -16,7 +17,32 @@ import (
 func main() {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://adatrack_local:local_password@localhost:5432/adatrack_gps_master?sslmode=disable"
+		dbUser := os.Getenv("DB_USER")
+		dbPass := os.Getenv("DB_PASSWORD")
+		dbName := os.Getenv("DB_NAME")
+		dbHost := os.Getenv("DB_HOST")
+		if dbHost == "" {
+			dbHost = "postgres"
+		}
+		if dbUser != "" && dbPass != "" && dbName != "" {
+			importURL := url.URL{
+				Scheme: "postgres",
+				User:   url.UserPassword(dbUser, dbPass),
+				Host:   dbHost + ":5432",
+				Path:   dbName,
+				RawQuery: "sslmode=disable",
+			}
+			dbURL = importURL.String()
+		} else {
+			dbURL = "postgres://adatrack_local:local_password@localhost:5432/adatrack_gps_master?sslmode=disable"
+		}
+	} else {
+		// Attempt to fix improperly encoded passwords in DATABASE_URL if they exist
+		if parsed, err := url.Parse(dbURL); err == nil && parsed.User != nil {
+			pass, _ := parsed.User.Password()
+			parsed.User = url.UserPassword(parsed.User.Username(), pass)
+			dbURL = parsed.String()
+		}
 	}
 
 	// 1. Ensure master and template schemas exist before migrations run

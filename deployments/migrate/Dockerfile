@@ -17,7 +17,7 @@ RUN echo '#!/bin/sh' > /app/run.sh && \
     echo 'echo "Running schema migrations..."' >> /app/run.sh && \
     echo '/app/migrate' >> /app/run.sh && \
     echo 'echo "Applying seed data..."' >> /app/run.sh && \
-    echo 'psql "$DATABASE_URL" -f /app/database/init-pg/03_seed_master.sql' >> /app/run.sh && \
+    echo 'psql -f /app/database/init-pg/03_seed_master.sql' >> /app/run.sh && \
     echo 'echo "Migration and Seeding complete!"' >> /app/run.sh && \
     chmod +x /app/run.sh
 
