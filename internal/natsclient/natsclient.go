@@ -37,7 +37,7 @@ func ProvisionStreams(cfg *config.Config) error {
 		{
 			Name: "DEADLETTER", Subjects: []string{"dlq.>"},
 			MaxAge: 168 * time.Hour, // 7 days retention for debugging DLQ
-			Discard: nats.DiscardOld,
+			MaxBytes: maxBytes, Discard: nats.DiscardOld,
 		},
 		{
 			Name: "ALERT", Subjects: []string{"alert.*"},

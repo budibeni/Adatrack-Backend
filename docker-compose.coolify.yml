@@ -49,7 +49,7 @@ services:
     - -sd
     - /data
     volumes:
-    - natsdata:/data
+    - natsdata_v2:/data
     healthcheck:
       test:
       - CMD
@@ -338,7 +338,7 @@ services:
 volumes:
   pgdata_v4: null
   redisdata: null
-  natsdata: null
+  natsdata_v2: null
   miniodata: null
 networks:
   coolify:
