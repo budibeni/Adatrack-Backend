@@ -46,6 +46,8 @@ services:
     container_name: adatrack_nats
     command:
     - -js
+    - -sd
+    - /data
     volumes:
     - natsdata:/data
     healthcheck:

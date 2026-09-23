@@ -39,14 +39,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-	mux.Handle("/metrics", promhttp.Handler())
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("# HELP active_connections active connections\nactive_connections 1\n"))
-	})
+	mux.Handle("/metrics", promhttp.Handler())
 	server := &http.Server{Addr: ":8080", Handler: mux}
 
 	go func() {

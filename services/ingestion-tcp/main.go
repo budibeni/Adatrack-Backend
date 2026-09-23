@@ -38,7 +38,6 @@ func main() {
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	http.Handle("/metrics", promhttp.Handler())
-	http.Handle("/metrics", promhttp.Handler())
 	healthServer := &http.Server{Addr: ":8081", Handler: nil}
 	go healthServer.ListenAndServe()
 
