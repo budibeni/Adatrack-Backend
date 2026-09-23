@@ -1,6 +1,6 @@
 version: '3.8'
 services:
-  postgres:
+  postgres_db:
     image: postgis/postgis:15-3.3-alpine
     container_name: adatrack_postgres
     environment:
@@ -119,9 +119,9 @@ services:
     image: quay.io/prometheuscommunity/postgres-exporter:v0.12.0
     container_name: adatrack_postgres_exporter
     environment:
-      DATA_SOURCE_NAME: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://${DB_USER}:${DB_PASSWORD}@postgres_db:5432/${DB_NAME}?sslmode=disable
     depends_on:
-    - postgres
+    - postgres_db
     restart: unless-stopped
     networks:
     - coolify
@@ -148,11 +148,11 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_HOST_AUTH_METHOD: trust
     depends_on:
-      postgres:
+      postgres_db:
         condition: service_healthy
-    command: 'sh -c '' rm -rf /var/lib/postgresql/data/*; until pg_isready -h postgres
+    command: 'sh -c '' rm -rf /var/lib/postgresql/data/*; until pg_isready -h postgres_db
       -p 5432 -U "${DB_USER}"; do sleep 2; done; PGPASSWORD="${DB_PASSWORD}" pg_basebackup
-      -h postgres -U "${DB_USER}" -D /var/lib/postgresql/data -Fp -Xs -P -R; chown -R
+      -h postgres_db -U "${DB_USER}" -D /var/lib/postgresql/data -Fp -Xs -P -R; chown -R
       postgres:postgres /var/lib/postgresql/data; chmod 700 /var/lib/postgresql/data;
       exec su postgres -c "postgres" ''
 
@@ -189,15 +189,15 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${DB_NAME}
-      DB_HOST: postgres
+      DB_HOST: postgres_db
       PGUSER: ${DB_USER}
       PGPASSWORD: ${DB_PASSWORD}
       PGDATABASE: ${DB_NAME}
-      PGHOST: postgres
+      PGHOST: postgres_db
       PGPORT: 5432
       MIGRATION_DIR: /app/database/migrations
     depends_on:
-      postgres:
+      postgres_db:
         condition: service_healthy
     networks:
     - coolify
