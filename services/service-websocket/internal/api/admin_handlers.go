@@ -559,8 +559,8 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := dbclient.Pool.Exec(ctx, `
-		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, sim_number, protocol, status)
-		VALUES ($1, $2, $3, 'idle')
+		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, device_brand, device_model, sim_number, protocol, status)
+		VALUES ($1, $2, $3, $4, $5, 'idle')
 	`, req.IMEI, req.DeviceBrand, req.DeviceModel, req.SimNumber, req.Protocol)
 	if err != nil {
 		http.Error(w, "Failed to create GPS device", http.StatusInternalServerError)
