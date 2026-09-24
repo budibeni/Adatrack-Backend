@@ -547,9 +547,11 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var req struct {
-		IMEI      string `json:"imei"`
-		SimNumber string `json:"sim_number"`
-		Protocol  string `json:"protocol"`
+		IMEI        string `json:"imei"`
+		DeviceBrand string `json:"device_brand"`
+		DeviceModel string `json:"device_model"`
+		SimNumber   string `json:"sim_number"`
+		Protocol    string `json:"protocol"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
