@@ -90,26 +90,31 @@ else
   bad "gagal menaikkan container replika"
 fi
 
-step 3 "tunggu streaming aktif (base backup bisa butuh puluhan detik)"
+step 3 "tunggu streaming aktif DAN lag kecil (base backup bisa butuh puluhan detik)"
 wait_streaming() {
-  state=""; receiver=""
+  state=""; receiver=""; lag=""
   for _ in $(seq 1 60); do
     state="$(pgq "$PG_PRIMARY" "SELECT COALESCE(state,'') FROM pg_stat_replication LIMIT 1;" | tr -d '[:space:]')"
     receiver="$(pgq "$PG_REPLICA" "SELECT COALESCE(status,'') FROM pg_stat_wal_receiver LIMIT 1;" | tr -d '[:space:]')"
-    [[ "$state" == "streaming" && "$receiver" == "streaming" ]] && break
+    # PENTING: state=streaming TIDAK berarti sudah menyusul — standby bisa masih
+    # menerima (streaming) sambil me-replay WAL lama. Terbukti 2026-09-24 run penuh:
+    # state=streaming tetapi replay tertinggal 11,09 GB sehingga assert lag gagal.
+    lag="$(pgq "$PG_PRIMARY" "SELECT COALESCE(max(pg_wal_lsn_diff(sent_lsn, replay_lsn))::bigint, 0) FROM pg_stat_replication;" | tr -d '[:space:]')"
+    [[ "${lag:-x}" =~ ^[0-9]+$ ]] || lag=999999999
+    [[ "$state" == "streaming" && "$receiver" == "streaming" && "$lag" -le 1048576 ]] && break
     sleep 2
   done
 }
 wait_streaming
 
-# Self-healing: replika yang tertinggal JAUH (mis. setelah run endurance 24 jam,
-# WAL tertahan slot ~10 GB) tidak akan mencapai streaming dalam 2 menit — replay
-# penuh bisa puluhan menit, sehingga lag tidak pernah ~0 dan drill selalu gagal.
-# Solusi: seed ulang dari base backup baru (volume replika dikosongkan, entrypoint
-# akan melakukan pg_basebackup lagi). Terbukti pada run B4 2026-09-24.
-if [[ "$state" != "streaming" || "$receiver" != "streaming" ]]; then
+# Self-healing: replika yang tertinggal jauh (mis. setelah run endurance 24 jam atau
+# backup/restore DB besar, WAL tertahan slot ~8-11 GB) tidak akan menyusul dalam 2
+# menit — replay penuh bisa puluhan menit, sehingga lag tidak pernah ~0 dan drill
+# selalu gagal. Solusi: seed ulang dari base backup baru (volume replika dikosongkan,
+# entrypoint akan melakukan pg_basebackup lagi). Terbukti pada run B4 2026-09-24.
+if [[ "$state" != "streaming" || "$receiver" != "streaming" || "$lag" -gt 1048576 ]]; then
   held="$(pgq "$PG_PRIMARY" "SELECT COALESCE(max(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn))::bigint, 0) FROM pg_replication_slots;" | tr -d '[:space:]')"
-  echo "drill: replika belum streaming (state='${state}', wal_receiver='${receiver}', WAL tertahan slot=${held:-?} byte) -> seed ulang dari base backup baru"
+  echo "drill: replika belum menyusul (state='${state}', wal_receiver='${receiver}', replay_lag=${lag} byte, WAL tertahan slot=${held:-?} byte) -> seed ulang dari base backup baru"
   REPLICA_VOL="$(docker volume ls --format '{{.Name}}' | grep -m1 'pgreplicadata' || true)"
   "${COMPOSE[@]}" rm -sf postgres-replica >/dev/null 2>&1
   [[ -n "$REPLICA_VOL" ]] && docker volume rm "$REPLICA_VOL" >/dev/null 2>&1
