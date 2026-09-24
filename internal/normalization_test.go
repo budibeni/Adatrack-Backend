@@ -19,6 +19,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // SQL scan patterns. String literals are stripped first (the partition helpers
@@ -79,6 +81,33 @@ func migrationFiles(t *testing.T) []string {
 // TestMigrationTablePrefixesMatchConvention asserts every CREATE TABLE uses the
 // tm_/th_/td_ prefix and an unqualified name (the schema is injected through the
 // per-tenant search_path — PRD §6.2).
+// TestObserveTelemetryIntervalSurvivesLateRegistration guards the B10 gauge: the
+// config is loaded before a service registers its collectors, so the observed value
+// must be replayed at registration — otherwise /metrics reported
+// `telemetry_interval_seconds 0` instead of the configured interval (found while
+// auditing B10 against a live `curl :8090/metrics`).
+func TestObserveTelemetryIntervalSurvivesLateRegistration(t *testing.T) {
+	ObserveTelemetryInterval(20)
+
+	reg := prometheus.NewRegistry()
+	RegisterSharedMetrics(reg)
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	for _, mf := range families {
+		if mf.GetName() != "telemetry_interval_seconds" {
+			continue
+		}
+		if got := mf.GetMetric()[0].GetGauge().GetValue(); got != 20 {
+			t.Fatalf("telemetry_interval_seconds = %v, want 20", got)
+		}
+		return
+	}
+	t.Fatal("telemetry_interval_seconds was not registered")
+}
+
 func TestMigrationTablePrefixesMatchConvention(t *testing.T) {
 	allowed := []string{"tm_", "th_", "td_"}
 	seen := map[string]string{}

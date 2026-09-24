@@ -20,14 +20,19 @@ func LoadConfig() *Config {
 	return c
 }
 
-// ObserveTelemetryInterval records the configured device cadence (no-op when the
-// gauge was not registered, e.g. in a unit test that builds a bare Config).
+// ObserveTelemetryInterval records the configured device cadence. The value is
+// remembered so a late RegisterSharedMetrics call still reports it (config is loaded
+// before services register their collectors).
 func ObserveTelemetryInterval(seconds int) {
+	observedTelemetryInterval = seconds
 	if TelemetryIntervalSeconds == nil {
 		return
 	}
 	TelemetryIntervalSeconds.Set(float64(seconds))
 }
+
+// observedTelemetryInterval keeps the last configured cadence until the gauge exists.
+var observedTelemetryInterval int
 
 // loadFleetConfig fills the B7 fleet-management thresholds (FR-2.5/FR-2.6).
 // The defaults are the PRD values, so a service booted without these variables

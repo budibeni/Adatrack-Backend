@@ -5,12 +5,12 @@
 > perintah + hasil yang bisa diulang; item yang belum lengkap ditulis eksplisit di
 > §4 (gap), mengikuti aturan `.agent/01-global-rules.md`.
 >
-> **Revisi 2 (audit lanjutan 2026-09-24):** sebelas temuan audit sudah diperbaiki —
+> **Revisi 2 (audit lanjutan 2026-09-24):** dua belas temuan audit sudah diperbaiki —
 > ACK Navigil, payload Navigil MSG 8/18, peta identitas Navigil, framing+respons
 > Castel, downlink durable JetStream, bug SQL audit command, encoder TK103,
-> E2E downlink baru (`scripts/e2e-commands.sh`), plus dua temuan yang hanya muncul
-> saat E2E live: ambiguitas balasan device saat dua perintah in-flight dan replay
-> backlog JetStream. Rincian: §5.
+> E2E downlink baru (`scripts/e2e-commands.sh`), ambiguitas balasan device saat dua
+> perintah in-flight, replay backlog JetStream, dan metrik `telemetry_interval_seconds`
+> yang selalu 0. Rincian: §5.
 
 ## 0. Ringkasan
 
@@ -232,6 +232,13 @@ Bukti: `{"msg":"telemetry cadence configured","interval_seconds":20,
 "env":"TELEMETRY_INTERVAL_SECONDS","metric":"telemetry_interval_seconds"}`
 (`logs/ingestion-tcp.log`).
 
+**Perbaikan audit lanjutan:** gauge-nya sempat bernilai **0** di `/metrics` karena
+config dimuat sebelum service meregistrasi collector (`ObserveTelemetryInterval`
+dipanggil saat gauge masih `nil`). Sekarang nilai terakhir diingat dan diterapkan
+saat registrasi, dengan test `TestObserveTelemetryIntervalSurvivesLateRegistration`.
+Bukti live sesudah perbaikan: port `8090/8091/8092/8094/8095` semuanya melaporkan
+`telemetry_interval_seconds 20`.
+
 ### 3.5 Input validation + anti-attack hardening (§8.5/§9.6)
 
 - Paket baru `internal/validate` (whitelist tertutup, batas panjang, kontrol
@@ -289,6 +296,7 @@ Bukti: `{"msg":"telemetry cadence configured","interval_seconds":20,
 | 9 | Downlink hanya bisa dipicu dari REST (sulit diuji operator) | `tools/jsadmin --publish-command …` + `make js-publish-cmd`, dan `scripts/e2e-commands.sh` (`make e2e-commands`) dengan simulator device GT06 | 5/5 PASS |
 | 10 | (ditemukan E2E live) `Ack` memilih pending **tertua** untuk satu IMEI → balasan device meng-ACK perintah lama, perintah baru tersangkut `sent` | **Satu perintah in-flight per device**: perintah kedua ditolak eksplisit (`failed`, detail memuat request_id yang sedang menunggu) dan socket tidak disentuh — balasan device jadi tidak ambigu | `TestDispatchRefusesSecondCommandWhileDeviceIsBusy` |
 | 11 | (ditemukan E2E live) JetStream dapat membuat ulang consumer → `DeliverAll` memutar ulang seluruh stream → perintah `engine_cut` berumur jam bisa terkirim ke kendaraan yang bergerak | Batas umur `COMMAND_MAX_AGE_SECONDS` (default 300): permintaan lebih tua dicatat `failed` + alasan, tidak pernah dikirim; boot log memuat `max_age_s` | `TestHandleRequestDropsStaleCommand` + bukti runtime di bawah |
+| 12 | (ditemukan audit B10 live) metrik `telemetry_interval_seconds` selalu `0` di `/metrics` | Nilai yang diobservasi diingat lalu diterapkan saat collector diregistrasi (urutan config → registrasi tidak lagi penting) | `TestObserveTelemetryIntervalSurvivesLateRegistration` + `curl` 5 port = 20 |
 
 Bukti runtime guard #11 (replay backlog nyata, `logs/ingestion-tcp.log`):
 

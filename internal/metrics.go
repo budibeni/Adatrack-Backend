@@ -123,6 +123,12 @@ func RegisterSharedMetrics(reg *prometheus.Registry) {
 		Name: "telemetry_interval_seconds",
 		Help: "Configured nominal device telemetry interval (FR-1.2, TELEMETRY_INTERVAL_SECONDS)",
 	})
+	// Apply any cadence observed BEFORE registration. Config loading happens before
+	// services register their metrics, so without this replay the gauge silently
+	// reported 0 instead of the configured interval (found while auditing B10).
+	if observedTelemetryInterval > 0 {
+		TelemetryIntervalSeconds.Set(float64(observedTelemetryInterval))
+	}
 
 	reg.MustRegister(
 		HTTPRequestsTotal, HTTPRequestDuration,
