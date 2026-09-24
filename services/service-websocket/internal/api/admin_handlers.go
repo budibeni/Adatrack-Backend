@@ -539,7 +539,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(devices)
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "data": devices})
 }
 
 func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
