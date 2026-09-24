@@ -133,7 +133,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.CompanyCode == "" {
+	if strings.ToUpper(req.CompanyCode) == "" {
 		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ")
 		if err != nil {
 			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query companies")
@@ -178,7 +178,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				rowsAccess.Close()
 
 				if len(userCompanies) == 1 {
-					req.CompanyCode = userCompanies[0]
+					req.CompanyCode = strings.ToUpper(userCompanies[0])
 				} else if len(userCompanies) > 1 {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
@@ -193,12 +193,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		
-		if req.CompanyCode == "" {
+		if strings.ToUpper(req.CompanyCode) == "" {
 			h.writeError(w, http.StatusForbidden, "COMPANY_ACCESS_DENIED", "No access to any company")
 			return
 		}
 	}
 
+	req.CompanyCode = strings.ToUpper(req.CompanyCode)
 	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(req.CompanyCode))
 
 	var roleCode *string
@@ -852,7 +853,7 @@ func (h *Handler) GetAvailableGPSDevices(w http.ResponseWriter, r *http.Request)
 		SELECT m.imei, COALESCE(m.device_brand, ''), COALESCE(m.device_model, ''), COALESCE(m.sim_number, ''), COALESCE(m.protocol, ''), m.status, m.created_at, m.updated_at
 		FROM adatrack_gps_master.tm_gps_devices m
 		LEFT JOIN %s.tm_vehicles v ON m.imei = v.imei AND v.deleted_at IS NULL
-		WHERE m.assigned_company = $1 AND (v.imei IS NULL OR m.imei = $2)
+		WHERE UPPER(m.assigned_company) = UPPER($1) AND (v.imei IS NULL OR m.imei = $2)
 	`, schema)
 
 	rows, err := dbclient.Pool.Query(r.Context(), query, claims.CompanyCode, currentImei)
