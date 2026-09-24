@@ -113,10 +113,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var userID int64
 	var hash string
 	var isActive, mustChange bool
+	var fullName *string
 
 	err := dbclient.Pool.QueryRow(r.Context(),
-		"SELECT id, password_hash, is_active, must_change_password FROM adatrack_gps_master.tm_users WHERE email = $1 AND deleted_at IS NULL",
-		req.Email).Scan(&userID, &hash, &isActive, &mustChange)
+		"SELECT id, full_name, password_hash, is_active, must_change_password FROM adatrack_gps_master.tm_users WHERE email = $1 AND deleted_at IS NULL",
+		req.Email).Scan(&userID, &fullName, &hash, &isActive, &mustChange)
 	if err != nil {
 		h.writeError(w, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid credentials")
 		return
@@ -133,7 +134,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.CompanyCode == "" {
-		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL AND business_type = 'b2b'")
+		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ")
 		if err != nil {
 			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query companies")
 			return
@@ -162,7 +163,16 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				for rowsAccess.Next() {
 					var comp string
 					if err := rowsAccess.Scan(&comp); err == nil {
-						userCompanies = append(userCompanies, comp)
+						found := false
+						for _, c := range userCompanies {
+							if c == comp {
+								found = true
+								break
+							}
+						}
+						if !found {
+							userCompanies = append(userCompanies, comp)
+						}
 					}
 				}
 				rowsAccess.Close()
@@ -238,6 +248,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			"refresh_token":        refreshToken,
 			"must_change_password": mustChange,
 			"role":                 role,
+			"email":                req.Email,
+			"name":                 func() string { if fullName != nil { return *fullName } return "" }(),
 			"company_code":         req.CompanyCode,
 		},
 	})
@@ -416,11 +428,11 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 
 	var newUserID int64
 	err = tx.QueryRow(r.Context(), `
-		INSERT INTO adatrack_gps_master.tm_users (email, password_hash, must_change_password)
-		VALUES ($1, $2, true)
+		INSERT INTO adatrack_gps_master.tm_users (email, full_name, password_hash, must_change_password)
+		VALUES ($1, $2, $3, true)
 		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, must_change_password = true
 		RETURNING id
-	`, adminEmail, string(hash)).Scan(&newUserID)
+	`, adminEmail, "Admin of "+req.Name, string(hash)).Scan(&newUserID)
 	if err != nil {
 		logger.Log.Error("Failed to create admin user", "err", err)
 		h.writeError(w, http.StatusInternalServerError, "USER_CREATION_FAILED", "Failed to create tenant admin user")
