@@ -67,7 +67,7 @@ services:
     networks:
     - coolify
   minio:
-    image: bitnami/minio:latest
+    image: elestio/minio:latest
     container_name: adatrack_minio
     command: server /data --console-address ":9001"
     environment:
