@@ -76,7 +76,7 @@ services:
     - ./deployments/grafana/provisioning:/etc/grafana/provisioning
     - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
   minio:
-    image: quay.io/minio/minio:latest
+    image: minio/minio:latest
     container_name: adatrack_minio_local
     command: server /data --console-address ":9001"
     environment:
@@ -97,7 +97,7 @@ services:
       timeout: 20s
       retries: 3
   minio-setup:
-    image: quay.io/minio/mc:latest
+    image: minio/mc:latest
     container_name: adatrack_minio_setup_local
     depends_on:
       minio:

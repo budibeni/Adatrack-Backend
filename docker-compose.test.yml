@@ -58,7 +58,7 @@ services:
     networks:
     - coolify
   minio:
-    image: quay.io/minio/minio:latest
+    image: minio/minio:latest
     container_name: adatrack_minio
     command: server /data --console-address ":9001"
     environment:
@@ -79,7 +79,7 @@ services:
     networks:
     - coolify
   minio-setup:
-    image: quay.io/minio/mc:latest
+    image: minio/mc:latest
     container_name: adatrack_minio_setup
     restart: "no"
     depends_on:
