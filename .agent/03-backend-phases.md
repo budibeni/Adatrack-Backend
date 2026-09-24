@@ -299,8 +299,10 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       → `tools/e2e --load` vs DB nyata: **400 msg/s × 20 s → sent 7.897 = persisted 7.897**;
       **1000 × 20 s → 19.947 = 19.947**; **2000 × 30 s → 58.631 = 58.631** (~1954 msg/s efektif),
       `write_errors=0`, `load.live_state` PASS 3 IMEI, tanpa dead-letter `telemetry.error.>`.
-- [~] Endurance 24 jam kumulatif (chunked, resume-safe).
-      → **1 jam kumulatif terbukti nyata (2026-09-19, run `b4-endurance-20260919T040141Z`):**
+- [x] Endurance 24 jam kumulatif (chunked, resume-safe).
+      → **TUNTAS 2026-09-24: 24/24 chunk PASS** (run `b4-verify-20260923T041746Z`), ±1.436.000 pesan/chunk
+      @400 msg/s, 0 loss per chunk, 0 `backpressure DROP` (rincian §2.15 di docs/B4-VERIFICATION).
+      Riwayat: **1 jam kumulatif terbukti nyata (2026-09-19, run `b4-endurance-20260919T040141Z`):**
       6 chunk × 600 s @ 400 msg/s — total **1.438.418 pesan**, tiap chunk
       `persisted == sent` (0 loss), write error 0, `load.live_state` PASS per chunk;
       plateau resource (FR-4.4): heap `5,23 MB → 4,45 MB`, goroutines `16 → 15`;
@@ -433,6 +435,17 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       yang sama (coverage/test run) membuat persistence tertinggal melewati timeout settle; bench SLA
       di run yang sama juga terdistorsi. Aturan operasional: **endurance + bench SLA harus berjalan
       tanpa beban paralel** — jangan `make cover`/`test.sh`/restart service saat chunk berjalan.
+- [x] **ENDURANCE 24 JAM TUNTAS (2026-09-24)** — run `b4-verify-20260923T041746Z`: **24/24 chunk PASS**,
+      ±1.436.000 pesan/chunk @400 msg/s, 0 loss per chunk, laju stabil 60 m 31 s, **0 `backpressure DROP`**,
+      buffer akhir raw 47 % / live 32 % dari 16 GiB. `B4 SUMMARY pass=18 fail=3`, tiga kegagalan terdiagnosis:
+      (1) multi-tenant `postgres.row` = **race at-most-once** (healthz OK ≠ subscription aktif; `ensureStreams`
+      ±40 s) → diperbaiki (`sleep 20` + retry), diulang manual **5/5 PASS**; (2) `count.24h` **3,467 s** > SLA
+      1,5 s @±34,6 juta baris/24 jam → butuh pra-agregasi (rollup per jam), **belum dikerjakan** (perubahan
+      desain); (3) HA drill 16/20 karena replika tertinggal **8,52 GB WAL** (tidak hidup selama endurance) →
+      drill kini **self-healing** (deteksi belum streaming → hapus volume replika → seed ulang base backup) →
+      diuji ulang pada kondisi nyata → **21/21 ALL PASS**. Kapasitas: `max_file_store: 100GB` (=93,1 GiB)
+      ternyata < 6×16 GiB=96 GiB sehingga `ensureStreams` menurunkan cap (live sempat 4 GiB & 100 % penuh)
+      → diperbaiki ke **120GB** + diverifikasi 6×16 GiB. Bukti: `docs/B4-VERIFICATION.md` §2.15.
 
       Penyebab turunnya angka modul `internal` (79,2 % → di bawah ambang 80 %) adalah paket ini, bukan
       `internal/tenant`: `s3_ops.go` (Put/Head/Get/Delete/PresignGet/Health/EnsureBucket) hanya tersentuh

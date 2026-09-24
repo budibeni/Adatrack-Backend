@@ -13,9 +13,9 @@
 | # | Item B4 | Target | Hasil | Status |
 |---|---|---|---|---|
 | 1 | Load bertahap | 400 → 1000 → 2000 msg/s, 0 loss | 7.897 / 19.947 / 58.631 frame, **0 loss**, 0 write error | ✅ |
-| 2 | Endurance chunked resume-safe | 24 jam kumulatif | 1 jam kumulatif terbukti (1.438.418 pesan @400 msg/s, 0 loss/chunk, plateau heap+goroutine); **run 24 jam @3600 s/chunk dijalankan bertahap** — progres di `logs/b4-endurance-<stamp>/resume.log` | 🟡 berjalan |
-| 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: 0 leakage dua arah | ✅ |
-| 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | Re-measure 2026-09-22 @**7,77 juta baris**: history 30 hari **34 ms** (sebelumnya 5.952 ms — **GAGAL** karena indeks `timestamp` PRD FR-3.5 tidak pernah dibuat; diperbaiki migrasi company `017`), count 24 jam 1.075 ms, geofence 7 ms, vehicles 4 ms | ✅ |
+| 2 | Endurance chunked resume-safe | 24 jam kumulatif | **RUN 24 JAM TUNTAS: 24/24 chunk PASS** (`logs/b4-endurance-20260923T041746Z/resume.log`), ±1.436.000 pesan/chunk @400 msg/s, **0 loss per chunk**, laju stabil 60 m 31 s/chunk, **0 `backpressure DROP`**; detail §2.15 | ✅ |
+| 3 | Load multi-tenant & isolasi | 0 cross-tenant leakage | LOADT2 vs DEV001: **0 leakage dua arah** (diulang manual 5/5 PASS: LOADT2 2→3 baris). Run final sempat gagal `postgres.row` karena **race at-most-once** (healthz OK ≠ subscription aktif) — diperbaiki (`sleep 20` + retry), lihat §2.15 | ✅ |
+| 4 | Query SLA | history 30 hari < 1,5 s; geofence < 500 ms | Re-measure 2026-09-22 @**7,77 juta baris**: history 30 hari **34 ms** (sebelumnya 5.952 ms — **GAGAL** karena indeks `timestamp` PRD FR-3.5 tidak pernah dibuat; diperbaiki migrasi company `017`), count 24 jam 1.075 ms, geofence 7 ms, vehicles 4 ms. **Run final @±50 juta baris: history.30d 23 ms ✅, count.24h 3.467 s ❌** (>SLA 1,5 s; butuh pra-agregasi, bukan indeks — §2.15) | ⚠️ |
 | 5 | Coverage service inti | ≥ 80 % | gate `b4-verify` (diukur dengan `ADATRACK_IT=1`): internal **91,9 %** (max antar-paket: `internal/storage`), worker-persistence **91,1 %**, worker-live **85,1 %**, worker-alert **84,2 %**, api-vehicle **80,1 %** — semua ≥ 80 %. Service di luar gate (diukur `make cover`): service-websocket 78,4 %, service-media 67,1 %, ingestion-tcp 62,5 % | ✅ |
 | 6 | `go vet` + build bersih | exit 0 | `scripts/test.sh` exit 0 (8 modul), `go vet` bersih | ✅ |
 | 7 | Monitoring | Prometheus + dashboard SLO Grafana + alert rule inti | 11/11 target UP, 20 rule, dashboard `adatrack-core` | ✅ |
@@ -23,7 +23,7 @@
 | 9 | Backup / DR | dump harian + checksum + uji restore | dump 4 schema + SHA256; restore row-count match | ✅ |
 | 10 | Retensi DB | partisi/purge telemetry (§11) | `retention-purge.sh` + fungsi `tm_ensure_telemetry_partition` | ✅ |
 | 11 | **Load WS 50×1200 (§16)** | 50 subscriber × 1200 frame, 0 loss / 0 drop | `ws.load_50x1200`: `recv[1201..1201]`, `server_sent_delta=60050` (= 50×1201), `drops_delta=0`, `conns_after=0 subs_after=0`, p50 16 ms · p95 17 ms · max 17 ms, goroutine 25→100(transien)→**23** (settle) | ✅ |
-| 12 | **Replika + drill failover (§13)** | PG streaming + standby read-only + Redis promote/fail-back | `make replica-drill`: **20/20 PASS** — `state=streaming` + wal receiver streaming, baris primary terpropagasi ke replay, tulis langsung ke standby **ditolak**, lag **0 byte**, slot `pg_replica_slot` aktif, Redis `role:slave` + `master_link_status:up`, promote → tulis diterima → fail-back resync | ✅ |
+| 12 | **Replika + drill failover (§13)** | PG streaming + standby read-only + Redis promote/fail-back | `make replica-drill`: **21/21 PASS** (kini dengan self-healing re-seed; diuji saat slot menahan 8,52 GB WAL) — `state=streaming` + wal receiver streaming, baris primary terpropagasi ke replay, tulis langsung ke standby **ditolak**, lag **0 byte**, slot `pg_replica_slot` aktif, Redis `role:slave` + `master_link_status:up`, promote → tulis diterima → fail-back resync | ✅ |
 | 13 | **Korektness RBAC media (§2.13)** | Role non-Admin bisa mengakses media; revocation dihormati | Dua bug ditemukan lewat IT suite baru & diperbaiki: (A) `AssignedVehicleIDs` menyaring kolom `is_active` yang **tidak ada** di `tm_user_vehicles` → SQL error → 503 untuk Operator/Driver (tidak pernah tersentuh e2e karena e2e login sebagai Admin); (B) kedua read tidak menyaring `deleted_at` → revocation tidak dihormati (laten, kini konsisten dengan 3 service lain). Regresi ditutup `TestITStoreRBACAndRevocation` (5/5 PASS) | ✅ |
 
 ## 2. Detail Bukti
@@ -491,6 +491,47 @@ tercatat `endurance 24 chunk(s) resume-safe` (menyesatkan), kini `endurance 6/24
 **Prosedur pemulihan dari saturasi** (terverifikasi):
 `make js-status` → `make js-purge` → restart service pipeline
 (`scripts/start-services.sh up`) → `make js-guard` + `make e2e`.
+
+### 2.15 Hasil run final 2026-09-24 (endurance 24/24 ✅)
+
+Run `logs/b4-verify-20260923T041746Z.log` — **`B4 SUMMARY pass=18 fail=3`**, dengan
+item utama **endurance 24 jam TUNTAS**:
+
+| Item | Hasil |
+|---|---|
+| **Endurance** | **24/24 chunk PASS**, tiap chunk ±1.436.000 pesan @400 msg/s, **0 loss** per chunk (`sent == persisted`); laju konsisten 60 m 31 s/chunk |
+| Kapasitas buffer saat akhir | raw 34,6 juta pesan / 7,5 GiB (**47 %** dari 16 GiB), live 12,9 juta / 4,0 GiB; **0 `backpressure DROP`** sepanjang run (cap 4 GiB sebelumnya sudah >90 % pada volume yang sama) |
+| Baris telemetry tercipta | ±34,6 juta (DEV001), tabel uji SLA kini ±50 juta baris |
+| Load rung / WS / monitoring / hardening / backup-restore / retensi | ✅ semua PASS |
+
+**Tiga kegagalan (semua terdiagnosis + dua sudah diperbaiki):**
+
+1. **`multi-tenant LOADT2 flow`** — `postgres.row` gagal (baris tidak muncul ≤30 s).
+   Penyebab: **race at-most-once** — step 5 me-restart service lalu hanya `sleep 3`,
+   sedangkan worker menyelesaikan `ensureStreams` SETELAH health server naik
+   (log: `stream setup incomplete ... context deadline exceeded`, ±40 s) sehingga
+   subscription belum aktif dan frame hilang tanpa error. **Bukti:** alur yang sama
+   diulang manual → **5/5 PASS** (LOADT2 2 → 3 baris). **Perbaikan:** `sleep 20` +
+   retry sekali di step 5 (`scripts/b4-verify.sh`).
+2. **`query SLA bench`** — `count.24h` **3.467 s** (SLA 1,5 s) pada ±34,6 juta baris
+   per 24 jam; tiga query lain PASS (`history.30d` **23 ms** berkat indeks §2.4).
+   Ini risiko yang sudah diperkirakan di §2.4: `count(*)` 24 jam tanpa filter
+   memang tumbuh linear — perbaikannya **bukan indeks** melainkan pra-agregasi
+   (tabel rollup per jam) atau penyesuaian SLA. **Belum dikerjakan** (perubahan desain).
+3. **`HA drill` 16/20** — replika tertinggal jauh karena **tidak hidup selama 24 jam
+   endurance**: slot menahan **8,52 GB** WAL, replika berstatus `catchup`, tabel
+   marker belum tereplikasi, lag tak terukur. Bukan bug kode: drill mengasumsikan
+   replika hampir mutakhir. **Perbaikan (self-healing):** drill kini mendeteksi
+   replika yang belum streaming, **menghapus volume replika dan seed ulang dari base
+   backup baru** (`scripts/replication/drill-ha.sh`) → diuji ulang pada kondisi nyata
+   (WAL tertahan 8,52 GB) → **HA SUMMARY pass=21 fail=0, ALL PASS**.
+
+**Pelajaran kapasitas (diperkuat):** konfigurasi awal `max_file_store: 100GB`
+(= 93,1 GiB, satuan desimal) **lebih kecil** dari 6 × 16 GiB = 96 GiB, sehingga saat
+service restart `ensureStreams` menurunkan cap bertahap — `telemetry-live` sempat
+jatuh ke 4 GiB dan **100 % penuh**. Diperbaiki menjadi `120GB` (= 111,8 GiB) dan
+diverifikasi: enam stream kembali 16 GiB, usage 25 %. Aturan: **`max_file_store` ≥
+6 × `JETSTREAM_MAX_BYTES`, dan perhatikan satuan desimal vs GiB.**
 
 ## 3. Cara Menjalankan Ulang
 

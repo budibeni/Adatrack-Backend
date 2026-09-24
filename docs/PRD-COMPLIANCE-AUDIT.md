@@ -85,8 +85,11 @@ Konsekuensi: "40 s buffer" versi PRD tidak dijamin; yang berlaku adalah ~48 jam 
 ### 2.4 Konsistensi deployment setelah perubahan kapasitas
 
 - `deployments/docker-compose.coolify.yml` memakai **file `nats.conf` yang sama**
-  (`../deployments/nats/nats.conf:ro`), jadi `max_file_store: 100GB` berlaku di
-  LOCAL maupun Coolify.
+  (`../deployments/nats/nats.conf:ro`), jadi `max_file_store: 120GB` berlaku di
+  LOCAL maupun Coolify. **Koreksi 2026-09-24:** nilai awal `100GB` (= 93,1 GiB,
+  satuan desimal) lebih kecil dari 6 × 16 GiB = 96 GiB sehingga `ensureStreams`
+  menurunkan cap bertahap (`telemetry-live` sempat 4 GiB dan 100 % penuh) → kini
+  120GB (= 111,8 GiB) dan diverifikasi enam stream kembali 16 GiB.
 - `.env.coolify` masih `JETSTREAM_MAX_BYTES=4294967296` (4 GiB) → 6 stream × 4 GiB
   = 24 GiB ≤ 100 GB ✔ (tanpa degradasi cap oleh `ensureStreams`).
 - `max_file_store` adalah **batas**, bukan prealokasi: host Coolify hanya perlu ruang

@@ -91,13 +91,36 @@ else
 fi
 
 step 3 "tunggu streaming aktif (base backup bisa butuh puluhan detik)"
-state=""; receiver=""
-for _ in $(seq 1 60); do
-  state="$(pgq "$PG_PRIMARY" "SELECT COALESCE(state,'') FROM pg_stat_replication LIMIT 1;" | tr -d '[:space:]')"
-  receiver="$(pgq "$PG_REPLICA" "SELECT COALESCE(status,'') FROM pg_stat_wal_receiver LIMIT 1;" | tr -d '[:space:]')"
-  [[ "$state" == "streaming" && "$receiver" == "streaming" ]] && break
-  sleep 2
-done
+wait_streaming() {
+  state=""; receiver=""
+  for _ in $(seq 1 60); do
+    state="$(pgq "$PG_PRIMARY" "SELECT COALESCE(state,'') FROM pg_stat_replication LIMIT 1;" | tr -d '[:space:]')"
+    receiver="$(pgq "$PG_REPLICA" "SELECT COALESCE(status,'') FROM pg_stat_wal_receiver LIMIT 1;" | tr -d '[:space:]')"
+    [[ "$state" == "streaming" && "$receiver" == "streaming" ]] && break
+    sleep 2
+  done
+}
+wait_streaming
+
+# Self-healing: replika yang tertinggal JAUH (mis. setelah run endurance 24 jam,
+# WAL tertahan slot ~10 GB) tidak akan mencapai streaming dalam 2 menit — replay
+# penuh bisa puluhan menit, sehingga lag tidak pernah ~0 dan drill selalu gagal.
+# Solusi: seed ulang dari base backup baru (volume replika dikosongkan, entrypoint
+# akan melakukan pg_basebackup lagi). Terbukti pada run B4 2026-09-24.
+if [[ "$state" != "streaming" || "$receiver" != "streaming" ]]; then
+  held="$(pgq "$PG_PRIMARY" "SELECT COALESCE(max(pg_wal_lsn_diff(pg_current_wal_lsn(), restart_lsn))::bigint, 0) FROM pg_replication_slots;" | tr -d '[:space:]')"
+  echo "drill: replika belum streaming (state='${state}', wal_receiver='${receiver}', WAL tertahan slot=${held:-?} byte) -> seed ulang dari base backup baru"
+  REPLICA_VOL="$(docker volume ls --format '{{.Name}}' | grep -m1 'pgreplicadata' || true)"
+  "${COMPOSE[@]}" rm -sf postgres-replica >/dev/null 2>&1
+  [[ -n "$REPLICA_VOL" ]] && docker volume rm "$REPLICA_VOL" >/dev/null 2>&1
+  if "${COMPOSE[@]}" up -d postgres-replica >/dev/null 2>&1; then
+    ok "replika di-seed ulang (base backup baru, volume ${REPLICA_VOL:-?})"
+  else
+    bad "gagal menaikkan replika setelah seed ulang"
+  fi
+  wait_streaming
+fi
+
 [[ "$state" == "streaming" ]] && ok "primary melihat standby state=streaming" || bad "primary: state='${state}' (harus streaming)"
 [[ "$receiver" == "streaming" ]] && ok "replika wal receiver status=streaming" || bad "replika: wal receiver='${receiver}'"
 

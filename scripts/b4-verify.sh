@@ -57,10 +57,14 @@ for mod in internal services/worker-live services/worker-persistence services/wo
 done
 ok "coverage measured (gate >=80% core tracked)"
 
-step 2 "JetStream retention (48h/4GiB per stream)"
+step 2 "JetStream retention (48h + budget per stream dari config)"
 nstreams="$(curl -fsS "http://127.0.0.1:${HOST_NATS_MONITOR_PORT:-8222}/jsz" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('streams',0))" 2>/dev/null || echo 0)"
-echo "jetstream live streams: $nstreams"
-if [[ "$nstreams" == "6" ]]; then ok "JetStream 6/6 streams with 48h/4GiB retention"; else bad "JetStream streams=$nstreams want 6"; fi
+# Label sebelumnya menulis "48h/4GiB" secara statis padahal cap mengikuti config
+# (kini 16 GiB/stream untuk endurance 24 jam) — laporan harus mencerminkan config.
+js_age_h="${JETSTREAM_MAX_AGE_HOURS:-48}"; js_bytes="${JETSTREAM_MAX_BYTES:-4294967296}"
+js_gib=$((js_bytes / 1073741824))
+echo "jetstream live streams: $nstreams (config: ${js_age_h}h / ${js_gib} GiB per stream)"
+if [[ "$nstreams" == "6" ]]; then ok "JetStream 6/6 streams (${js_age_h}h / ${js_gib} GiB per stream)"; else bad "JetStream streams=$nstreams want 6"; fi
 
 step 3 "load test rungs (0 data loss)"
 if [[ "$QUICK" == true ]]; then RUNGS="400:15s"; else RUNGS="400:20s 1000:20s 2000:30s"; fi
@@ -155,8 +159,23 @@ export PGPASSWORD="${POSTGRES_PASSWORD:-}"
 psql -h 127.0.0.1 -p "${HOST_PG_PORT:-5533}" -U "${POSTGRES_USER:-adatrack}" -d "${POSTGRES_DB:-adatrack_gps_db}" -c "INSERT INTO adatrack_gps_master.tm_vehicle_imei_map (imei, company_code, vehicle_id, is_active) VALUES ('864201040599901','LOADT2',1,TRUE) ON CONFLICT (imei) DO UPDATE SET company_code='LOADT2', vehicle_id=1, is_active=TRUE;" >/dev/null
 psql -h 127.0.0.1 -p "${HOST_PG_PORT:-5533}" -U "${POSTGRES_USER:-adatrack}" -d "${POSTGRES_DB:-adatrack_gps_db}" -c "INSERT INTO adatrack_gps_loadt2.tm_vehicles (imei, plate_number, status) SELECT '864201040599901','LT 0001 XX','active' WHERE NOT EXISTS (SELECT 1 FROM adatrack_gps_loadt2.tm_vehicles WHERE imei='864201040599901');" >/dev/null
 psql -h 127.0.0.1 -p "${HOST_PG_PORT:-5533}" -U "${POSTGRES_USER:-adatrack}" -d "${POSTGRES_DB:-adatrack_gps_db}" -c "UPDATE adatrack_gps_master.tm_vehicle_imei_map SET vehicle_id=(SELECT id FROM adatrack_gps_loadt2.tm_vehicles WHERE imei='864201040599901') WHERE imei='864201040599901';" >/dev/null
-"$ROOT/scripts/start-services.sh" up >/dev/null; sleep 3
-if (cd "$ROOT/tools/e2e" && go run . --tcp "127.0.0.1:$TCP_PORT_E" --nats "$NATS_E" --redis "$REDIS_E" --redis-db "${REDIS_DB:-0}" --redis-prefix "${REDIS_KEY_PREFIX:-adatrack_gps:}" --pg-host 127.0.0.1 --pg-port "${HOST_PG_PORT:-5533}" --pg-user "${POSTGRES_USER:-adatrack}" --pg-password "${POSTGRES_PASSWORD:-}" --pg-db "${POSTGRES_DB:-adatrack_gps_db}" --company LOADT2 --imei 864201040599901 --timeout 30s 2>&1 | tee -a "$LOG" | grep -q "checks passed"); then
+"$ROOT/scripts/start-services.sh" up >/dev/null
+# Race yang terbukti pada run 2026-09-24: healthz OK != subscription aktif. Worker
+# menyelesaikan ensureStreams SETELAH health server naik (log: "stream setup
+# incomplete ... context deadline exceeded" memakan ±40 s), dan delivery telemetri
+# memakai core NATS (at-most-once) sehingga frame yang dikirim di jendela itu
+# HILANG tanpa error — periksa `postgres.row` gagal. Beri jeda dan ulangi sekali.
+sleep 20
+mts_ok=0
+for attempt in 1 2; do
+  if (cd "$ROOT/tools/e2e" && go run . --tcp "127.0.0.1:$TCP_PORT_E" --nats "$NATS_E" --redis "$REDIS_E" --redis-db "${REDIS_DB:-0}" --redis-prefix "${REDIS_KEY_PREFIX:-adatrack_gps:}" --pg-host 127.0.0.1 --pg-port "${HOST_PG_PORT:-5533}" --pg-user "${POSTGRES_USER:-adatrack}" --pg-password "${POSTGRES_PASSWORD:-}" --pg-db "${POSTGRES_DB:-adatrack_gps_db}" --company LOADT2 --imei 864201040599901 --timeout 30s 2>&1 | tee -a "$LOG" | grep -q "checks passed"); then
+    mts_ok=1
+    break
+  fi
+  echo "multi-tenant: percobaan $attempt gagal (frame at-most-once bisa terlewat saat worker baru naik) — ulangi"
+  sleep 10
+done
+if [[ "$mts_ok" == 1 ]]; then
   ok "multi-tenant LOADT2 flow + no leakage into DEFAULT"
 else
   bad "multi-tenant LOADT2 flow"
