@@ -236,6 +236,11 @@ services:
     container_name: adatrack_api_vehicle
     env_file:
     - .env.coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.adatrack-vehicle.rule=Host(`api.103.69.106.62.nip.io`) && (PathPrefix(`/api/v1/vehicles`) || PathPrefix(`/api/v1/geofences`) || PathPrefix(`/api/v1/routes`) || PathPrefix(`/api/v1/speed-configs`) || PathPrefix(`/api/v1/notification-preferences`) || PathPrefix(`/api/v1/alerts`) || PathPrefix(`/api/v1/fuel-configs`) || PathPrefix(`/api/v1/media`))"
+      - "traefik.http.routers.adatrack-vehicle.priority=100"
+      - "traefik.http.services.adatrack-vehicle.loadbalancer.server.port=8084" 
     networks:
     - coolify
     depends_on:
@@ -294,7 +299,7 @@ services:
     - .env.coolify
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.adatrack-ws.rule=Host(`api.103.69.106.62.nip.io`) && (PathPrefix(`/api/v1`) || PathPrefix(`/ws`))"
+      - "traefik.http.routers.adatrack-ws.rule=Host(`api.103.69.106.62.nip.io`) && (PathPrefix(`/api/v1/auth`) || PathPrefix(`/api/v1/admin`) || PathPrefix(`/api/v1/companies`) || PathPrefix(`/api/v1/users`) || PathPrefix(`/api/v1/gps`) || PathPrefix(`/api/v1/groups`) || PathPrefix(`/api/v1/drivers`) || PathPrefix(`/api/v1/share-links`) || PathPrefix(`/api/v1/assets`) || PathPrefix(`/api/v1/organizations`) || PathPrefix(`/api/v1/integrations`) || PathPrefix(`/api/v1/access`) || PathPrefix(`/ws`))"
       - "traefik.http.routers.adatrack-ws.priority=100"
       - "traefik.http.services.adatrack-ws.loadbalancer.server.port=8080"
     networks:
