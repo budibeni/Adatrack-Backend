@@ -60,6 +60,17 @@ type AlertQuery struct {
 	Limit       int
 }
 
+// CommandQuery is the validated downlink-command list filter.
+type CommandQuery struct {
+	CompanyCode string
+	VehicleID   int64
+	Status      string
+	AssignedIDs []int64
+	AllVehicles bool
+	Page        int
+	Limit       int
+}
+
 // Store is the persistence surface of api-vehicle. Every statement is
 // parameterized (PRD §9.6) and always scoped by tenant schema + `deleted_at`.
 type Store interface {
@@ -127,4 +138,13 @@ type Store interface {
 	AlertByID(ctx context.Context, company string, id int64) (*models.Alert, error)
 	AcknowledgeAlert(ctx context.Context, company string, id, by int64) (int64, error)
 	ResolveAlert(ctx context.Context, company string, id, by int64) (int64, error)
+
+	// --- B8 downlink commands -------------------------------------------------
+	// CreateDeviceCommand inserts a `pending` td_device_commands row (the audit
+	// trail of the request; ingestion-tcp then drives it to sent/acked/...).
+	CreateDeviceCommand(ctx context.Context, company string, cmd *models.DeviceCommand) (int64, error)
+	// DeviceCommandByRequestID reads the row back (the POST response body).
+	DeviceCommandByRequestID(ctx context.Context, company, requestID string) (*models.DeviceCommand, error)
+	// ListDeviceCommands returns the command history with row-level filtering.
+	ListDeviceCommands(ctx context.Context, q CommandQuery) ([]models.DeviceCommand, int64, error)
 }

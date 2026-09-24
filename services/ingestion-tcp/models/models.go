@@ -2,25 +2,63 @@
 // telemetry payload published to NATS (PRD Module 1 / FR-1.2).
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Protocol identifies the device wire protocol served by a listener. Each
 // protocol gets its OWN port (GT06 default, Teltonika own reference) so no
 // fragile header sniffing between framings is needed (PRD Module 1c).
+//
+// B9 adds the Traccar-convention families (TK103, Meiligao, Xexun, Suntech, H02,
+// Totem, GT02, Navigil, Castel) as first-class members: the protocol is chosen by
+// LISTENER (one port per protocol), never by sniffing the first bytes, so a
+// malformed stream can never be mis-routed into another decoder.
 type Protocol int
 
 const (
 	ProtoGT06 Protocol = iota + 1
 	ProtoTeltonika
+	ProtoTK103
+	ProtoMeiligao
+	ProtoXexun
+	ProtoSuntech
+	ProtoH02
+	ProtoTotem
+	ProtoGT02
+	ProtoNavigil
+	ProtoCastel
 )
+
+// protoNames maps every protocol to its metric/log label. Keeping the mapping in
+// one place means adding a decoder cannot silently reuse another label.
+var protoNames = map[Protocol]string{
+	ProtoGT06:      "gt06",
+	ProtoTeltonika: "teltonika",
+	ProtoTK103:     "tk103",
+	ProtoMeiligao:  "meiligao",
+	ProtoXexun:     "xexun",
+	ProtoSuntech:   "suntech",
+	ProtoH02:       "h02",
+	ProtoTotem:     "totem",
+	ProtoGT02:      "gt02",
+	ProtoNavigil:   "navigil",
+	ProtoCastel:    "castel",
+}
 
 // String returns the metric/log label of a protocol.
 func (p Protocol) String() string {
-	if p == ProtoTeltonika {
-		return "teltonika"
+	if name, ok := protoNames[p]; ok {
+		return name
 	}
-	return "gt06"
+	return fmt.Sprintf("proto_%d", int(p))
 }
+
+// IMEI identifies a device on the allowlist (`master.tm_vehicle_imei_map`).
+// Protocols without an IMEI field (Navigil device id, Castel 20-char id) resolve
+// their own identity first and reuse the same resolution path.
+type IMEI = string
 
 // GT06/Concox protocol numbers (docs/docs-device
 // GT06_GPS_Tracker_Communication_Protocol_v1.8.1.md §4.3 and
@@ -106,6 +144,15 @@ type TelemetryMessage struct {
 	AlarmLBS  bool  `json:"alarm_lbs,omitempty"`
 	Fix       bool  `json:"fix,omitempty"`
 	Timestamp int64 `json:"timestamp"`
+
+	// --- B8 driver behaviour -------------------------------------------------
+	// The flags are set only when the FRAME ITSELF carries the event (GT06 alarm
+	// reason 0x29/0x30, Teltonika IO 253/254/240); they are never inferred from
+	// speed differences here. worker-alert turns them into driver events + score
+	// inputs (FR-2.7) so the raw telemetry stays a pure device statement.
+	HarshAccel     bool `json:"harsh_accel,omitempty"`
+	HarshBraking   bool `json:"harsh_braking,omitempty"`
+	HarshCornering bool `json:"harsh_cornering,omitempty"`
 
 	// Fuel sensor fields (B5a) — pointers so "absent" is distinguishable from 0.
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`

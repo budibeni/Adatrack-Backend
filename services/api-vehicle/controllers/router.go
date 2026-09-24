@@ -57,6 +57,11 @@ func (s *Service) buildRouter() *gin.Engine {
 	vehicles.DELETE("/:id", s.requireVehicleAccess(), s.requireAdmin(), s.handleDeleteVehicle)
 	vehicles.POST("/:id/restore", s.requireVehicleAccess(), s.requireAdmin(), s.handleRestoreVehicle)
 
+	// B8 downlink commands: the request/ACK audit trail of a vehicle. Writing a
+	// command needs write access on that exact vehicle (row-level RBAC).
+	vehicles.POST("/:id/commands", s.requireVehicleAccess(), s.requireWrite(), s.handleCreateVehicleCommand)
+	vehicles.GET("/:id/commands", s.requireVehicleAccess(), s.handleListVehicleCommands)
+
 	geofences := tenant.Group("/geofences")
 	geofences.GET("", s.handleListGeofences)
 	geofences.POST("", s.requireWrite(), s.handleCreateGeofence)

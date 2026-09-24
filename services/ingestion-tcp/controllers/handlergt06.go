@@ -52,6 +52,20 @@ func (s *Server) handleGT06(c net.Conn) {
 				"vehicle_id", vehicleID, "remote", c.RemoteAddr())
 			_ = WriteAck(c, models.ProtoLogin, []byte{0x00, 0x00, 0x00}) // accept
 
+			// B8: publish the accepted socket in the downlink registry so a
+			// remote command can be written to THIS connection. The deferred
+			// Remove only unregisters when this socket is still the current one.
+			dc := &DeviceConn{
+				IMEI: imei, Protocol: models.ProtoGT06,
+				Remote: c.RemoteAddr().String(), ConnectedAt: time.Now().UTC(), conn: c,
+			}
+			s.conns.Add(dc)
+			devicesOnline.Set(float64(s.conns.Len()))
+			defer func() {
+				s.conns.Remove(dc)
+				devicesOnline.Set(float64(s.conns.Len()))
+			}()
+
 		case models.ProtoPosition, models.ProtoPosition2:
 			framesTotal.WithLabelValues(protoName, "position").Inc()
 			if imei == "" {
@@ -118,6 +132,20 @@ func (s *Server) handleGT06(c net.Conn) {
 		case models.ProtoTimeCheck:
 			framesTotal.WithLabelValues(protoName, "time").Inc()
 			_ = WriteAck(c, models.ProtoTimeCheck, EncodeTime6(time.Now().UTC()))
+
+		case models.ProtoOnlineReply, models.ProtoStringInfo:
+			// B8: the terminal answered a server online command (0x21 general
+			// reply) / echoed it as information (0x15 for JM01). The raw ASCII
+			// content is the audit evidence of the ACK (td_device_commands).
+			framesTotal.WithLabelValues(protoName, "command_reply").Inc()
+			if imei == "" {
+				rejectedTotal.WithLabelValues("no_auth").Inc()
+				continue
+			}
+			content := extractCommandReply(packet.Data)
+			if content != "" && s.gateway != nil {
+				s.gateway.Ack(imei, content)
+			}
 
 		case models.ProtoInfoTransmit:
 			framesTotal.WithLabelValues(protoName, "info_transmit").Inc()

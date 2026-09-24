@@ -78,4 +78,26 @@ type Store interface {
 	// UpsertFuelConfig inserts/replaces one fuel config row (the vehicle_id
 	// column is nullable; null = tenant-wide default).
 	UpsertFuelConfig(ctx context.Context, company string, cfg *models.FuelConfig, by int64) error
+
+	// --- B8 driver behaviour (migration 022) ---------------------------------
+	// InsertDriverEvent appends one td_driver_events row.
+	InsertDriverEvent(ctx context.Context, company string, ev *models.DriverEvent) error
+
+	// DailyDriverEventCounts aggregates the events of one vehicle for one day
+	// (the input of the score formula).
+	DailyDriverEventCounts(ctx context.Context, company string, vehicleID int64, day time.Time) (models.DriverEventCounts, error)
+
+	// UpsertDriverScore writes/refreshes the daily th_driver_scores row.
+	UpsertDriverScore(ctx context.Context, company string, sc *models.DriverScore) error
+
+	// --- B8 maintenance reminders (migration 023) ----------------------------
+	// MaintenanceSchedules lists active, non-deleted schedules of a company.
+	MaintenanceSchedules(ctx context.Context, company string) ([]models.MaintenanceSchedule, error)
+
+	// VehicleUsage returns the odometer/engine-hours snapshot per vehicle
+	// (tm_vehicles accumulators maintained by worker-live, B7.1).
+	VehicleUsage(ctx context.Context, company string) (map[int64]models.VehicleUsage, error)
+
+	// TouchMaintenanceReminder stamps last_reminder_at after a reminder fired.
+	TouchMaintenanceReminder(ctx context.Context, company string, scheduleID int64, at time.Time) error
 }

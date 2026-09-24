@@ -52,11 +52,37 @@ var (
 		Name: "fuel_readings_total",
 		Help: "Fuel sensor readings decoded per protocol",
 	}, []string{"protocol"})
+	// --- B8 downlink commands (PRD §21.2 row 1) ------------------------------
+	commandsDispatched = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "device_commands_dispatched_total",
+		Help: "Downlink commands by final dispatch outcome (sent/offline/failed/acked/timeout)",
+	}, []string{"status"})
+	commandsAcked = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "device_commands_acked_total",
+		Help: "Downlink commands answered by the device, by device result (ok/error)",
+	}, []string{"result"})
+	commandsPending = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "device_commands_pending",
+		Help: "Downlink commands awaiting a device reply",
+	})
+	devicesOnline = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "devices_online",
+		Help: "Live device connections tracked by the downlink registry",
+	})
+	// unsupportedFrames counts frames a decoder recognised but cannot decode yet
+	// (documented gaps such as the TK103 command matrix or Castel/Navigil
+	// position payloads) — visible instead of silently dropped.
+	unsupportedFrames = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ingestion_unsupported_frames_total",
+		Help: "Frames recognised but not decodable yet, per protocol (B9 gap tracker)",
+	}, []string{"protocol"})
 )
 
 // RegisterMetrics registers the ingestion collectors on a service registry.
 func RegisterMetrics(reg *prometheus.Registry) {
 	reg.MustRegister(tcpConnectionsActive, tcpConnectionsTotal, tcpParseErrors, framesTotal,
 		messagesPublished, rejectedTotal, natsPublishErrors, natsPublishDuration,
-		backpressureDrops, backpressureWarnings, fuelReadingsTotal)
+		backpressureDrops, backpressureWarnings, fuelReadingsTotal,
+		commandsDispatched, commandsAcked, commandsPending, devicesOnline,
+		unsupportedFrames)
 }

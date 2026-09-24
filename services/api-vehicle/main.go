@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"adatrack_gps/api-vehicle/controllers"
+	"adatrack_gps/api-vehicle/models"
 	"adatrack_gps/internal"
 	"adatrack_gps/internal/tenant"
 )
@@ -25,7 +27,6 @@ import (
 func main() {
 	internal.ConfigureLogging()
 	internal.LoadProjectEnv()
-
 	cfg := internal.LoadConfig()
 	if err := cfg.Validate(); err != nil {
 		slog.Error("invalid configuration", "error", err)
@@ -50,6 +51,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = red.Close() }()
+
+	// NATS is required by the B8 downlink path: the command endpoint publishes
+	// `command.request.<company>` and ingestion-tcp (the only process holding the
+	// device sockets) consumes it. Failing fast at boot beats an endpoint that
+	// accepts requests it can never deliver.
+	nac, err := internal.NewNATSClient(cfg)
+	if err != nil {
+		slog.Error("nats unavailable", "error", err)
+		os.Exit(1)
+	}
+	defer nac.Close()
 
 	tcfg := tenant.ConfigFromEnv(cfg)
 	if err := tcfg.Validate(); err != nil {
@@ -79,6 +91,7 @@ func main() {
 		KV:       controllers.NewRedisKVWithPrefix(red.Client(), cfg.Redis.KeyPrefix),
 		Tenants:  tm,
 		Registry: registry,
+		Commands: commandPublisher{cfg: cfg, nats: nac},
 	})
 
 	server := &http.Server{
@@ -109,4 +122,22 @@ func main() {
 		slog.Warn("http server shutdown error", "error", err)
 	}
 	slog.Info("api-vehicle stopped")
+}
+
+// commandPublisher publishes a B8 downlink request on `command.request.<company>`
+// (core NATS: the dispatcher in ingestion-tcp subscribes with a queue group).
+type commandPublisher struct {
+	cfg  *internal.Config
+	nats *internal.NATSClient
+}
+
+// PublishDeviceCommand marshals the audited row and publishes it to the tenant's
+// command subject. A publish error is returned so the handler can report 503 —
+// the request row stays `pending` and is never silently dropped.
+func (p commandPublisher) PublishDeviceCommand(company string, cmd *models.DeviceCommand) error {
+	payload, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	return p.nats.Publish(internal.CommandRequestSubject(company), payload)
 }

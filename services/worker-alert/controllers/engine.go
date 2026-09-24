@@ -21,6 +21,10 @@ var alertCategory = map[string]string{
 	models.AlertRouteDeviation: "route",
 	models.AlertFuelDrop:       "fuel",
 	models.AlertRefuel:         "fuel",
+	// B8: driver behaviour shares the safety category, maintenance has its own
+	// (`alert.maintenance.<company>`, consumed by the websocket fan-out).
+	models.AlertDriverEvent:    "driver",
+	models.AlertMaintenanceDue: "maintenance",
 }
 
 // Engine raises alerts: dedup (Redis fast path + DB open-row guard) → persist

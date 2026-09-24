@@ -46,6 +46,20 @@ func (s *Server) handleTeltonika(c net.Conn) {
 	slog.Info("teltonika authenticated", "imei", imei, "company", company,
 		"vehicle_id", vehicleID, "remote", c.RemoteAddr())
 
+	// B8: track the socket in the downlink registry (Teltonika has no documented
+	// downlink encoder yet, so the dispatcher reports `failed: unsupported` for
+	// it — but the registry must still reflect the real connection state).
+	dc := &DeviceConn{
+		IMEI: imei, Protocol: models.ProtoTeltonika,
+		Remote: c.RemoteAddr().String(), ConnectedAt: time.Now().UTC(), conn: c,
+	}
+	s.conns.Add(dc)
+	devicesOnline.Set(float64(s.conns.Len()))
+	defer func() {
+		s.conns.Remove(dc)
+		devicesOnline.Set(float64(s.conns.Len()))
+	}()
+
 	for {
 		_ = c.SetReadDeadline(time.Now().Add(s.cfg.TCP.IdleTimeout))
 		payload, err := readTeltonikaAVLPacket(r)

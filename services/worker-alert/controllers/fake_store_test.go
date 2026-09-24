@@ -69,6 +69,24 @@ type fakeAlertStore struct {
 	fuelErr   error
 	upserts   []*models.FuelConfig
 	upsertErr error
+
+	// --- B8 driver behaviour + maintenance -----------------------------------
+	driverEvents   []*models.DriverEvent
+	driverEventErr error
+	// counts is the canned daily aggregate returned by DailyDriverEventCounts
+	// (defaults to counting the events collected in this fake).
+	counts    models.DriverEventCounts
+	countsErr error
+	scores    []*models.DriverScore
+	scoreErr  error
+
+	schedules   []models.MaintenanceSchedule
+	scheduleErr error
+	usage       map[int64]models.VehicleUsage
+	usageErr    error
+	reminders   []int64
+	reminderErr error
+	touchedAt   []time.Time
 }
 
 func newFakeAlertStore() *fakeAlertStore { return &fakeAlertStore{} }
@@ -155,5 +173,70 @@ func (f *fakeAlertStore) UpsertFuelConfig(_ context.Context, _ string, cfg *mode
 		return f.upsertErr
 	}
 	f.upserts = append(f.upserts, cfg)
+	return nil
+}
+
+// --- B8 driver behaviour + maintenance ---------------------------------------
+
+func (f *fakeAlertStore) InsertDriverEvent(_ context.Context, _ string, ev *models.DriverEvent) error {
+	if f.driverEventErr != nil {
+		return f.driverEventErr
+	}
+	f.driverEvents = append(f.driverEvents, ev)
+	return nil
+}
+
+// DailyDriverEventCounts returns the canned aggregate; when it was not set the
+// counts are derived from the events collected by this fake, so a test can assert
+// the score end-to-end without duplicating the aggregation.
+func (f *fakeAlertStore) DailyDriverEventCounts(_ context.Context, _ string, vehicleID int64, _ time.Time) (models.DriverEventCounts, error) {
+	if f.countsErr != nil {
+		return models.DriverEventCounts{}, f.countsErr
+	}
+	if f.counts.Total() > 0 || f.counts.SpeedingSeconds > 0 {
+		return f.counts, nil
+	}
+	var c models.DriverEventCounts
+	for _, ev := range f.driverEvents {
+		if ev.VehicleID != vehicleID {
+			continue
+		}
+		switch ev.EventType {
+		case models.DriverHarshAcceleration:
+			c.HarshAcceleration++
+		case models.DriverHarshBraking:
+			c.HarshBraking++
+		case models.DriverHarshCornering:
+			c.HarshCornering++
+		case models.DriverSpeeding:
+			c.Speeding++
+			c.SpeedingSeconds += ev.DurationSeconds
+		}
+	}
+	return c, nil
+}
+
+func (f *fakeAlertStore) UpsertDriverScore(_ context.Context, _ string, sc *models.DriverScore) error {
+	if f.scoreErr != nil {
+		return f.scoreErr
+	}
+	f.scores = append(f.scores, sc)
+	return nil
+}
+
+func (f *fakeAlertStore) MaintenanceSchedules(context.Context, string) ([]models.MaintenanceSchedule, error) {
+	return f.schedules, f.scheduleErr
+}
+
+func (f *fakeAlertStore) VehicleUsage(context.Context, string) (map[int64]models.VehicleUsage, error) {
+	return f.usage, f.usageErr
+}
+
+func (f *fakeAlertStore) TouchMaintenanceReminder(_ context.Context, _ string, scheduleID int64, at time.Time) error {
+	if f.reminderErr != nil {
+		return f.reminderErr
+	}
+	f.reminders = append(f.reminders, scheduleID)
+	f.touchedAt = append(f.touchedAt, at)
 	return nil
 }

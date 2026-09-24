@@ -13,8 +13,10 @@ const (
 	AlertOffline        = "offline"
 	AlertSOS            = "sos"
 	AlertRouteDeviation = "route_deviation"
-	AlertFuelDrop       = "fuel_drop" // B5a
-	AlertRefuel         = "refuel"    // B5a
+	AlertFuelDrop       = "fuel_drop"       // B5a
+	AlertRefuel         = "refuel"          // B5a
+	AlertDriverEvent    = "driver_event"    // B8 (harsh accel/braking/cornering, speeding)
+	AlertMaintenanceDue = "maintenance_due" // B8 (odometer / engine-hours / calendar reminder)
 )
 
 // Severities (PRD §5.9). rank orders them for min_severity filtering.
@@ -90,6 +92,96 @@ type TelemetryMessage struct {
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
 	FuelVolume *float64 `json:"fuel_volume,omitempty"`
 	FuelTempC  *float64 `json:"fuel_temp_c,omitempty"`
+
+	// --- B8 driver behaviour -------------------------------------------------
+	// Set by ingestion only when the FRAME carried the event (GT06 alarm reason
+	// 0x29/0x30, Teltonika IO 253/254/240); worker-alert never infers them.
+	HarshAccel     bool `json:"harsh_accel,omitempty"`
+	HarshBraking   bool `json:"harsh_braking,omitempty"`
+	HarshCornering bool `json:"harsh_cornering,omitempty"`
+}
+
+// Driver event types (td_driver_events.event_type, migration 022).
+const (
+	DriverHarshAcceleration = "harsh_acceleration"
+	DriverHarshBraking      = "harsh_braking"
+	DriverHarshCornering    = "harsh_cornering"
+	DriverSpeeding          = "speeding"
+)
+
+// DriverEvent is one td_driver_events row (B8).
+type DriverEvent struct {
+	ID              int64     `json:"id,omitempty"`
+	CompanyCode     string    `json:"company_code"`
+	VehicleID       int64     `json:"vehicle_id"`
+	IMEI            string    `json:"imei"`
+	DriverID        int64     `json:"driver_id,omitempty"`
+	EventType       string    `json:"event_type"`
+	Severity        string    `json:"severity"`
+	SpeedKMH        float64   `json:"speed_kmh,omitempty"`
+	SpeedLimitKMH   float64   `json:"speed_limit_kmh,omitempty"`
+	DurationSeconds int       `json:"duration_seconds"`
+	Lat             float64   `json:"lat,omitempty"`
+	Lon             float64   `json:"lon,omitempty"`
+	Source          string    `json:"source"`
+	RawCode         int       `json:"raw_code,omitempty"`
+	Timestamp       time.Time `json:"timestamp"`
+}
+
+// DriverScore is one th_driver_scores row (daily aggregate per vehicle).
+type DriverScore struct {
+	VehicleID              int64   `json:"vehicle_id"`
+	DriverID               int64   `json:"driver_id,omitempty"`
+	PeriodStart            string  `json:"period_start"`
+	PeriodEnd              string  `json:"period_end"`
+	HarshAccelerationCount int     `json:"harsh_acceleration_count"`
+	HarshBrakingCount      int     `json:"harsh_braking_count"`
+	HarshCorneringCount    int     `json:"harsh_cornering_count"`
+	SpeedingCount          int     `json:"speeding_count"`
+	SpeedingSeconds        int     `json:"speeding_seconds"`
+	Score                  float64 `json:"score"`
+	Grade                  string  `json:"grade"`
+}
+
+// MaintenanceSchedule is one tm_maintenance_schedules row (B8 reminder engine).
+type MaintenanceSchedule struct {
+	ID                    int64    `json:"id"`
+	VehicleID             int64    `json:"vehicle_id"`
+	Name                  string   `json:"name"`
+	MaintenanceType       string   `json:"maintenance_type"`
+	IntervalKM            *float64 `json:"interval_km,omitempty"`
+	IntervalEngineHours   *float64 `json:"interval_engine_hours,omitempty"`
+	IntervalDays          *int     `json:"interval_days,omitempty"`
+	LastServiceAt         *time.Time
+	LastServiceOdometerKM *float64
+	LastServiceEngineHrs  *float64
+	ReminderKMBefore      float64
+	ReminderDaysBefore    int
+	LastReminderAt        *time.Time
+}
+
+// VehicleUsage is the odometer/engine-hours snapshot of one vehicle, read from
+// tm_vehicles (B7.1 accumulators maintained by worker-live).
+type VehicleUsage struct {
+	VehicleID   int64
+	IMEI        string
+	OdometerKM  float64
+	EngineHours float64
+}
+
+// DriverEventCounts aggregates one day of td_driver_events rows (the input of
+// the score formula).
+type DriverEventCounts struct {
+	HarshAcceleration int
+	HarshBraking      int
+	HarshCornering    int
+	Speeding          int
+	SpeedingSeconds   int
+}
+
+// Total reports the number of behaviour events (all kinds).
+func (c DriverEventCounts) Total() int {
+	return c.HarshAcceleration + c.HarshBraking + c.HarshCornering + c.Speeding
 }
 
 // Alert is one th_alerts row flowing through the engine.

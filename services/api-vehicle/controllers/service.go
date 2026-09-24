@@ -18,6 +18,9 @@ type Deps struct {
 	Live     LiveStateReader
 	Tenants  *tenant.Manager
 	Registry *prometheus.Registry
+	// Commands publishes B8 downlink requests to the ingestion tier. When nil the
+	// command endpoints report 503 instead of silently dropping the request.
+	Commands CommandPublisher
 }
 
 // Service owns the HTTP engine and every handler of api-vehicle (PRD §8.2
@@ -29,6 +32,7 @@ type Service struct {
 	live     LiveStateReader
 	tenants  *tenant.Manager
 	registry *prometheus.Registry
+	commands CommandPublisher
 
 	auth   *AuthService
 	engine *gin.Engine
@@ -43,6 +47,7 @@ func NewService(deps Deps) *Service {
 		live:     deps.Live,
 		tenants:  deps.Tenants,
 		registry: deps.Registry,
+		commands: deps.Commands,
 	}
 	if s.live == nil && deps.KV != nil {
 		s.live = deps.KV

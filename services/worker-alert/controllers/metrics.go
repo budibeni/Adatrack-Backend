@@ -44,6 +44,27 @@ var (
 		Name: "fuel_readings_total",
 		Help: "Fuel telemetry messages evaluated by the alert engine (B5a)",
 	}, []string{"company"})
+
+	// --- B8 driver behaviour + maintenance ----------------------------------
+	driverEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "driver_events_total",
+		Help: "Driver behaviour events persisted, per event type and provenance",
+	}, []string{"event_type", "source"})
+
+	driverScore = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "driver_score",
+		Help: "Last computed daily driver score per grade bucket",
+	}, []string{"grade"})
+
+	speedingEpisodesOpen = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "driver_speeding_episodes_open",
+		Help: "Overspeed episodes currently open (started, not yet closed)",
+	})
+
+	maintenanceReminders = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "maintenance_reminders_total",
+		Help: "Maintenance reminders raised per maintenance type (B8)",
+	}, []string{"maintenance_type"})
 )
 
 // RegisterMetrics registers the worker-alert collectors.
@@ -52,5 +73,6 @@ func RegisterMetrics(reg prometheus.Registerer) {
 		return
 	}
 	reg.MustRegister(alertsRaised, alertsDeduped, alertsResolved, notificationsSent,
-		sosEscalations, alertPersistErrors, alertEngineLatency, fuelReads)
+		sosEscalations, alertPersistErrors, alertEngineLatency, fuelReads,
+		driverEvents, driverScore, speedingEpisodesOpen, maintenanceReminders)
 }

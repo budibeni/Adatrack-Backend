@@ -29,12 +29,19 @@ var liveStateErrors = prometheus.NewCounter(prometheus.CounterOpts{
 	Help: "Redis live-state read failures (graceful degradation: response served without live data)",
 })
 
+// commandsRequested counts accepted downlink command requests per command kind
+// (B8, PRD §10.1) — the request side of the `device_commands_*` ingestion metrics.
+var commandsRequested = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "device_commands_requested_total",
+	Help: "Downlink command requests accepted by api-vehicle, per command",
+}, []string{"command"})
+
 // RegisterMetrics registers the api-vehicle collectors.
 func RegisterMetrics(reg prometheus.Registerer) {
 	if reg == nil {
 		return
 	}
-	reg.MustRegister(rbacDenied, httpErrors, liveStateErrors)
+	reg.MustRegister(rbacDenied, httpErrors, liveStateErrors, commandsRequested)
 }
 
 // apiRateLimitMiddleware enforces PRD §8.4 (100 requests / minute / user).

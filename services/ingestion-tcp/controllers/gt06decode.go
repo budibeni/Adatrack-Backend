@@ -135,9 +135,25 @@ func ParseAlarm(data []byte) (models.TelemetryMessage, bool) {
 	}
 	if len(data) >= idx+2 {
 		t.AlarmCode = data[idx] // Alarm/Language byte 1 = alarm reason
+		// B8: the device already classified the event — carry it through instead
+		// of re-deriving it downstream (v3.1 alarm table: 0x29 acceleration,
+		// 0x30 braking).
+		switch t.AlarmCode {
+		case AlarmHarshAcceleration:
+			t.HarshAccel = true
+		case AlarmHarshBraking:
+			t.HarshBraking = true
+		}
 	}
 	return t, true
 }
+
+// GT06 alarm reasons that describe driver behaviour (v3.1 alarm table). They are
+// the only driver events the device itself reports for Concox devices.
+const (
+	AlarmHarshAcceleration = 0x29
+	AlarmHarshBraking      = 0x30
+)
 
 // ParseLBSAlarm decodes a non-GPS alarm packet (0x19): LBS-only positioning has
 // no UTC date and no coordinates, so the timestamp is "now" and lat/lon stay 0.

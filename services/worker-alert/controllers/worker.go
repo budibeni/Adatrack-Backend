@@ -31,11 +31,17 @@ type Worker struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	// fuelStash is the in-memory ring of recent fuel readings per vehicle
+	// FuelStash is the in-memory ring of recent fuel readings per vehicle
 	// (IMEI-based dedup across re-connects), used by the alert detector so a
 	// single device reconnect does not reset the sliding window.
 	fuelStashMu sync.Mutex
 	fuelStash   map[string]*fuelStash // key: company + ":" + imei
+
+	// --- B8 driver behaviour + maintenance -------------------------------
+	// driver tracks the open speeding episodes; driverMinSpeeding is the
+	// shortest episode that becomes an event (DRIVER_SPEEDING_MIN_SECONDS).
+	driver            *driverTracker
+	driverMinSpeeding int
 }
 
 // fuelStash is the per-device fuel window used by the B5a detector.
@@ -61,9 +67,20 @@ func New(cfg *internal.Config, red *internal.RedisClient, nats *internal.NATSCli
 		caches:    map[string]*companyCache{},
 		companies: map[string]bool{},
 		fuelStash: map[string]*fuelStash{}, // first fuel frame must not panic (nil map write)
+		driver:    newDriverTracker(),
 		ctx:       ctx,
 		cancel:    cancel,
 	}
+}
+
+// WithDriverConfig sets the B8 driver-behaviour thresholds (called by main so the
+// worker keeps a dependency-free constructor for the tests).
+func (w *Worker) WithDriverConfig(minSpeedingSeconds int) *Worker {
+	if minSpeedingSeconds <= 0 {
+		minSpeedingSeconds = 10
+	}
+	w.driverMinSpeeding = minSpeedingSeconds
+	return w
 }
 
 // Start subscribes to raw telemetry and launches the background sweepers.
@@ -83,6 +100,9 @@ func (w *Worker) Start() (*nats.Subscription, error) {
 	w.launch(w.sweepLoop, w.cfg.Alert.OfflineSweepInterval)
 	w.launch(w.escalationLoop, w.cfg.Alert.SOSEscalationInterval)
 	w.launch(w.cacheRefreshLoop, w.cfg.Alert.GeoFenceRefresh)
+	// B8: the maintenance reminder sweep runs on its own cadence (odometer /
+	// engine-hours / calendar thresholds, PRD §21.2 row 5).
+	w.launch(w.maintenanceLoop, w.cfg.Driver.MaintenanceSweepInterval)
 
 	return w.nats.Subscribe(w.nats.Subject("raw", ">"), "alert", w.handleMessage)
 }
@@ -154,6 +174,8 @@ func (w *Worker) evaluate(ctx context.Context, t models.TelemetryMessage) {
 	w.detectBatteryLow(ctx, t, now)
 	w.detectRouteDeviation(ctx, t, now)
 	w.engine.resolveOffline(ctx, t)
+	// B8: device-reported harsh events + the derived speeding episode.
+	w.detectDriver(ctx, t, now)
 	if t.HasFuel() {
 		w.detFuel(ctx, t, now)
 	}

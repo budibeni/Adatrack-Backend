@@ -25,6 +25,13 @@ type Server struct {
 	// connBudget bounds concurrent connections (FR-1.1: max 5000).
 	connBudget chan struct{}
 
+	// conns indexes the live connections by IMEI so B8 downlink commands can be
+	// pushed to the device that owns them (PRD §21.2 row 1).
+	conns *ConnRegistry
+
+	// gateway is the B8 downlink dispatcher (nil when it failed to start).
+	gateway *commandGateway
+
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -41,6 +48,7 @@ func NewServer(cfg *internal.Config, tenants *tenant.Manager, nats *internal.NAT
 		tenants:    tenants,
 		nats:       nats,
 		connBudget: make(chan struct{}, cfg.TCP.MaxConnections),
+		conns:      NewConnRegistry(cfg.TCP.MaxConnections),
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -48,6 +56,9 @@ func NewServer(cfg *internal.Config, tenants *tenant.Manager, nats *internal.NAT
 
 // Config exposes the effective configuration (listeners, timeouts).
 func (s *Server) Config() *internal.Config { return s.cfg }
+
+// Conns exposes the live-connection registry (B8 downlink delivery + metrics).
+func (s *Server) Conns() *ConnRegistry { return s.conns }
 
 // Shutdown cancels the accept loops and stops handling new frames.
 func (s *Server) Shutdown() { s.closeOnce.Do(s.cancel) }
@@ -100,14 +111,21 @@ func (s *Server) connClose(c net.Conn, proto string) {
 	slog.Debug("connection closed", "remote", c.RemoteAddr(), "protocol", proto)
 }
 
-// handleConn dispatches a connection to its protocol handler.
+// handleConn dispatches a connection to the registered decoder of its protocol.
+//
+// An unregistered protocol is a configuration error (a listener was opened for a
+// family without a decoder) and is closed + counted instead of being guessed:
+// silently falling back to GT06 would feed garbage into the telemetry pipeline.
 func (s *Server) handleConn(c net.Conn, proto models.Protocol) {
-	switch proto {
-	case models.ProtoTeltonika:
-		s.handleTeltonika(c)
-	default:
-		s.handleGT06(c)
+	d, ok := DecoderFor(proto)
+	if !ok {
+		slog.Error("no decoder registered for protocol; closing connection",
+			"protocol", proto.String(), "remote", c.RemoteAddr())
+		rejectedTotal.WithLabelValues("unsupported_protocol").Inc()
+		s.connClose(c, proto.String())
+		return
 	}
+	d.Serve(s, c)
 }
 
 // publishTelemetry publishes a decoded message to `telemetry.raw.<IMEI>`

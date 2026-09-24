@@ -79,7 +79,8 @@ func main() {
 	}
 	defer nac.Close()
 
-	worker := controllers.New(cfg, red, nac, controllers.NewPostgresStore(tm))
+	worker := controllers.New(cfg, red, nac, controllers.NewPostgresStore(tm)).
+		WithDriverConfig(cfg.Driver.SpeedingMinSeconds)
 	sub, err := worker.Start()
 	if err != nil {
 		slog.Error("failed to subscribe telemetry.raw.>", "error", err)

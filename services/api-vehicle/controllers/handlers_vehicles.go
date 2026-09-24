@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"adatrack_gps/api-vehicle/models"
+	"adatrack_gps/internal/validate"
 )
 
 // deleteReasonRequest is the optional body of DELETE endpoints (PRD §6.0.1
@@ -37,6 +38,11 @@ func (s *Service) handleListVehicles(c *gin.Context) {
 	if status != "" && !allowedVehicleStatus[status] {
 		respondError(c, errValidation("invalid status filter",
 			map[string]string{"status": "must be one of: active inactive maintenance"}))
+		return
+	}
+	if err := validate.SearchTerm(c.Query("search"), 100); err != nil {
+		respondError(c, errValidation("invalid search term",
+			map[string]string{"search": "max 100 characters, no control characters"}))
 		return
 	}
 	q := VehicleQuery{
@@ -93,6 +99,15 @@ func (s *Service) handleCreateVehicle(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	// B10 hardening (PRD §8.5/§9.6): the IMEI is the anti-spoofing identity of the
+	// device (FR-1.4), so it must be exactly the 15-digit form the allowlist
+	// `master.tm_vehicle_imei_map` can resolve — validated here instead of relying
+	// on the loose binding rule.
+	if err := validate.IMEI(req.IMEI); err != nil {
+		respondError(c, errValidation("invalid IMEI",
+			map[string]string{"imei": "must be exactly 15 digits"}))
+		return
+	}
 	exists, err := s.store.IMEIExists(ctx, identity.companyCode, req.IMEI, 0)
 	if err != nil {
 		respondError(c, vehicleStoreErr(err))

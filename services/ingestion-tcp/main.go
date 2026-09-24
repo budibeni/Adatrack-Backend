@@ -18,10 +18,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"adatrack_gps/ingestion-tcp/controllers"
-	"adatrack_gps/ingestion-tcp/models"
 	"adatrack_gps/internal"
 	"adatrack_gps/internal/tenant"
 )
@@ -39,6 +39,12 @@ func main() {
 
 	// GT06 date encoding toggle (docs use plain-hex; some firmwares use BCD).
 	controllers.SetDateEncoding(cfg.TCP.DateBCD)
+
+	// B10 evidence: the effective FR-1.2 cadence is part of the boot log so an
+	// operator can confirm "interval 20 s" without reading the env file.
+	slog.Info("telemetry cadence configured",
+		"interval_seconds", cfg.Telemetry.IntervalSeconds,
+		"env", "TELEMETRY_INTERVAL_SECONDS", "metric", "telemetry_interval_seconds")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -89,45 +95,50 @@ func main() {
 	defer nac.Close()
 
 	// --- Listeners -----------------------------------------------------------
+	// B9: the listener set comes from the decoder registry, so a new protocol is
+	// activated purely through its `*_TCP_PORT` variable — main.go never grows a
+	// switch statement per device family (PRD Module 1c).
 	srv := controllers.NewServer(cfg, tm, nac)
 	defer srv.Shutdown()
 
-	targets := []struct {
-		port  string
-		proto models.Protocol
-	}{
-		{cfg.TCP.Port, models.ProtoGT06},
-		{cfg.TCP.TeltonikaPort, models.ProtoTeltonika},
-	}
-
 	seen := map[string]string{}
 	listeners := 0
-	for _, t := range targets {
-		if t.port == "" || t.port == "0" {
-			slog.Info("listener disabled by configuration", "protocol", t.proto.String(), "port", t.port)
+	for _, d := range controllers.RegisteredDecoders() {
+		proto := d.Protocol()
+		port := strings.TrimSpace(d.Port(cfg))
+		if port == "" || port == "0" {
+			slog.Info("listener disabled by configuration", "protocol", proto.String(), "port", port)
 			continue
 		}
-		if other, clash := seen[t.port]; clash {
-			slog.Error("port clash between listeners", "port", t.port,
-				"protocols", other+" + "+t.proto.String())
+		if other, clash := seen[port]; clash {
+			slog.Error("port clash between listeners", "port", port,
+				"protocols", other+" + "+proto.String())
 			os.Exit(1)
 		}
-		seen[t.port] = t.proto.String()
+		seen[port] = proto.String()
 
-		ln, err := net.Listen("tcp", ":"+t.port)
+		ln, err := net.Listen("tcp", ":"+port)
 		if err != nil {
-			slog.Error("failed to listen", "port", t.port, "protocol", t.proto.String(), "error", err)
+			slog.Error("failed to listen", "port", port, "protocol", proto.String(), "error", err)
 			os.Exit(1)
 		}
 		defer func() { _ = ln.Close() }()
-		go srv.AcceptLoop(ln, t.proto)
+		go srv.AcceptLoop(ln, proto)
 		listeners++
-		slog.Info("ingestion listener started", "addr", ":"+t.port, "protocol", t.proto.String(),
+		slog.Info("ingestion listener started", "addr", ":"+port, "protocol", proto.String(),
 			"max_connections", cfg.TCP.MaxConnections, "idle_timeout_s", cfg.TCP.IdleTimeout.Seconds())
 	}
 	if listeners == 0 {
-		slog.Error("no TCP listener configured (set TCP_PORT and/or TELTONIKA_TCP_PORT)")
+		slog.Error("no TCP listener configured (set TCP_PORT and/or a *_TCP_PORT variant)")
 		os.Exit(1)
+	}
+
+	// --- B8: downlink command dispatcher -------------------------------------
+	if sub, err := srv.StartCommandDispatch(); err != nil {
+		slog.Error("command dispatcher failed to start", "error", err)
+		os.Exit(1)
+	} else {
+		defer nac.Unsubscribe(sub)
 	}
 
 	// --- Readiness + metrics -------------------------------------------------
