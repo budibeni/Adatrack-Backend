@@ -249,7 +249,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			"must_change_password": mustChange,
 			"role":                 role,
 			"email":                req.Email,
-			"name":                 func() string { if fullName != nil { return *fullName } return "" }(),
+			"name":                 func() string { if fullName != nil { return *fullName }; return "" }(),
 			"company_code":         req.CompanyCode,
 		},
 	})

@@ -432,7 +432,7 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, true)
 		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, must_change_password = true
 		RETURNING id
-	`, adminEmail, "Admin of "+req.Name, string(hash)).Scan(&newUserID)
+	`, adminEmail, "Admin", string(hash)).Scan(&newUserID)
 	if err != nil {
 		logger.Log.Error("Failed to create admin user", "err", err)
 		h.writeError(w, http.StatusInternalServerError, "USER_CREATION_FAILED", "Failed to create tenant admin user")
