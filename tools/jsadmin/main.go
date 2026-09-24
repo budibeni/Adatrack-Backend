@@ -19,16 +19,20 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
 
 // streams adalah stream yang dikelola stack ini (urutan tetap untuk output).
-var streams = []string{"telemetry-raw", "telemetry-live", "telemetry-error", "alert", "notify", "media"}
+var streams = []string{"telemetry-raw", "telemetry-live", "telemetry-error", "alert", "notify", "media", "command"}
 
 func main() {
 	natsURL := flag.String("nats", envOr("NATS_URL", "nats://127.0.0.1:4222"), "NATS URL")
@@ -38,9 +42,18 @@ func main() {
 	confirm := flag.Bool("yes", false, "required together with --purge/--delete")
 	assertBelow := flag.Float64("assert-usage-below", 0,
 		"exit 1 if any stream's byte usage is at/above this percentage (pre/post-run guard)")
+
+	// --- B8 downlink inspection -------------------------------------------
+	publishCmd := flag.String("publish-command", "",
+		"publish a downlink command request (engine_cut|engine_restore|set_interval|reboot|locate)")
+	company := flag.String("company", envOr("E2E_COMPANY", "DEV001"), "tenant code (with --publish-command)")
+	imei := flag.String("imei", "", "device IMEI (with --publish-command)")
+	vehicleID := flag.Int64("vehicle-id", 0, "vehicle id (with --publish-command)")
+	interval := flag.Int("interval-seconds", 20, "interval for set_interval (5..86400)")
+
 	flag.Parse()
 
-	if !*showStatus && *purge == "" && *deleteStreams == "" && *assertBelow == 0 {
+	if !*showStatus && *purge == "" && *deleteStreams == "" && *assertBelow == 0 && *publishCmd == "" {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -54,6 +67,15 @@ func main() {
 	js, err := nc.JetStream()
 	if err != nil {
 		fail("jetstream context: %v", err)
+	}
+
+	if *publishCmd != "" {
+		reqID, err := publishCommand(js, *company, *imei, *vehicleID, *publishCmd, *interval)
+		if err != nil {
+			fail("publish command: %v", err)
+		}
+		fmt.Printf("published command.request.%s: request_id=%s kind=%s imei=%s\n",
+			strings.ToUpper(*company), reqID, *publishCmd, *imei)
 	}
 
 	if *showStatus {
@@ -179,6 +201,66 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// commandRequest mirrors services/ingestion-tcp/models.DeviceCommand — the payload
+// the downlink dispatcher consumes. Keeping the JSON field names identical is what
+// lets this tool exercise the real command path (B8).
+type commandRequest struct {
+	ID          int64  `json:"id"`
+	RequestID   string `json:"request_id"`
+	CompanyCode string `json:"company_code"`
+	VehicleID   int64  `json:"vehicle_id"`
+	IMEI        string `json:"imei"`
+	Command     string `json:"command"`
+	Interval    int    `json:"interval_seconds,omitempty"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// publishCommand publishes one downlink request on `command.request.<COMPANY>` and
+// returns the generated request id (the same value the dispatcher writes into
+// td_device_commands, so the operator can follow it to the device ACK).
+func publishCommand(js nats.JetStreamContext, company, imei string, vehicleID int64, kind string, interval int) (string, error) {
+	if imei == "" {
+		return "", fmt.Errorf("--imei is required")
+	}
+	valid := map[string]bool{
+		"engine_cut": true, "engine_restore": true, "set_interval": true,
+		"reboot": true, "locate": true,
+	}
+	if !valid[kind] {
+		return "", fmt.Errorf("unknown command %q (engine_cut|engine_restore|set_interval|reboot|locate)", kind)
+	}
+	reqID, err := randomRequestID()
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(commandRequest{
+		RequestID:   reqID,
+		CompanyCode: strings.ToUpper(company),
+		VehicleID:   vehicleID,
+		IMEI:        imei,
+		Command:     kind,
+		Interval:    interval,
+		CreatedAt:   time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return "", err
+	}
+	subject := "command.request." + strings.ToUpper(company)
+	if _, err := js.Publish(subject, payload); err != nil {
+		return "", fmt.Errorf("publish %s: %w", subject, err)
+	}
+	return reqID, nil
+}
+
+// randomRequestID builds a 128-bit hex request id (mirrors the API generator).
+func randomRequestID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 // fail prints to stderr and exits 1.

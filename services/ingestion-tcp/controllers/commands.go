@@ -62,6 +62,40 @@ func envBoolLocal(key string, def bool) bool {
 	return b
 }
 
+// EncodeCommand implements CommandEncoder for the TK103 family. The command
+// letters are the upstream Tk103ProtocolEncoder ones (standard, non-"sms2"
+// variant), wrapped in the `(...)` frame the family expects:
+//
+//	(<IMEI>AV010)            engine stop / cut oil-electricity
+//	(<IMEI>AV011)            engine resume
+//	(<IMEI>AT00)             reboot
+//	(<IMEI>AP00)             single position request
+//	(<IMEI>AR00<FREQ4HEX>0000) periodic position (FREQ = seconds, 4 uppercase hex)
+func (tk103Decoder) EncodeCommand(cmd models.DeviceCommand) ([]byte, error) {
+	id := cmd.IMEI
+	if id == "" {
+		return nil, &models.CommandError{Field: "imei", Msg: "imei is required for a TK103 command"}
+	}
+	switch cmd.Kind {
+	case models.CommandEngineCut:
+		return []byte("(" + id + "AV010)"), nil
+	case models.CommandEngineRestore:
+		return []byte("(" + id + "AV011)"), nil
+	case models.CommandReboot:
+		return []byte("(" + id + "AT00)"), nil
+	case models.CommandLocate:
+		return []byte("(" + id + "AP00)"), nil
+	case models.CommandSetInterval:
+		if cmd.IntervalSeconds < 5 || cmd.IntervalSeconds > 86400 {
+			return nil, &models.CommandError{Field: "interval_seconds",
+				Msg: "interval_seconds must be between 5 and 86400"}
+		}
+		return []byte(fmt.Sprintf("(%sAR00%04X0000)", id, cmd.IntervalSeconds)), nil
+	default:
+		return nil, fmt.Errorf("%w: %s (tk103)", ErrCommandUnsupported, cmd.Kind)
+	}
+}
+
 // EncodeCommand implements CommandEncoder for GT06/Concox.
 func (gt06Decoder) EncodeCommand(cmd models.DeviceCommand) ([]byte, error) {
 	content, err := GT06CommandContent(cmd)

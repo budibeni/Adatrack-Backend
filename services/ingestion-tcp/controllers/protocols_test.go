@@ -9,6 +9,7 @@ package controllers
 // reader and the writer are verified against each other.
 
 import (
+	"encoding/binary"
 	"math"
 	"testing"
 	"time"
@@ -393,37 +394,216 @@ func TestNavigilHeaderAndAck(t *testing.T) {
 	if got.Sequence != 0x1234 || got.MsgID != navigilMsgPosition || got.PayloadLen != 16 {
 		t.Fatalf("navigil header = %+v", got)
 	}
-	ack := buildNavigilAck(got.Sequence)
-	if len(ack) != 20 || ack[4] != byte(navigilMsgAck) {
-		t.Fatalf("navigil ack is malformed: % x", ack)
-	}
 	if _, err := readNavigilHeader(bufReader(make([]byte, 20))); err == nil {
 		t.Fatal("readNavigilHeader accepted a zeroed (implausible) header")
+	}
+
+	// The ACK is 24 bytes: 20-byte header + 4-byte data (seq + status OK), and the
+	// CRC-16/CCITT-FALSE covers the DATA only (upstream sendAcknowledgment).
+	ack := buildNavigilAck(got.Sequence)
+	if len(ack) != 24 {
+		t.Fatalf("navigil ack length = %d, want 24", len(ack))
+	}
+	if binary.LittleEndian.Uint16(ack[4:6]) != navigilMsgAck {
+		t.Fatalf("ack msg id = %d, want %d", binary.LittleEndian.Uint16(ack[4:6]), navigilMsgAck)
+	}
+	if binary.LittleEndian.Uint16(ack[6:8]) != 24 {
+		t.Fatalf("ack length field = %d, want 24", binary.LittleEndian.Uint16(ack[6:8]))
+	}
+	if binary.LittleEndian.Uint16(ack[20:22]) != got.Sequence {
+		t.Fatalf("ack does not echo the sequence number")
+	}
+	if binary.LittleEndian.Uint16(ack[10:12]) != navigilCRC16(ack[20:24]) {
+		t.Fatal("ack checksum is not the CRC-16/CCITT-FALSE of the data bytes")
+	}
+}
+
+// TestParseNavigilPayload covers the two layouts the reference pins: the unit
+// report (MSG 8) and the tracking data (MSG 18).
+func TestParseNavigilPayload(t *testing.T) {
+	// MSG_UNIT_REPORT: trigger(2) flags(2) lat(4) lon(4) altitude(2) satellites(2)
+	latRaw, lonRaw := int32(-62000000), int32(1068000000)
+	unit := make([]byte, 20)
+	binary.LittleEndian.PutUint16(unit[0:2], 1)    // trigger
+	binary.LittleEndian.PutUint16(unit[2:4], 0x10) // flags
+	binary.LittleEndian.PutUint32(unit[4:8], uint32(latRaw))
+	binary.LittleEndian.PutUint32(unit[8:12], uint32(lonRaw))
+	binary.LittleEndian.PutUint16(unit[12:14], 45)
+	binary.LittleEndian.PutUint16(unit[14:16], 9)
+
+	tele, ok := parseNavigilPayload(navigilMsgUnitReport, 1790274600, unit)
+	if !ok {
+		t.Fatal("unit report payload was rejected")
+	}
+	if !approx(tele.Lat, -6.2, 1e-6) || !approx(tele.Lon, 106.8, 1e-6) {
+		t.Fatalf("unit report position = (%v,%v), want (-6.2,106.8)", tele.Lat, tele.Lon)
+	}
+	if tele.Altitude != 45 || tele.Satellites != 9 || !tele.Fix {
+		t.Fatalf("unit report altitude/sats/fix = %d/%d/%v", tele.Altitude, tele.Satellites, tele.Fix)
+	}
+	if tele.Timestamp != 1790274600-navigilLeapSecondsDelta {
+		t.Fatalf("unit report timestamp = %d, want header ts - 25", tele.Timestamp)
+	}
+
+	// MSG_TRACKING_DATA: mode(1) flags(1) duration(2) lat(4) lon(4) speed(1)
+	// course(1) satellites(1) battery(2) odometer(4)
+	track := make([]byte, 22)
+	track[0] = 2 // mode
+	track[1] = 0x01
+	binary.LittleEndian.PutUint32(track[4:8], uint32(latRaw))
+	binary.LittleEndian.PutUint32(track[8:12], uint32(lonRaw))
+	track[12] = 55 // km/h
+	track[13] = 30 // course 60°
+	track[14] = 7
+	binary.LittleEndian.PutUint16(track[15:17], 12400) // 12.4 V
+	binary.LittleEndian.PutUint32(track[17:21], 98765)
+
+	tele, ok = parseNavigilPayload(navigilMsgTracking, 1790274600, track)
+	if !ok {
+		t.Fatal("tracking payload was rejected")
+	}
+	if tele.Speed != 55 || tele.Heading != 60 || !tele.Fix || tele.Satellites != 7 {
+		t.Fatalf("tracking speed/heading/fix/sats = %v/%v/%v/%v", tele.Speed, tele.Heading, tele.Fix, tele.Satellites)
+	}
+	if !approx(tele.Lat, -6.2, 1e-6) {
+		t.Fatalf("tracking position = (%v,%v)", tele.Lat, tele.Lon)
+	}
+
+	// A truncated payload must be rejected, and an unknown message id reported as
+	// unsupported (the documented gap for types 13/15).
+	if _, ok := parseNavigilPayload(navigilMsgUnitReport, 1, unit[:10]); ok {
+		t.Fatal("a truncated unit report was accepted")
+	}
+	if _, ok := parseNavigilPayload(navigilMsgPosition, 1, unit); ok {
+		t.Fatal("message id 13 must stay unsupported (leading fields not pinned upstream)")
+	}
+}
+
+func TestNavigilDeviceMap(t *testing.T) {
+	m := parseNavigilDeviceMap("1234567=864201040512345, 7654321=864201040512999,bad=864201040512000,42=short,88=864201040512888")
+	if len(m) != 3 {
+		t.Fatalf("device map size = %d, want 3 (invalid pairs skipped)", len(m))
+	}
+	if imei, ok := m[1234567]; !ok || imei != "864201040512345" {
+		t.Fatalf("device 1234567 → %q/%v", imei, ok)
+	}
+	if _, ok := m[42]; ok {
+		t.Fatal("a non-15-digit IMEI was mapped (anti-spoofing must stay strict)")
+	}
+	// The live lookup reads the process-wide map, which is empty unless
+	// NAVIGIL_DEVICE_MAP is configured — an unmapped device must never resolve.
+	if _, ok := navigilIMEI(1234567); ok && len(navigilDeviceMap) == 0 {
+		t.Fatal("navigilIMEI resolved a device without a configured mapping")
 	}
 }
 
 func TestCastelFrameAndIdentity(t *testing.T) {
 	id := testIMEI + "ABCDE" // 20-char ASCII id carrying the IMEI
-	body := append([]byte{0x01}, []byte(id)...)
-	body = append(body, byte(castelMsgLogin&0xFF), byte(castelMsgLogin>>8))
-	body = append(body, 0x00, 0x01)
 
-	frame := []byte{0x40, 0x40, byte(len(body)), byte(len(body) >> 8)}
-	frame = append(frame, body...)
+	// A device frame: header + Length(=WHOLE frame) + version + id + type + payload
+	// + CRC(2 BE) + 0x0D 0x0A (see the file header note 1).
+	buildDeviceFrame := func(msgType uint16, payload []byte) []byte {
+		body := append([]byte{4}, []byte(id)...)
+		body = binary.LittleEndian.AppendUint16(body, msgType)
+		body = append(body, payload...)
 
-	f, err := readCastelFrame(bufReader(frame))
+		frame := binary.LittleEndian.AppendUint16(nil, castelHeaderMark)
+		frame = binary.LittleEndian.AppendUint16(frame, uint16(castelHeaderBytes+len(body)+castelTailBytes))
+		frame = append(frame, body...)
+		frame = binary.BigEndian.AppendUint16(frame, navigilCRC16(frame))
+		return append(frame, 0x0D, 0x0A)
+	}
+
+	// Two frames back to back: the reader must consume exactly the first one, which
+	// is what the old "length = bytes after the header" convention broke (desync).
+	frame := buildDeviceFrame(castelMsgLogin, nil)
+	second := buildDeviceFrame(castelMsgHeartbeat, nil)
+	r := bufReader(append(append([]byte{}, frame...), second...))
+
+	f, err := readCastelFrame(r)
 	if err != nil {
 		t.Fatalf("readCastelFrame: %v", err)
 	}
-	if f.Type != castelMsgLogin || f.ID != id {
+	if f.Type != castelMsgLogin || f.ID != id || f.Version != 4 {
 		t.Fatalf("castel frame = %+v", f)
+	}
+	if len(f.Body) != 0 {
+		t.Fatalf("castel body = % x, want empty (CRC+footer must not be payload)", f.Body)
 	}
 	if got := castelIMEIPattern.FindString(f.ID); got != testIMEI {
 		t.Fatalf("castel IMEI extraction = %q, want %q", got, testIMEI)
 	}
+
+	next, err := readCastelFrame(r)
+	if err != nil {
+		t.Fatalf("second readCastelFrame: %v", err)
+	}
+	if next.Type != castelMsgHeartbeat {
+		t.Fatalf("second frame type = 0x%04x, want 0x%04x", next.Type, castelMsgHeartbeat)
+	}
+
+	// A payload-bearing frame keeps its payload and drops the 4-byte tail.
+	withBody := buildDeviceFrame(castelMsgGPS, []byte{0xAA, 0xBB, 0xCC})
+	f, err = readCastelFrame(bufReader(withBody))
+	if err != nil {
+		t.Fatalf("readCastelFrame(gps): %v", err)
+	}
+	if string(f.Body) != "\xaa\xbb\xcc" {
+		t.Fatalf("castel gps body = % x, want aa bb cc", f.Body)
+	}
+
 	bad := append([]byte{}, frame...)
 	bad[0] = 0x41
 	if _, err := readCastelFrame(bufReader(bad)); err == nil {
 		t.Fatal("readCastelFrame accepted a frame with a bad header")
+	}
+	// A length that cannot hold the fixed fields is rejected, not parsed into garbage.
+	short := append([]byte{}, frame...)
+	binary.LittleEndian.PutUint16(short[2:4], 8)
+	if _, err := readCastelFrame(bufReader(short)); err == nil {
+		t.Fatal("readCastelFrame accepted an undersized frame length")
+	}
+}
+
+// TestCastelResponseFrames covers the mandatory login/heartbeat replies: the frame
+// must be parseable by the same reader (round-trip) and carry `Length` = whole frame.
+func TestCastelResponseFrames(t *testing.T) {
+	id := testIMEI + "ABCDE"
+
+	login := buildCastelResponse(4, id, castelMsgLoginResponse, castelLoginResponsePayload())
+	if len(login) != 41 { // 4 header + 1 version + 20 id + 2 type + 10 payload + 2 CRC + 2 footer
+		t.Fatalf("login response length = %d, want 41", len(login))
+	}
+	if got := int(binary.LittleEndian.Uint16(login[2:4])); got != len(login) {
+		t.Fatalf("login response Length field = %d, want %d (whole frame)", got, len(login))
+	}
+	if login[len(login)-2] != 0x0D || login[len(login)-1] != 0x0A {
+		t.Fatalf("login response footer = % x, want 0d 0a", login[len(login)-2:])
+	}
+	if want := binary.BigEndian.Uint16(login[len(login)-4 : len(login)-2]); navigilCRC16(login[:len(login)-4]) != want {
+		t.Fatal("login response CRC does not match the frame content")
+	}
+
+	f, err := readCastelFrame(bufReader(login))
+	if err != nil {
+		t.Fatalf("readCastelFrame(login response): %v", err)
+	}
+	if f.Type != castelMsgLoginResponse || f.ID != id || len(f.Body) != 10 {
+		t.Fatalf("login response round-trip = %+v body=% x", f, f.Body)
+	}
+	if got := binary.BigEndian.Uint32(f.Body[6:10]); got == 0 {
+		t.Fatal("login response carries no server time")
+	}
+
+	hb := buildCastelResponse(4, id, castelMsgHeartbeatResponse, nil)
+	if len(hb) != 31 {
+		t.Fatalf("heartbeat response length = %d, want 31", len(hb))
+	}
+	f, err = readCastelFrame(bufReader(hb))
+	if err != nil {
+		t.Fatalf("readCastelFrame(heartbeat response): %v", err)
+	}
+	if f.Type != castelMsgHeartbeatResponse || len(f.Body) != 0 {
+		t.Fatalf("heartbeat response round-trip = %+v", f)
 	}
 }

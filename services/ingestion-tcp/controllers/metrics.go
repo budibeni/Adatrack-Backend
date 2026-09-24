@@ -76,6 +76,20 @@ var (
 		Name: "ingestion_unsupported_frames_total",
 		Help: "Frames recognised but not decodable yet, per protocol (B9 gap tracker)",
 	}, []string{"protocol"})
+	// unmappedDevices counts devices whose protocol identity cannot be resolved to
+	// the IMEI allowlist (e.g. Navigil device ids without NAVIGIL_DEVICE_MAP) — the
+	// explicit "still needs onboarding" signal instead of a silent drop.
+	unmappedDevices = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ingestion_unmapped_devices_total",
+		Help: "Frames from a device whose protocol identity has no IMEI mapping",
+	}, []string{"protocol"})
+
+	// castelCRCErrors counts inbound Castel frames whose CRC-16/CCITT-FALSE does not
+	// match, i.e. evidence that a firmware variant uses another checksum rule.
+	castelCRCErrors = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ingestion_castel_crc_errors_total",
+		Help: "Castel frames received with a mismatching CRC-16/CCITT-FALSE",
+	})
 )
 
 // RegisterMetrics registers the ingestion collectors on a service registry.
@@ -84,5 +98,5 @@ func RegisterMetrics(reg *prometheus.Registry) {
 		messagesPublished, rejectedTotal, natsPublishErrors, natsPublishDuration,
 		backpressureDrops, backpressureWarnings, fuelReadingsTotal,
 		commandsDispatched, commandsAcked, commandsPending, devicesOnline,
-		unsupportedFrames)
+		unsupportedFrames, unmappedDevices, castelCRCErrors)
 }

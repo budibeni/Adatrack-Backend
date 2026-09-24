@@ -10,7 +10,7 @@ VARIANT ?= local
 MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/api-vehicle services/service-media services/worker-alert services/foundation-check tools/e2e tools/e2ews tools/e2e-media tools/e2e-fuel tools/e2e-fleet tools/querybench
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel e2e-fleet clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel e2e-fleet e2e-commands clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard js-publish-cmd
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -79,6 +79,9 @@ e2e-media: ## End-to-end dashcam media test (HMAC → MinIO → katalog → WS �
 e2e-fleet: ## End-to-end fleet core test (odometer/engine hours + trip/stop + playback/geocode, B7.1–B7.4)
 	@scripts/e2e-fleet.sh
 
+e2e-commands: ## End-to-end downlink test (login → 0x80 DYD# → 0x21 ACK → td_device_commands, B8)
+	@scripts/e2e-commands.sh
+
 clean: ## Remove build artifacts
 	@rm -rf bin logs/*.log logs/pids monitoring/targets/*.json
 	@echo "clean: ok"
@@ -110,6 +113,11 @@ js-purge: ## Purge saturated streams (STREAMS=telemetry-raw,telemetry-live) — 
 
 js-guard: ## Fail if any stream is >= USAGE% of its byte budget (default 85)
 	@(cd tools/jsadmin && go run . --assert-usage-below $(or $(USAGE),85))
+
+js-publish-cmd: ## Publish a downlink command: make js-publish-cmd CMD=engine_cut IMEI=864201040512345 [CODE=DEV001]
+	@test -n "$(CMD)" || { echo "CMD is required, e.g. make js-publish-cmd CMD=engine_cut IMEI=864201040512345"; exit 1; }
+	@test -n "$(IMEI)" || { echo "IMEI is required"; exit 1; }
+	@(cd tools/jsadmin && go run . --publish-command "$(CMD)" --imei "$(IMEI)" --company "$(or $(CODE),DEV001)" --vehicle-id "$(or $(VEHICLE_ID),0)")
 
 # --- HA overlay & drill (PRD §13) — varian LOCAL ---------------------------
 ha-up: ## Start the HA overlay: PG standby + Redis replica (VARIANT=local)

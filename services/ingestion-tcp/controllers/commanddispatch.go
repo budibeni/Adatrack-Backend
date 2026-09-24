@@ -26,6 +26,7 @@ package controllers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -55,6 +56,15 @@ type commandGateway struct {
 	persistent bool
 
 	ackTimeout time.Duration
+	// maxAge drops a command that is older than this before it ever reaches a
+	// device. It exists because the durable consumer redelivers the whole stream
+	// when JetStream recreates it (config change / new consumer): without a bound,
+	// an `engine_cut` issued hours ago would be re-sent to a moving vehicle — a
+	// safety hazard, not just noise.
+	maxAge time.Duration
+
+	// onResult is an optional sink for the final outcome (tests / diagnostics).
+	onResult func(models.CommandResult)
 
 	mu      sync.Mutex
 	pending map[string]*pendingCommand // key: request_id
@@ -70,10 +80,25 @@ func (s *Server) StartCommandDispatch() (*nats.Subscription, error) {
 		nats:       s.nats,
 		persistent: s.tenants != nil,
 		ackTimeout: time.Duration(envInt("COMMAND_ACK_TIMEOUT_SECONDS", 30)) * time.Second,
+		maxAge:     time.Duration(envInt("COMMAND_MAX_AGE_SECONDS", 300)) * time.Second,
 		pending:    make(map[string]*pendingCommand),
 	}
 	s.gateway = g
 	go g.timeoutLoop(s.ctx)
+
+	// Preferred path: a DURABLE JetStream consumer, so a command published while this
+	// service was restarting is delivered instead of lost (B8 gap "core NATS").
+	if sub, err := s.nats.QueueSubscribeDurable(internal.StreamCommand,
+		"command.request.>", "command", "ingestion-command-dispatch", g.handleRequest); err == nil {
+		slog.Info("downlink command dispatcher started",
+			"subject", "command.request.>", "queue", "command", "durable", "ingestion-command-dispatch",
+			"ack_timeout_s", g.ackTimeout.Seconds(), "max_age_s", g.maxAge.Seconds(),
+			"persist", g.persistent, "delivery", "jetstream-durable")
+		return sub, nil
+	} else {
+		slog.Warn("downlink: durable consumer unavailable, falling back to core NATS",
+			"error", err)
+	}
 
 	sub, err := s.nats.Subscribe("command.request.>", "command", g.handleRequest)
 	if err != nil {
@@ -81,7 +106,8 @@ func (s *Server) StartCommandDispatch() (*nats.Subscription, error) {
 	}
 	slog.Info("downlink command dispatcher started",
 		"subject", "command.request.>", "queue", "command",
-		"ack_timeout_s", g.ackTimeout.Seconds(), "persist", g.persistent)
+		"ack_timeout_s", g.ackTimeout.Seconds(), "max_age_s", g.maxAge.Seconds(),
+		"persist", g.persistent, "delivery", "core-nats")
 	return sub, nil
 }
 
@@ -118,6 +144,21 @@ func (g *commandGateway) handleRequest(msg *nats.Msg) error {
 	}
 
 	ctx := context.Background()
+	// A redelivered backlog entry (JetStream recreates a consumer → DeliverAll) must
+	// never reach a device after its window: an hours-old `engine_cut` re-executed on
+	// a moving vehicle is a safety hazard, not just noise. The drop is recorded, so
+	// the operator sees why the command did not go out.
+	if g.maxAge > 0 {
+		if age := time.Since(cmd.CreatedAt); age > g.maxAge {
+			slog.Warn("downlink: stale request dropped", "company", cmd.CompanyCode,
+				"imei", cmd.IMEI, "command", cmd.Kind, "request_id", cmd.RequestID,
+				"age_s", age.Seconds(), "max_age_s", g.maxAge.Seconds())
+			g.finish(ctx, cmd, models.CommandStatusFailed,
+				fmt.Sprintf("request is older than COMMAND_MAX_AGE_SECONDS (%s) — not sent", g.maxAge), "")
+			return nil
+		}
+	}
+
 	if cmd.VehicleID <= 0 && g.tenants != nil {
 		if dev, err := g.tenants.ResolveDeviceByIMEI(ctx, cmd.IMEI); err == nil {
 			cmd.VehicleID = dev.VehicleID
@@ -145,6 +186,20 @@ func (g *commandGateway) dispatch(cmd models.DeviceCommand) models.CommandResult
 		return res
 	}
 	protoName := dc.Protocol.String()
+
+	// One in-flight command per device: a GT06 reply carries no request id, so with
+	// two outstanding commands the answer is ambiguous and could ack the wrong one
+	// (the live E2E run hit exactly that). The newer command is refused explicitly,
+	// never silently dropped, and the device socket is untouched.
+	if inflight := g.inflightFor(cmd.IMEI); inflight != nil {
+		res.Status = models.CommandStatusFailed
+		res.Detail = "device already has a command awaiting its reply (request_id " +
+			inflight.cmd.RequestID + ")"
+		slog.Warn("downlink: command refused, device busy", "imei", cmd.IMEI,
+			"command", cmd.Kind, "request_id", cmd.RequestID,
+			"inflight_request_id", inflight.cmd.RequestID)
+		return res
+	}
 
 	dec, ok := DecoderFor(dc.Protocol)
 	if !ok {
@@ -180,6 +235,21 @@ func (g *commandGateway) dispatch(cmd models.DeviceCommand) models.CommandResult
 	slog.Info("downlink: command sent", "imei", cmd.IMEI, "protocol", protoName,
 		"command", cmd.Kind, "request_id", cmd.RequestID, "frame_bytes", len(frame))
 	return res
+}
+
+// inflightFor returns the command currently awaiting the device's reply for an
+// IMEI (nil when the device is free). Only commands inside the ACK window count: an
+// expired entry is the sweeper's responsibility, not a permanent lock.
+func (g *commandGateway) inflightFor(imei string) *pendingCommand {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	cutoff := time.Now().UTC().Add(-g.ackTimeout)
+	for _, p := range g.pending {
+		if p.cmd.IMEI == imei && p.sentAt.After(cutoff) {
+			return p
+		}
+	}
+	return nil
 }
 
 // Ack records the device's online-command reply (GT06 0x21/0x15). It is called
@@ -288,4 +358,10 @@ func (g *commandGateway) finish(ctx context.Context, cmd models.DeviceCommand, s
 		}
 	}
 	g.persist(ctx, cmd, res)
+
+	// Test/observability hook: nothing is attached in production, but it lets a test
+	// assert the recorded outcome without a database (see commands_test.go).
+	if g.onResult != nil {
+		g.onResult(res)
+	}
 }

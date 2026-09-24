@@ -218,6 +218,11 @@ func (c *NATSClient) PublishJetStream(subject string, payload []byte) error {
 // Subscribe registers a queue-group subscription; the handler error is logged
 // and counted, never swallowed (rule §8 "no silent drop").
 func (c *NATSClient) Subscribe(subject, queueGroup string, handler func(*nats.Msg) error) (*nats.Subscription, error) {
+	return c.subscribeCore(subject, queueGroup, handler), nil
+}
+
+// subscribeCore is the core-NATS worker used by Subscribe.
+func (c *NATSClient) subscribeCore(subject, queueGroup string, handler func(*nats.Msg) error) *nats.Subscription {
 	sub, err := c.conn.QueueSubscribe(subject, queueGroup, func(msg *nats.Msg) {
 		if herr := handler(msg); herr != nil {
 			slog.Error("nats handler failed", "subject", msg.Subject, "queue", queueGroup, "error", herr)
@@ -227,7 +232,52 @@ func (c *NATSClient) Subscribe(subject, queueGroup string, handler func(*nats.Ms
 		}
 	})
 	if err != nil {
-		return nil, fmt.Errorf("subscribe %s (%s): %w", subject, queueGroup, err)
+		slog.Error("nats subscribe failed", "subject", subject, "queue", queueGroup, "error", err)
+		return nil
+	}
+	return sub
+}
+
+// QueueSubscribeDurable consumes a subject through a DURABLE JetStream consumer
+// with manual (explicit) acknowledgement.
+//
+// It exists for the B8 downlink path: a command published while ingestion-tcp is
+// down must NOT be lost (with core NATS a subscriber that is offline simply misses
+// it). The consumer survives restarts, re-delivers unacknowledged messages and
+// gives up after MaxDeliver attempts, which turns "operator re-sends manually"
+// into an at-least-once contract.
+func (c *NATSClient) QueueSubscribeDurable(
+	stream, subject, queueGroup, durable string,
+	handler func(*nats.Msg) error,
+) (*nats.Subscription, error) {
+	sub, err := c.js.QueueSubscribe(subject, queueGroup, func(msg *nats.Msg) {
+		herr := handler(msg)
+		if herr != nil {
+			// NAK makes the message eligible for redelivery (with backoff) instead of
+			// silently dropping it; the error is logged either way (rule §8).
+			slog.Error("nats durable handler failed", "subject", msg.Subject,
+				"queue", queueGroup, "durable", durable, "error", herr)
+			_ = msg.Nak()
+		} else if aerr := msg.Ack(); aerr != nil {
+			slog.Warn("nats durable ack failed", "subject", msg.Subject,
+				"durable", durable, "error", aerr)
+		}
+		if c.consumed != nil {
+			c.consumed.WithLabelValues(subject, queueGroup).Inc()
+		}
+	},
+		nats.BindStream(stream),
+		nats.Durable(durable),
+		nats.ManualAck(),
+		nats.AckExplicit(),
+		// Deliver everything the durable has not acknowledged yet (first run: the
+		// backlog that accumulated while the service was down).
+		nats.DeliverAll(),
+		nats.MaxDeliver(5),
+		nats.AckWait(30*time.Second),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("durable subscribe %s (%s/%s): %w", subject, queueGroup, durable, err)
 	}
 	return sub, nil
 }

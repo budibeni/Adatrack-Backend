@@ -10,11 +10,14 @@ package controllers
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"net"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go"
 
 	"adatrack_gps/ingestion-tcp/models"
 	"adatrack_gps/internal"
@@ -93,6 +96,177 @@ func TestBuildGT06OnlineCommandFraming(t *testing.T) {
 			t.Fatalf("byte %d differs between conventions: %02x vs %02x", i, alt[i], frame[i])
 		}
 	}
+}
+
+// TestTK103CommandEncoding covers the TK103 downlink encoder (verified against the
+// upstream Tk103ProtocolEncoder command letters).
+func TestTK103CommandEncoding(t *testing.T) {
+	enc := tk103Decoder{}
+	imei := "864201040512345"
+	cases := []struct {
+		cmd  models.DeviceCommand
+		want string
+	}{
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandEngineCut}, "(" + imei + "AV010)"},
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandEngineRestore}, "(" + imei + "AV011)"},
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandReboot}, "(" + imei + "AT00)"},
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandLocate}, "(" + imei + "AP00)"},
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandSetInterval, IntervalSeconds: 20}, "(" + imei + "AR0000140000)"},
+	}
+	for _, tc := range cases {
+		frame, err := enc.EncodeCommand(tc.cmd)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.cmd.Kind, err)
+		}
+		if string(frame) != tc.want {
+			t.Fatalf("%s: frame = %q, want %q", tc.cmd.Kind, frame, tc.want)
+		}
+	}
+	if _, err := enc.EncodeCommand(models.DeviceCommand{IMEI: imei, Kind: "open_trunk"}); !errors.Is(err, ErrCommandUnsupported) {
+		t.Fatalf("unsupported kind: err = %v, want ErrCommandUnsupported", err)
+	}
+	if _, err := enc.EncodeCommand(models.DeviceCommand{Kind: models.CommandReboot}); err == nil {
+		t.Fatal("a command without an IMEI was encoded")
+	}
+	if _, err := enc.EncodeCommand(models.DeviceCommand{IMEI: imei, Kind: models.CommandSetInterval, IntervalSeconds: 1}); err == nil {
+		t.Fatal("interval 1 s was accepted (must be 5..86400)")
+	}
+}
+
+// TestDispatchRefusesSecondCommandWhileDeviceIsBusy covers the single-in-flight
+// rule: a GT06 reply carries no request id, so two outstanding commands would be
+// ambiguous (the live E2E run acked the older one and left the newer `sent`).
+func TestDispatchRefusesSecondCommandWhileDeviceIsBusy(t *testing.T) {
+	cfg := &internal.Config{}
+	cfg.TCP.MaxConnections = 4
+	srv := NewServer(cfg, nil, nil)
+	defer srv.Shutdown()
+
+	imei := "864201040512345"
+	device := devicePipe(t, srv, imei, models.ProtoGT06)
+	g := testGateway(srv)
+
+	// net.Pipe is synchronous: the device end must be read continuously or the
+	// dispatcher would block on its own write (that is what the real decoder does).
+	frames := make(chan []byte, 4)
+	go func() {
+		buf := make([]byte, 128)
+		for {
+			n, err := device.Read(buf)
+			if err != nil {
+				return
+			}
+			frames <- append([]byte(nil), buf[:n]...)
+		}
+	}()
+
+	first := models.DeviceCommand{RequestID: "req-1", CompanyCode: "DEV001", VehicleID: 1,
+		IMEI: imei, Kind: models.CommandEngineCut, CreatedAt: time.Now().UTC()}
+	res := g.dispatch(first)
+	if res.Status != models.CommandStatusSent {
+		t.Fatalf("first dispatch = %s (%s), want sent", res.Status, res.Detail)
+	}
+	select {
+	case <-frames:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first frame never reached the device")
+	}
+
+	second := models.DeviceCommand{RequestID: "req-2", CompanyCode: "DEV001", VehicleID: 1,
+		IMEI: imei, Kind: models.CommandEngineRestore, CreatedAt: time.Now().UTC()}
+	res = g.dispatch(second)
+	if res.Status != models.CommandStatusFailed {
+		t.Fatalf("second dispatch = %s, want failed (device busy)", res.Status)
+	}
+	if !strings.Contains(res.Detail, "req-1") {
+		t.Fatalf("busy detail = %q, want the in-flight request id", res.Detail)
+	}
+	select {
+	case f := <-frames:
+		t.Fatalf("a second frame was written while the device was busy: % x", f)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// After the first command is acknowledged the device accepts the next one.
+	g.Ack(imei, "DYD=Success!")
+	if got := g.inflightFor(imei); got != nil {
+		t.Fatalf("inflight after ack = %+v, want nil", got)
+	}
+	res = g.dispatch(second)
+	if res.Status != models.CommandStatusSent {
+		t.Fatalf("dispatch after ack = %s (%s), want sent", res.Status, res.Detail)
+	}
+	select {
+	case <-frames:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the follow-up frame never reached the device")
+	}
+}
+
+// TestHandleRequestDropsStaleCommand covers the backlog guard: a JetStream consumer
+// recreation redelivers the whole stream, and an hours-old remote command must not
+// reach a moving vehicle.
+func TestHandleRequestDropsStaleCommand(t *testing.T) {
+	cfg := &internal.Config{}
+	cfg.TCP.MaxConnections = 4
+	srv := NewServer(cfg, nil, nil)
+	defer srv.Shutdown()
+
+	g := testGateway(srv)
+	g.maxAge = 1 * time.Minute
+	results := make(chan models.CommandResult, 4)
+	g.onResult = func(res models.CommandResult) { results <- res }
+
+	stale := models.DeviceCommand{RequestID: "req-old", CompanyCode: "DEV001",
+		IMEI: "864201040512345", Kind: models.CommandEngineCut,
+		CreatedAt: time.Now().UTC().Add(-2 * time.Hour)}
+	if err := g.handleRequest(&nats.Msg{Subject: models.CommandSubjectRequest("DEV001"),
+		Data: mustJSON(t, stale)}); err != nil {
+		t.Fatalf("handleRequest(stale) = %v, want nil (the message must be acknowledged)", err)
+	}
+	select {
+	case res := <-results:
+		if res.RequestID != "req-old" || res.Status != models.CommandStatusFailed {
+			t.Fatalf("stale result = %+v, want failed", res)
+		}
+		if !strings.Contains(res.Detail, "COMMAND_MAX_AGE_SECONDS") {
+			t.Fatalf("stale detail = %q, want the max-age reason", res.Detail)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a stale command was not recorded (it would be re-sent on redelivery)")
+	}
+
+	// A command inside the window is dispatched normally. No device is registered in
+	// this test, so the recorded outcome is `offline` — the point is that it is NOT
+	// reported as stale.
+	fresh := stale
+	fresh.RequestID = "req-new"
+	fresh.CreatedAt = time.Now().UTC()
+	if err := g.handleRequest(&nats.Msg{Subject: models.CommandSubjectRequest("DEV001"),
+		Data: mustJSON(t, fresh)}); err != nil {
+		t.Fatalf("handleRequest(fresh) = %v, want nil", err)
+	}
+	select {
+	case res := <-results:
+		if res.Status != models.CommandStatusOffline {
+			t.Fatalf("fresh result = %+v, want offline (device not connected)", res)
+		}
+		if strings.Contains(res.Detail, "COMMAND_MAX_AGE_SECONDS") {
+			t.Fatalf("a fresh command was dropped as stale: %q", res.Detail)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a fresh command produced no outcome")
+	}
+}
+
+// mustJSON marshals a command for a synthetic NATS message.
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return raw
 }
 
 func TestGT06CommandContentWhitelist(t *testing.T) {
@@ -289,6 +463,34 @@ func TestSweepExpiredMarksPendingAsTimeout(t *testing.T) {
 	g.sweepExpired()
 	if len(g.pending) != 0 {
 		t.Fatalf("pending set = %d after the sweep, want 0 (expired)", len(g.pending))
+	}
+}
+
+func TestCommandTransitionTimes(t *testing.T) {
+	// `offline` never reached a device: both timestamps stay NULL.
+	if sent, acked := commandTransitionTimes(models.CommandResult{Status: models.CommandStatusOffline}); sent != nil || acked != nil {
+		t.Fatalf("offline → sent=%v acked=%v, want nil/nil", sent, acked)
+	}
+	// `sent`/`timeout` stamped sent_at only.
+	for _, st := range []string{models.CommandStatusSent, models.CommandStatusTimeout} {
+		sent, acked := commandTransitionTimes(models.CommandResult{Status: st})
+		if sent == nil || acked != nil {
+			t.Fatalf("%s → sent=%v acked=%v, want sent/nil", st, sent, acked)
+		}
+	}
+	// `acked` stamps both.
+	sent, acked := commandTransitionTimes(models.CommandResult{Status: models.CommandStatusAcked, ACK: "DYD=Success!"})
+	if sent == nil || acked == nil {
+		t.Fatalf("acked → sent=%v acked=%v, want both", sent, acked)
+	}
+	// A device-reported failure (`failed` + ACK) also stamps both, because the frame
+	// did reach the device; a local encode/write failure stamps nothing.
+	sent, acked = commandTransitionTimes(models.CommandResult{Status: models.CommandStatusFailed, ACK: "DYD=Unvalued Fix"})
+	if sent == nil || acked == nil {
+		t.Fatalf("failed-with-ack → sent=%v acked=%v, want both", sent, acked)
+	}
+	if sent, acked = commandTransitionTimes(models.CommandResult{Status: models.CommandStatusFailed, Detail: "encode: boom"}); sent != nil || acked != nil {
+		t.Fatalf("failed-before-device → sent=%v acked=%v, want nil/nil", sent, acked)
 	}
 }
 

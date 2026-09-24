@@ -568,16 +568,23 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ---
 
-## Phase B8 — Advanced Fleet Features ✅ (selesai 2026-09-24, 2 gap tercatat)
+## Phase B8 — Advanced Fleet Features ✅ (selesai 2026-09-24; audit lanjutan memperbaiki 4 gap)
 
 ### Tasks
 - [x] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device.
       → registry koneksi IMEI→socket (`controllers/registry.go`), dispatcher NATS
-      `command.request.<company>` (queue `command`) + encoder GT06 `0x80`
-      (`controllers/commands.go`: `DYD#`, `HFYD#`, `TIMER,<s>#`, `RESET#`, `DWXX#`),
+      `command.request.<company>` (queue `command`, **JetStream durable**
+      `ingestion-command-dispatch` + manual ack sejak audit lanjutan) + encoder GT06 `0x80`
+      (`controllers/commands.go`: `DYD#`, `HFYD#`, `TIMER,<s>#`, `RESET#`, `DWXX#`)
+      **dan TK103** (`AV010`/`AV011`/`AT00`/`AP00`/`AR00<4 hex>`),
       REST `POST|GET /api/v1/vehicles/{id}/commands`, audit `td_device_commands`
       (migrasi `021`), status `pending→sent→acked|failed|offline|timeout`, metrik
-      `device_commands_*`. Bukti: `docs/B8-B10-VERIFICATION.md` §1.1.
+      `device_commands_*`, E2E `scripts/e2e-commands.sh` (`make e2e-commands`) 5/5.
+      Dua guard hasil E2E live: **satu perintah in-flight per device** (balasan GT06
+      tidak membawa request id, jadi perintah kedua ditolak eksplisit) dan
+      **`COMMAND_MAX_AGE_SECONDS`** (replay backlog JetStream tidak boleh mengirim
+      `engine_cut` berumur jam ke kendaraan yang bergerak).
+      Bukti: `docs/B8-B10-VERIFICATION.md` §1.1 + §5 + §7.1.
 - [x] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert.
       → flag device (GT06 alarm `0x29`/`0x30`, Teltonika IO 253/254/240) diteruskan di
       `telemetry.raw`, episode speeding diukur (buka/tutup, `duration_seconds`),
@@ -592,17 +599,22 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 - [x] Perintah downlink terkirim & ACK device tercatat.
       → test `TestDispatchWritesFrameToRegisteredDevice` (byte `0x80 … "DYD#"` ke socket),
       `TestAckCapturesDeviceReply` (`DYD=Success!` → status `acked` + `ack_content`),
-      `TestSweepExpiredMarksPendingAsTimeout`, endpoint REST + baris audit PASS.
-      Gap: encoder non-GT06 melaporkan `failed: unsupported` (eksplisit).
+      `TestSweepExpiredMarksPendingAsTimeout`, `TestTK103CommandEncoding`,
+      `TestCommandTransitionTimes`, endpoint REST + baris audit PASS.
+      **E2E device nyata (simulator GT06): `scripts/e2e-commands.sh` 5/5 PASS** —
+      login → frame `0x80` diterima device → balasan `0x21 DYD=Success!` →
+      `td_device_commands(acked)`, plus kasus `offline` dan pengiriman durable saat
+      service mati. Gap tersisa: encoder selain GT06/TK103 melaporkan
+      `failed: unsupported` (eksplisit).
 - [x] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
       → `TestScoreFromCounts`, `TestDetectDriverRecordsDevicePulses`,
       `TestSpeedingEpisodeIsMeasuredAndClosedOnce`, `TestMaintenanceDueThresholds`,
       `TestSweepMaintenanceRaisesReminderAndStampsCooldown` PASS; tabel/constraint
       diverifikasi pada PostgreSQL nyata (§5).
 
-> Bukti lengkap: `docs/B8-B10-VERIFICATION.md`. Gap: skor belum dinormalisasi per jarak
-> (butuh agregat trip B7.2 → modul Safety B12) dan command memakai core NATS (bukan
-> durable JetStream).
+> Bukti lengkap: `docs/B8-B10-VERIFICATION.md`. Gap tersisa: skor belum dinormalisasi
+> per jarak (butuh agregat trip B7.2 → modul Safety B12) dan encoder keluarga selain
+> GT06/TK103 (Meiligao/Xexun/Totem/… masih `failed: unsupported`).
 
 ---
 
@@ -612,24 +624,30 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 - [x] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
       → 9 decoder baru (`proto_*.go`) + listener per keluarga (env `*_TCP_PORT`,
       `0` = nonaktif). **Ingest penuh:** TK103 (subset posisi), Meiligao, Xexun,
-      H02 (teks V3), Totem (PATTERN_1), GT02 (+heartbeat). **Framing+identitas**
-      (payload belum terdokumentasi in-repo → dihitung
-      `ingestion_unsupported_frames_total`): Suntech, Navigil, Castel.
+      H02 (teks V3), Totem (PATTERN_1), GT02 (+heartbeat), **Navigil (MSG 8 unit
+      report + MSG 18 tracking sejak audit lanjutan, dengan peta `NAVIGIL_DEVICE_MAP`
+      karena identitasnya device id 4 byte)**. **Framing+identitas+respons**
+      (payload posisi belum terdokumentasi in-repo → dihitung
+      `ingestion_unsupported_frames_total`): Suntech, **Castel (framing `Length` =
+      seluruh frame diperbaiki + balasan login/heartbeat 0x9001/0x9003)**.
       Bukti: `docs/B8-B10-VERIFICATION.md` §2.
 - [x] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
       → `controllers/decoder.go` (interface `Decoder` + registry); `main.go`
       membangun listener dari `RegisteredDecoders()`; `server.go` menolak protokol
       tanpa decoder alih-alih menebak GT06. 11 listener aktif saat boot.
 - [x] Test vector per protokol (hex sample → struct → persist).
-      → `controllers/protocols_test.go` (semua keluarga) + **end-to-end nyata**:
-      frame Xexun ke `:9004` → `th_telemetry_logs` (lat -6.2, lon 106.833333,
-      speed 41.4848 km/h, `acc_status` NULL) + Redis live state ONLINE, tanpa
-      mengubah worker-live/persistence/alert (§2.3).
+      → `controllers/protocols_test.go` (semua keluarga; termasuk uji ACK/payload
+      Navigil, peta device id, framing Castel dua-frame berurutan + respons
+      login/heartbeat) + **end-to-end nyata**: frame Xexun ke `:9004` →
+      `th_telemetry_logs` (lat -6.2, lon 106.833333, speed 41.4848 km/h,
+      `acc_status` NULL) + Redis live state ONLINE, tanpa mengubah
+      worker-live/persistence/alert (§2.3).
 
 ### Acceptance
 - [x] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
       → terbukti untuk Xexun (TCP nyata, §2.3) dan berlaku untuk seluruh keluarga
-      ber-"ingest penuh"; keluarga framing-only belum memenuhi kriteria ini (gap §4).
+      ber-"ingest penuh" (kini termasuk Navigil MSG 8/18); keluarga framing-only
+      (Suntech, Castel GPS) belum memenuhi kriteria ini (gap §4).
 
 ---
 

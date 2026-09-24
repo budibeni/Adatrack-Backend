@@ -46,6 +46,14 @@ func main() {
 		"interval_seconds", cfg.Telemetry.IntervalSeconds,
 		"env", "TELEMETRY_INTERVAL_SECONDS", "metric", "telemetry_interval_seconds")
 
+	// B9 onboarding evidence: which families need an explicit identity mapping and
+	// whether the Castel reply byte order was overridden (both are counted/logged at
+	// runtime, but a boot line makes a misconfiguration obvious immediately).
+	slog.Info("protocol identity mappings",
+		"navigil_device_map_entries", controllers.NavigilDeviceMapSize(),
+		"env", "NAVIGIL_DEVICE_MAP",
+		"castel_response_type_big_endian", controllers.CastelResponseTypeBigEndian())
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

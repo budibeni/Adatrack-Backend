@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"adatrack_gps/ingestion-tcp/models"
 )
@@ -48,9 +49,7 @@ func (g *commandGateway) persist(ctx context.Context, cmd models.DeviceCommand, 
 		INSERT INTO td_device_commands
 			(request_id, company_code, vehicle_id, imei, command, parameters,
 			 status, detail, ack_content, created_by, sent_at, acked_at)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NULLIF($10, 0),
-		        CASE WHEN $7 IN ('sent', 'acked', 'failed', 'timeout') THEN CURRENT_TIMESTAMP END,
-		        CASE WHEN $7 IN ('acked', 'failed') AND $9 <> '' THEN CURRENT_TIMESTAMP END)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NULLIF($10, 0), $11, $12)
 		ON CONFLICT (request_id) DO UPDATE SET
 			status      = EXCLUDED.status,
 			detail      = EXCLUDED.detail,
@@ -59,10 +58,38 @@ func (g *commandGateway) persist(ctx context.Context, cmd models.DeviceCommand, 
 			acked_at    = COALESCE(td_device_commands.acked_at, EXCLUDED.acked_at),
 			updated_at  = CURRENT_TIMESTAMP`
 
+	// The timestamps are computed here (not with a SQL CASE on $7) because
+	// PostgreSQL deduces ONE type per parameter: using $7 both as the varchar
+	// column value and inside `CASE WHEN $7 IN (...)` fails with
+	// "inconsistent types deduced for parameter" (42P08) — found by the live run.
+	sentAt, ackedAt := commandTransitionTimes(res)
+
 	if _, err := pool.DB.ExecContext(ctx, q,
 		res.RequestID, company, cmd.VehicleID, cmd.IMEI, string(cmd.Kind), string(raw),
-		res.Status, res.Detail, res.ACK, cmd.CreatedBy); err != nil {
+		res.Status, res.Detail, res.ACK, cmd.CreatedBy, sentAt, ackedAt); err != nil {
 		slog.Warn("downlink: command audit write failed",
 			"company", company, "request_id", res.RequestID, "status", res.Status, "error", err)
 	}
+}
+
+// commandTransitionTimes maps a status onto the `sent_at`/`acked_at` columns:
+//   - `offline`   → never written to a device ⇒ both NULL,
+//   - `sent`      → sent_at = now,
+//   - `acked`     → sent_at + acked_at = now,
+//   - `failed`    → sent_at only when the frame reached the device (an ACK string is
+//     present for a device-reported failure, a detail-only failure was not written),
+//   - `timeout`   → sent_at (the frame went out, the reply never came).
+func commandTransitionTimes(res models.CommandResult) (sentAt, ackedAt *time.Time) {
+	now := time.Now().UTC()
+	switch res.Status {
+	case models.CommandStatusSent, models.CommandStatusTimeout:
+		sentAt = &now
+	case models.CommandStatusAcked:
+		sentAt, ackedAt = &now, &now
+	case models.CommandStatusFailed:
+		if res.ACK != "" {
+			sentAt, ackedAt = &now, &now
+		}
+	}
+	return sentAt, ackedAt
 }

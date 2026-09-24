@@ -387,8 +387,8 @@ Sumber acuan: `docs/docs-device/GT06_GPS_Tracker_Communication_Protocol_v1.8.1.m
 | H02 / H08 | 5010 | `H02_TCP_PORT` | ✅ B9 (teks V0/HTBT/V3; biner belum) |
 | Totem | 5005 | `TOTEM_TCP_PORT` | ✅ B9 (PATTERN_1 GPRMC; PATTERN_2 belum) |
 | GT02 / GT02A | 5006 | `GT02_TCP_PORT` | ✅ B9 (posisi + heartbeat) |
-| Navigil | 5012 | `NAVIGIL_TCP_PORT` | 🟡 B9 (framing+ACK; payload & peta device id belum) |
-| Castel (SC/CC/MPIP) | 5019 | `CASTEL_TCP_PORT` | 🟡 B9 (framing+identitas; payload GPS belum) |
+| Navigil | 5012 | `NAVIGIL_TCP_PORT` | 🟡 B9 (payload MSG 8/18 + ACK 24 B + peta `NAVIGIL_DEVICE_MAP`; MSG 13/15 belum) |
+| Castel (SC/CC/MPIP) | 5019 | `CASTEL_TCP_PORT` | 🟡 B9 (framing `Length`=seluruh frame + balasan login/heartbeat; payload GPS belum) |
 | CalAmp / Cellocator / Ruptela | lihat `04-priority-low.md` | `<PROTOCOL>_TCP_PORT` | ⬜ Backlog (prioritas rendah) |
 | *Protokol Traccar lainnya (200+)* | lihat `07-appendix.md` | `<PROTOCOL>_TCP_PORT` | ⬜ onboarding bertahap |
 
@@ -1701,8 +1701,8 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | **B4** | Performance, Monitoring, Testing, Hardening | 🟡 Sebagian 2026-09-24 (endurance 24/24, load 0 loss, SLA, DR drill, monitoring; gap: rollup `count.24h`, coverage lanjutan) — `docs/B4-VERIFICATION.md` |
 | **B6** | Real-Time Data Hardening (Audit Fix) | ✅ Selesai 2026-09-24 (ACC tri-state end-to-end, DTO FR-5.2 dikunci test) — `docs/B6-B7-VERIFICATION.md` |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ✅ Selesai 2026-09-24 (`make e2e-fleet` 10/10 PASS; gap: presisi geocoding terbatas level kota) — `docs/B6-B7-VERIFICATION.md` |
-| **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ✅ Selesai 2026-09-24 (downlink `DYD#` end-to-end + ACK perangkat; driver score + maintenance reminder; gap: encoder non-GT06, skor belum per jarak) — `docs/B8-B10-VERIFICATION.md` |
-| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | 🟡 Sebagian 2026-09-24 (decoder pluggable + 9 keluarga: ingest penuh TK103/Meiligao/Xexun/H02/Totem/GT02, framing+identitas Suntech/Navigil/Castel; E2E Xexun nyata) — `docs/B8-B10-VERIFICATION.md` |
+| **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ✅ Selesai 2026-09-24 + audit lanjutan (downlink `DYD#` end-to-end + ACK perangkat, encoder GT06 **& TK103**, konsumsi **JetStream durable**, E2E `make e2e-commands` 5/5; driver score + maintenance reminder; gap: encoder keluarga lain, skor belum per jarak) — `docs/B8-B10-VERIFICATION.md` |
+| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | 🟡 Sebagian 2026-09-24 + audit lanjutan (decoder pluggable + 9 keluarga: ingest penuh TK103/Meiligao/Xexun/H02/Totem/GT02/**Navigil MSG 8+18**, framing+identitas+respons **Castel**, framing+identitas Suntech; E2E Xexun nyata) — `docs/B8-B10-VERIFICATION.md` |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | ✅ Selesai 2026-09-24 (guard prefix otomatis, `TELEMETRY_INTERVAL_SECONDS`+metrik, `internal/validate` diterapkan) — `docs/B8-B10-VERIFICATION.md` |
 | **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant password `Admin@123` (FR-5.5), migrasi DB otomatis di Coolify (§14.5), dukungan protokol universal (Module 1c) | ⬜ Planned |
 | **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C (§4.2, FR-9.2); registry module & menu **master** (`tm_modules`/`tm_menus`, seed FRONTEND.md) + role menu access **per-tenant** (`tm_role_menu_access`, §6.2) | ⬜ Planned |
@@ -1747,9 +1747,10 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
    hanya memuat centroid provinsi (35/38) & kota (180/514); `tm_districts`/`tm_subdistricts`
    0 koordinat sehingga presisi berhenti di level kota — detail `docs/B6-B7-VERIFICATION.md` §3.
 2. **Keterbatasan protokol perangkat** — dari 200+ protokol Traccar, kini aktif: GT06, Teltonika,
-   + keluarga B9 (TK103 subset, Meiligao, Xexun, H02 teks, Totem P1, GT02 penuh; Suntech/Navigil/
-   Castel framing+identitas). Payload yang belum terdokumentasi di `docs/docs-device/traccar-reference/`
-   TIDAK ditebak — dihitung `ingestion_unsupported_frames_total` (detail: `docs/B8-B10-VERIFICATION.md` §4).
+   + keluarga B9 (TK103 subset, Meiligao, Xexun, H02 teks, Totem P1, GT02 penuh, Navigil MSG 8/18;
+   Suntech/Castel framing+identitas, Castel + balasan login/heartbeat). Payload yang belum
+   terdokumentasi di `docs/docs-device/traccar-reference/` TIDAK ditebak — dihitung
+   `ingestion_unsupported_frames_total` (detail: `docs/B8-B10-VERIFICATION.md` §4).
 3. **Codec 7 Teltonika DROPPED** — tidak didukung (error `unsupported codec 0x07`); decision
    doc: `docs/CODEC7_DECISION.md`.
 4. **GT06 date encoding** kontradiktif di dokumen vendor → default plain-hex + toggle BCD
