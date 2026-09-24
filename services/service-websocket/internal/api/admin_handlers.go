@@ -501,6 +501,7 @@ func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 
 type GPSDevice struct {
 	IMEI            string    `json:"imei"`
+	DeviceModel     string    `json:"device_model"`
 	SimNumber       string    `json:"sim_number"`
 	Protocol        string    `json:"protocol"`
 	AssignedCompany *string   `json:"assigned_company"`
@@ -527,7 +528,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	var devices []GPSDevice
 	for rows.Next() {
 		var d GPSDevice
-		if err := rows.Scan(&d.IMEI, &d.SimNumber, &d.Protocol, &d.AssignedCompany, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.IMEI, &d.DeviceModel, &d.SimNumber, &d.Protocol, &d.AssignedCompany, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			continue
 		}
 		devices = append(devices, d)
@@ -557,7 +558,7 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	_, err := dbclient.Pool.Exec(ctx, `
 		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, sim_number, protocol, status)
 		VALUES ($1, $2, $3, 'idle')
-	`, req.IMEI, req.SimNumber, req.Protocol)
+	`, req.IMEI, req.DeviceModel, req.SimNumber, req.Protocol)
 	if err != nil {
 		http.Error(w, "Failed to create GPS device", http.StatusInternalServerError)
 		return
