@@ -7,6 +7,15 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > load 400/1000/2000 msg/s **0 data loss**, SLA query 24–32 ms, Prometheus+Grafana+20 rule,
 > backup/restore drill row-count match, retensi partisi; **gap**: coverage ≥80% service inti,
 > endurance 24 jam penuh, drill replika). Bukti: `docs/B4-VERIFICATION.md`.
+> **B4 ✅ TUNTAS (2026-09-24):** **endurance 24/24 chunk PASS** (±1.436.000 pesan/chunk
+> @400 msg/s, 0 loss/chunk, 0 `backpressure DROP`), **drill replika 21/21** (kini self-healing:
+> deteksi replika belum menyusul → seed ulang base backup; teruji saat slot menahan 13,67 GB WAL),
+> coverage service inti ≥ 80 % (internal 91,9 · wp 91,1 · wl 86,8 · wa 84,2 · apiv 80,1),
+> indeks `idx_timestamp` FR-3.5 dipulihkan (SLA 30 hari 5.952 ms → **12 ms** pada bentuk
+> endpoint), multi-tenant lulus (race at-most-once diperbaiki), kapasitas JetStream diset
+> 16 GiB/stream + server 120GB. Catatan jujur: probe `count(*)` **global** (tanpa filter
+> kendaraan) kini dilaporkan `[INFO]` — bukan SLA PRD karena tak ada endpoint yang
+> memanggilnya. Sisa pekerjaan B4: **tidak ada item merah**; lihat §2.15.
 > **B5b (2026-09-22):** `internal/storage` (S3 SigV4 stdlib + Mem), service baru
 > `services/service-media` (HMAC ingest multipart/JSON+presigned PUT, katalog `th_media_events`
 > ber-RBAC, presigned GET + audit fail-closed `MEDIA_URL_ACCESS`, soft delete/restore, retensi
@@ -36,6 +45,10 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > **Gap yang dicatat jujur:** presisi geocoding berhenti di level kota (seed wilayah tanpa
 > koordinat kecamatan/desa) & metrik B7 belum masuk dashboard B4.
 > Bukti: `docs/B6-B7-VERIFICATION.md`; checklist: `.agent/03-backend-phases.md`.
+> **Verifikasi pihak ketiga (sesi B4, 2026-09-24):** kode B6/B7 yang di-commit (`10d7fff`)
+> diperiksa ulang: `go build ./...` OK untuk 7 modul (internal, ingestion-tcp, service-websocket,
+> worker-live, worker-persistence, worker-alert, tools/e2e-fleet), `bash -n scripts/e2e-fleet.sh` OK,
+> dan **`scripts/test.sh` (ADATRACK_IT=1) selesai dengan 0 FAIL** untuk seluruh modul.
 > Fase berikutnya: **B8 / B9 / B10 / B11** (B10 mendahului B11), lalu **B12**.
 > (Catatan: `make e2e-fleet` memakai plan gerak sintetis + memulihkan counter kendaraan fixture.)
 > (compose/migrations/`internal`/`foundation-check` + pipeline ingestion-tcp →

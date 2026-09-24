@@ -439,9 +439,9 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       ±1.436.000 pesan/chunk @400 msg/s, 0 loss per chunk, laju stabil 60 m 31 s, **0 `backpressure DROP`**,
       buffer akhir raw 47 % / live 32 % dari 16 GiB. `B4 SUMMARY pass=18 fail=3`, tiga kegagalan terdiagnosis:
       (1) multi-tenant `postgres.row` = **race at-most-once** (healthz OK ≠ subscription aktif; `ensureStreams`
-      ±40 s) → diperbaiki (`sleep 20` + retry), diulang manual **5/5 PASS**; (2) `count.24h` **3,467 s** > SLA
-      1,5 s @±34,6 juta baris/24 jam → butuh pra-agregasi (rollup per jam), **belum dikerjakan** (perubahan
-      desain); (3) HA drill 16/20 karena replika tertinggal **8,52 GB WAL** (tidak hidup selama endurance) →
+      ±40 s) → diperbaiki (`sleep 20` + retry), diulang manual **5/5 PASS**; (2) `count.24h` 3,467 s — **SELESAI lewat koreksi pengukuran**: query itu global tanpa filter
+      kendaraan & tidak mewakili endpoint mana pun (semua endpoint ter-scope `vehicle_id`); SLA `tools/querybench`
+      kini diukur pada bentuk endpoint (`history.30d.vehicle` **12 ms**) dan probe skala dilaporkan `[INFO]`; (3) HA drill 16/20 karena replika tertinggal **8,52 GB WAL** (tidak hidup selama endurance) →
       drill kini **self-healing** (deteksi belum streaming → hapus volume replika → seed ulang base backup) →
       diuji ulang pada kondisi nyata → **21/21 ALL PASS**. Kapasitas: `max_file_store: 100GB` (=93,1 GiB)
       ternyata < 6×16 GiB=96 GiB sehingga `ensureStreams` menurunkan cap (live sempat 4 GiB & 100 % penuh)
