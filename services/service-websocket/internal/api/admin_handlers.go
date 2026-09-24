@@ -100,11 +100,12 @@ func (h *Handler) ListCompanies(w http.ResponseWriter, r *http.Request) {
 }
 
 type UserInfo struct {
-	ID         int    `json:"id"`
-	Email      string `json:"email"`
-	IsActive   bool   `json:"is_active"`
-	CreatedAt  string `json:"created_at"`
-	GlobalRole string `json:"global_role"`
+	ID         int      `json:"id"`
+	Email      string   `json:"email"`
+	IsActive   bool     `json:"is_active"`
+	CreatedAt  string   `json:"created_at"`
+	GlobalRole string   `json:"global_role"`
+	Tenants    []string `json:"tenants"`
 }
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
@@ -142,12 +143,60 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	users := []UserInfo{}
+	var userIDs []int
+	userMap := make(map[int]*UserInfo)
+
 	for rows.Next() {
 		var u UserInfo
 		var t time.Time
 		if err := rows.Scan(&u.ID, &u.Email, &u.IsActive, &t, &u.GlobalRole); err == nil {
 			u.CreatedAt = t.Format(time.RFC3339)
+			u.Tenants = []string{}
 			users = append(users, u)
+		}
+	}
+	
+	// Map users for O(1) access
+	for i := range users {
+		userIDs = append(userIDs, users[i].ID)
+		userMap[users[i].ID] = &users[i]
+	}
+
+	if len(userIDs) > 0 {
+		// Fetch all company codes
+		compRows, err := dbclient.Pool.Query(ctx, "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL AND business_type = 'b2b'")
+		if err == nil {
+			var codes []string
+			for compRows.Next() {
+				var code string
+				if err := compRows.Scan(&code); err == nil {
+					codes = append(codes, code)
+				}
+			}
+			compRows.Close()
+
+			if len(codes) > 0 {
+				var queryParts []string
+				for _, code := range codes {
+					schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(code))
+					queryParts = append(queryParts, fmt.Sprintf("SELECT user_id, '%s' as company_code FROM %s.tm_user_company_access WHERE user_id = ANY($1) AND deleted_at IS NULL AND is_active = true", code, schema))
+				}
+				
+				query := strings.Join(queryParts, " UNION ALL ")
+				accessRows, err := dbclient.Pool.Query(ctx, query, userIDs)
+				if err == nil {
+					for accessRows.Next() {
+						var uid int
+						var ccode string
+						if err := accessRows.Scan(&uid, &ccode); err == nil {
+							if user, ok := userMap[uid]; ok {
+								user.Tenants = append(user.Tenants, ccode)
+							}
+						}
+					}
+					accessRows.Close()
+				}
+			}
 		}
 	}
 
