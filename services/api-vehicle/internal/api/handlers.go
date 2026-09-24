@@ -110,6 +110,13 @@ func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
 
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
+	var assigned *string
+	err := dbclient.Pool.QueryRow(r.Context(), "SELECT assigned_company FROM adatrack_gps_master.tm_gps_devices WHERE imei = $1", req.IMEI).Scan(&assigned)
+	if err != nil || assigned == nil || *assigned != claims.CompanyCode {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "IMEI is not assigned to your company or does not exist")
+		return
+	}
+
 	tx, err := dbclient.Pool.Begin(r.Context())
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Transaction failed")
@@ -298,13 +305,21 @@ func (h *Handler) UpdateVehicle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+	var assigned *string
+	err := dbclient.Pool.QueryRow(r.Context(), "SELECT assigned_company FROM adatrack_gps_master.tm_gps_devices WHERE imei = $1", req.IMEI).Scan(&assigned)
+	if err != nil || assigned == nil || *assigned != claims.CompanyCode {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "IMEI is not assigned to your company or does not exist")
+		return
+	}
+
+	_, err = dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
 		UPDATE %s.tm_vehicles 
-		SET plate_number = COALESCE(NULLIF($1, ''), plate_number),
-		    make = COALESCE(NULLIF($2, ''), make),
-		    model = COALESCE(NULLIF($3, ''), model)
-		WHERE id = $4 AND deleted_at IS NULL
-	`, schema), req.PlateNumber, req.Make, req.Model, id)
+		SET imei = COALESCE(NULLIF($1, ''), imei),
+		    plate_number = COALESCE(NULLIF($2, ''), plate_number),
+		    make = COALESCE(NULLIF($3, ''), make),
+		    model = COALESCE(NULLIF($4, ''), model)
+		WHERE id = $5 AND deleted_at IS NULL
+	`, schema), req.IMEI, req.PlateNumber, req.Make, req.Model, id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update vehicle")
 		return

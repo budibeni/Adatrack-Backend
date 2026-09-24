@@ -58,6 +58,9 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/roles", h.ListRoles)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/companies", h.ListCompanies)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/users", h.ListUsers)
+			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/gps-devices", h.GetGPSDevices)
+			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/gps-devices", h.CreateGPSDevice)
+			r.With(auth.EnsurePlatformAdminMiddleware).Put("/admin/gps-devices/{imei}/assign", h.AssignGPSDevice)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/companies/{code}/modules", h.AdminGetTenantModules)
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/companies/{code}/modules", h.AdminUpdateTenantModules)
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/users", h.AdminCreateUser)
@@ -65,6 +68,7 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			
 
 			// Tenant endpoints
+			r.Get("/gps/available", h.GetAvailableGPSDevices)
 			r.Get("/vehicles", h.ListVehicles)
 			r.Get("/vehicles/{id}", h.GetVehicle)
 			r.Get("/vehicles/{id}/history", h.GetVehicleHistory)

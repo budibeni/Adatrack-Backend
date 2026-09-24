@@ -837,3 +837,43 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+func (h *Handler) GetAvailableGPSDevices(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	query := fmt.Sprintf(`
+		SELECT m.imei, m.sim_number, m.protocol, m.status, m.created_at, m.updated_at
+		FROM adatrack_gps_master.tm_gps_devices m
+		LEFT JOIN %s.tm_vehicles v ON m.imei = v.imei AND v.deleted_at IS NULL
+		WHERE m.assigned_company = $1 AND v.imei IS NULL
+	`, schema)
+
+	rows, err := dbclient.Pool.Query(r.Context(), query, claims.CompanyCode)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query GPS devices")
+		return
+	}
+	defer rows.Close()
+
+	var devices []GPSDevice
+	for rows.Next() {
+		var d GPSDevice
+		if err := rows.Scan(&d.IMEI, &d.SimNumber, &d.Protocol, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			continue
+		}
+		cc := claims.CompanyCode
+		d.AssignedCompany = &cc
+		devices = append(devices, d)
+	}
+	if devices == nil {
+		devices = []GPSDevice{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(devices)
+}
