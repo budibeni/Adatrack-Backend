@@ -414,7 +414,7 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 	`, schema), newUserID)
 	if err != nil {
 		logger.Log.Error("Failed to grant admin access", "err", err)
-		h.writeError(w, http.StatusInternalServerError, "ACCESS_CREATION_FAILED", "Failed to grant admin access to tenant")
+		h.writeError(w, http.StatusInternalServerError, "ACCESS_CREATION_FAILED", "Failed to grant admin access to tenant: " + err.Error())
 		return
 	}
 	

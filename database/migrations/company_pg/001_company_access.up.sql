@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS tm_user_company_access (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL, 
-    role_override VARCHAR(50),
+    role_code VARCHAR(50),
     is_active BOOLEAN DEFAULT true,
     permissions JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
