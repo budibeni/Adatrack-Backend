@@ -501,6 +501,7 @@ func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 
 type GPSDevice struct {
 	IMEI            string    `json:"imei"`
+	DeviceBrand     string    `json:"device_brand"`
 	DeviceModel     string    `json:"device_model"`
 	SimNumber       string    `json:"sim_number"`
 	Protocol        string    `json:"protocol"`
@@ -515,7 +516,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	rows, err := dbclient.Pool.Query(ctx, `
-		SELECT imei, COALESCE(device_model, ''), COALESCE(sim_number, ''), COALESCE(protocol, ''), assigned_company, status, created_at, updated_at
+		SELECT imei, COALESCE(device_brand, ''), COALESCE(device_model, ''), COALESCE(sim_number, ''), COALESCE(protocol, ''), assigned_company, status, created_at, updated_at
 		FROM adatrack_gps_master.tm_gps_devices
 		ORDER BY created_at DESC
 	`)
@@ -528,7 +529,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	var devices []GPSDevice
 	for rows.Next() {
 		var d GPSDevice
-		if err := rows.Scan(&d.IMEI, &d.DeviceModel, &d.SimNumber, &d.Protocol, &d.AssignedCompany, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.IMEI, &d.DeviceBrand, &d.DeviceModel, &d.SimNumber, &d.Protocol, &d.AssignedCompany, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			continue
 		}
 		devices = append(devices, d)
@@ -558,7 +559,7 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	_, err := dbclient.Pool.Exec(ctx, `
 		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, sim_number, protocol, status)
 		VALUES ($1, $2, $3, 'idle')
-	`, req.IMEI, req.DeviceModel, req.SimNumber, req.Protocol)
+	`, req.IMEI, req.DeviceBrand, req.DeviceModel, req.SimNumber, req.Protocol)
 	if err != nil {
 		http.Error(w, "Failed to create GPS device", http.StatusInternalServerError)
 		return
