@@ -100,12 +100,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Email == "" || req.Password == "" || req.CompanyCode == "" {
-		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email, password, and company_code are required")
+	if req.Email == "" || req.Password == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "email and password are required")
 		return
 	}
 
-	if !tenant.IsValidCompanyCode(req.CompanyCode) {
+	if req.CompanyCode != "" && !tenant.IsValidCompanyCode(req.CompanyCode) {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid company_code format")
 		return
 	}
@@ -132,7 +132,65 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.CompanyCode == "" {
+		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL AND business_type = 'b2b'")
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query companies")
+			return
+		}
+		
+		var codes []string
+		for rows.Next() {
+			var code string
+			if err := rows.Scan(&code); err == nil {
+				codes = append(codes, code)
+			}
+		}
+		rows.Close()
+
+		if len(codes) > 0 {
+			var queryParts []string
+			for _, code := range codes {
+				schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(code))
+				queryParts = append(queryParts, fmt.Sprintf("SELECT '%s' as company_code FROM %s.tm_user_company_access WHERE user_id = $1 AND deleted_at IS NULL AND is_active = true", code, schema))
+			}
+			
+			query := strings.Join(queryParts, " UNION ALL ")
+			rowsAccess, err := dbclient.Pool.Query(r.Context(), query, userID)
+			if err == nil {
+				var userCompanies []string
+				for rowsAccess.Next() {
+					var comp string
+					if err := rowsAccess.Scan(&comp); err == nil {
+						userCompanies = append(userCompanies, comp)
+					}
+				}
+				rowsAccess.Close()
+
+				if len(userCompanies) == 1 {
+					req.CompanyCode = userCompanies[0]
+				} else if len(userCompanies) > 1 {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"status": "multiple_companies",
+						"data": map[string]interface{}{
+							"companies": userCompanies,
+						},
+					})
+					return
+				}
+			}
+		}
+		
+		if req.CompanyCode == "" {
+			h.writeError(w, http.StatusForbidden, "COMPANY_ACCESS_DENIED", "No access to any company")
+			return
+		}
+	}
+
 	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(req.CompanyCode))
+
 	var roleCode *string
 	var companyActive bool
 	err = dbclient.Pool.QueryRow(r.Context(),
@@ -391,30 +449,21 @@ func (h *Handler) CreateCompany(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-		if migrationDir != "" {
-			files, _ := filepath.Glob(filepath.Join(migrationDir, "*.up.sql"))
-			if len(files) == 0 {
-				logger.Log.Error("No migration files found in directory", "dir", migrationDir)
-				h.writeError(w, http.StatusInternalServerError, "MIGRATION_NOT_FOUND", "No migration files found to provision tenant")
-				return
-			}
-			sort.Strings(files)
-			for _, file := range files {
-				sqlBytes, err := os.ReadFile(file)
-				if err == nil {
-					execSQL := fmt.Sprintf("SET search_path TO %s, public; %s", schema, string(sqlBytes))
-					_, err := tx.Exec(r.Context(), execSQL)
-					if err != nil {
-						logger.Log.Error("Migration error in company schema", "file", file, "err", err)
-						h.writeError(w, http.StatusInternalServerError, "MIGRATION_EXEC_FAILED", "Failed to execute migration: "+filepath.Base(file)+" error: "+err.Error())
-						return
-					}
+	if migrationDir != "" {
+		files, _ := filepath.Glob(filepath.Join(migrationDir, "*.up.sql"))
+		sort.Strings(files)
+		for _, file := range files {
+			sqlBytes, err := os.ReadFile(file)
+			if err == nil {
+				execSQL := fmt.Sprintf("SET search_path TO %s, public; %s", schema, string(sqlBytes))
+				_, err := tx.Exec(r.Context(), execSQL)
+				if err != nil {
+					logger.Log.Error("Migration error in company schema", "file", file, "err", err)
 				}
 			}
-		} else {
-			h.writeError(w, http.StatusInternalServerError, "MIGRATION_DIR_NOT_FOUND", "Migration directory not found")
-			return
 		}
+	}
+
 	// 5. Grant admin access
 	_, err = tx.Exec(r.Context(), fmt.Sprintf(`
 		INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active)
