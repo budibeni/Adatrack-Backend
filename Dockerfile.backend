@@ -67,6 +67,7 @@ FROM alpine:latest AS service-websocket
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/service-websocket /app/service
+COPY database /app/database
 EXPOSE 8080
 CMD ["/app/service"]
 
