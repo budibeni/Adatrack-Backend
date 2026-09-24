@@ -1,10 +1,12 @@
 # Backend Phases — Rencana Pengerjaan B0–B12 (Clean Slate)
 
-> **STATUS 2026-09-24 (diperbarui):** **B0–B6 SELESAI**, **B7 SELESAI (B7.1–B7.4)**, dan
-> **B4 🟡 sebagian** (endurance 24/24 tuntas; gap: rollup `count.24h`, coverage lanjutan).
-> Fase berikutnya: **B8/B9/B10/B11** (B10 mendahului B11), lalu **B12**.
+> **STATUS 2026-09-24 (diperbarui):** **B0–B7 SELESAI**, **B8 ✅ selesai**, **B9 🟡 sebagian**
+> (6 keluarga ingest penuh + 3 framing-only), **B10 ✅ selesai**, dan **B4 🟡 sebagian**
+> (endurance 24/24 tuntas; gap: rollup `count.24h`, coverage lanjutan).
+> Fase berikutnya: **B11** (B10 sudah mendahuluinya), lalu **B12**.
 > Checklist hanya dicentang bila ada bukti verifikasi nyata (perintah + hasil) pada kode baru
-> di `backend/`; bukti B6+B7 ringkas ada di `docs/B6-B7-VERIFICATION.md` (E2E: `make e2e-fleet`).
+> di `backend/`; bukti B6+B7 ringkas ada di `docs/B6-B7-VERIFICATION.md` dan bukti B8+B9+B10
+> di `docs/B8-B10-VERIFICATION.md` (regresi E2E: `make e2e-pipeline` 5/5 PASS).
 
 ## Referensi
 - **PRD:** `PRD.md` (konsolidasi v1.7.0) — sumber kebenaran requirement.
@@ -566,43 +568,102 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ---
 
-## Phase B8 — Advanced Fleet Features ⬜
+## Phase B8 — Advanced Fleet Features ✅ (selesai 2026-09-24, 2 gap tercatat)
 
 ### Tasks
-- [ ] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device.
-- [ ] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert.
-- [ ] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
+- [x] Downlink/remote command `DYD#` (dan varian perintah device lain) via ingestion-tcp → device.
+      → registry koneksi IMEI→socket (`controllers/registry.go`), dispatcher NATS
+      `command.request.<company>` (queue `command`) + encoder GT06 `0x80`
+      (`controllers/commands.go`: `DYD#`, `HFYD#`, `TIMER,<s>#`, `RESET#`, `DWXX#`),
+      REST `POST|GET /api/v1/vehicles/{id}/commands`, audit `td_device_commands`
+      (migrasi `021`), status `pending→sent→acked|failed|offline|timeout`, metrik
+      `device_commands_*`. Bukti: `docs/B8-B10-VERIFICATION.md` §1.1.
+- [x] Driver behavior: deteksi harsh braking/acceleration/cornering/speeding duration → skor mengemudi + alert.
+      → flag device (GT06 alarm `0x29`/`0x30`, Teltonika IO 253/254/240) diteruskan di
+      `telemetry.raw`, episode speeding diukur (buka/tutup, `duration_seconds`),
+      `td_driver_events` + `th_driver_scores` + alert `driver_event` (migrasi `022`),
+      `scoreFromCounts` (10/10/5/5, grade A..E). Bukti: §1.2.
+- [x] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
+      → `tm_maintenance_schedules` + `td_maintenance_logs` (migrasi `023`), evaluasi
+      tiga dimensi (km/engine hours/kalender) + margin + cooldown di worker-alert,
+      alert `maintenance_due`. CRUD/UI tetap B12. Bukti: §1.3.
 
 ### Acceptance
-- [ ] Perintah downlink terkirim & ACK device tercatat.
-- [ ] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
+- [x] Perintah downlink terkirim & ACK device tercatat.
+      → test `TestDispatchWritesFrameToRegisteredDevice` (byte `0x80 … "DYD#"` ke socket),
+      `TestAckCapturesDeviceReply` (`DYD=Success!` → status `acked` + `ack_content`),
+      `TestSweepExpiredMarksPendingAsTimeout`, endpoint REST + baris audit PASS.
+      Gap: encoder non-GT06 melaporkan `failed: unsupported` (eksplisit).
+- [x] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
+      → `TestScoreFromCounts`, `TestDetectDriverRecordsDevicePulses`,
+      `TestSpeedingEpisodeIsMeasuredAndClosedOnce`, `TestMaintenanceDueThresholds`,
+      `TestSweepMaintenanceRaisesReminderAndStampsCooldown` PASS; tabel/constraint
+      diverifikasi pada PostgreSQL nyata (§5).
+
+> Bukti lengkap: `docs/B8-B10-VERIFICATION.md`. Gap: skor belum dinormalisasi per jarak
+> (butuh agregat trip B7.2 → modul Safety B12) dan command memakai core NATS (bukan
+> durable JetStream).
 
 ---
 
-## Phase B9 — Protocol Expansion ⬜
+## Phase B9 — Protocol Expansion 🟡 (sebagian, 2026-09-24)
 
 ### Tasks
-- [ ] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
-- [ ] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
-- [ ] Test vector per protokol (hex sample → struct → persist).
+- [x] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
+      → 9 decoder baru (`proto_*.go`) + listener per keluarga (env `*_TCP_PORT`,
+      `0` = nonaktif). **Ingest penuh:** TK103 (subset posisi), Meiligao, Xexun,
+      H02 (teks V3), Totem (PATTERN_1), GT02 (+heartbeat). **Framing+identitas**
+      (payload belum terdokumentasi in-repo → dihitung
+      `ingestion_unsupported_frames_total`): Suntech, Navigil, Castel.
+      Bukti: `docs/B8-B10-VERIFICATION.md` §2.
+- [x] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
+      → `controllers/decoder.go` (interface `Decoder` + registry); `main.go`
+      membangun listener dari `RegisteredDecoders()`; `server.go` menolak protokol
+      tanpa decoder alih-alih menebak GT06. 11 listener aktif saat boot.
+- [x] Test vector per protokol (hex sample → struct → persist).
+      → `controllers/protocols_test.go` (semua keluarga) + **end-to-end nyata**:
+      frame Xexun ke `:9004` → `th_telemetry_logs` (lat -6.2, lon 106.833333,
+      speed 41.4848 km/h, `acc_status` NULL) + Redis live state ONLINE, tanpa
+      mengubah worker-live/persistence/alert (§2.3).
 
 ### Acceptance
-- [ ] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
+- [x] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
+      → terbukti untuk Xexun (TCP nyata, §2.3) dan berlaku untuk seluruh keluarga
+      ber-"ingest penuh"; keluarga framing-only belum memenuhi kriteria ini (gap §4).
 
 ---
 
-## Phase B10 — Normalisasi & Konfigurasi ⬜ (PRD §6.0, §14)
+## Phase B10 — Normalisasi & Konfigurasi ✅ (selesai 2026-09-24)
 
 ### Tasks
-- [ ] Normalisasi prefix tabel `tm_`/`th_`/`td_` — migrasi rename idempoten (nol downtime).
-- [ ] Split user master: `tm_users` (B2B) / `tm_users_b2c` (B2C) + tipe bisnis di `tm_companies`.
-- [ ] Config ganda LOCAL + COOLIFY: `docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`.
-- [ ] Telemetry interval 20 s (default, bisa dikonfigurasi).
-- [ ] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh.
+- [x] Normalisasi prefix tabel `tm_`/`th_`/`td_` — migrasi rename idempoten (nol downtime).
+      → diterapkan sejak migrasi pertama (clean slate) dan kini **diverifikasi
+      otomatis**: `internal/normalization_test.go` memindai semua `CREATE TABLE` di
+      `database/migrations/{master_pg,company_pg}` (prefix benar + tidak
+      schema-qualified). Tidak ada rename destruktif → nol downtime.
+- [x] Split user master: `tm_users` (B2B) / `tm_users_b2c` (B2C) + tipe bisnis di `tm_companies`.
+      → master `008` (tm_users), `009` (tm_users_b2c), `003` (business_type);
+      dikunci test `TestBusinessTypeSplitIsDeclared`.
+- [x] Config ganda LOCAL + COOLIFY: `docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`.
+      → blok B8/B9/B10 ditambahkan di `.env.example` / `.env.local` / `.env.coolify`
+      (port dev 9xxx vs konvensi Traccar 5xxx, telemetry/driver/maintenance/command).
+- [x] Telemetry interval 20 s (default, bisa dikonfigurasi).
+      → `TELEMETRY_INTERVAL_SECONDS` (validasi `>0`), metrik
+      `telemetry_interval_seconds` di semua service, boot log ingestion, dipakai
+      untuk command `TIMER,<detik>#`.
+- [x] Input validation + anti-attack hardening (PRD §8.5/§9.6) menyeluruh.
+      → paket `internal/validate` + test; diterapkan pada IMEI create kendaraan,
+      `search` list kendaraan, dan endpoint command (whitelist/rentang); hardening
+      lama tetap berlaku (rate limit, body limit, security headers, batas panjang
+      frame, validasi checksum, anti-spoofing IMEI).
 
 ### Acceptance
-- [ ] Migrasi rename aman dijalankan berulang; seluruh service memakai nama baru.
-- [ ] Dua konfigurasi bisa di-up terpisah tanpa edit manual; interval 20 s efektif end-to-end.
+- [x] Migrasi rename aman dijalankan berulang; seluruh service memakai nama baru.
+      → tidak ada rename (konvensi sejak awal) → digantikan guard otomatis + bukti
+      migrasi `021`–`023` idempoten (skema scratch PostgreSQL + tenant `DEV001`).
+- [x] Dua konfigurasi bisa di-up terpisah tanpa edit manual; interval 20 s efektif end-to-end.
+      → `.env.local`/`.env.coolify` lengkap (`scripts/compose-up.sh` memilih varian);
+      `scripts/e2e-pipeline.sh` (LOCAL) **5/5 PASS**; boot log interval 20 s + gauge.
 
 ---
 

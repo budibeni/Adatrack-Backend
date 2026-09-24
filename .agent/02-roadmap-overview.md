@@ -50,6 +50,21 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > worker-live, worker-persistence, worker-alert, tools/e2e-fleet), `bash -n scripts/e2e-fleet.sh` OK,
 > dan **`scripts/test.sh` (ADATRACK_IT=1) selesai dengan 0 FAIL** untuk seluruh modul.
 > Fase berikutnya: **B8 / B9 / B10 / B11** (B10 mendahului B11), lalu **B12**.
+>
+> ---
+> **STATUS 2026-09-24 (sesi B8+B9+B10):** **B8 ✅ selesai** (downlink `DYD#` end-to-end:
+> registry koneksi → encoder GT06 `0x80` → `td_device_commands` `pending/sent/acked/offline/
+> failed/timeout`; driver behaviour `td_driver_events` + `th_driver_scores` + alert
+> `driver_event`; maintenance reminder `tm_maintenance_schedules`/`td_maintenance_logs` +
+> alert `maintenance_due`; REST `POST|GET /vehicles/{id}/commands`; migrasi `021`–`023`),
+> **B9 🟡 sebagian** (arsitektur decoder pluggable + 9 keluarga; **ingest penuh** TK103/Meiligao/
+> Xexun/H02/Totem/GT02, **framing+identitas** Suntech/Navigil/Castel; bukti E2E nyata: frame
+> Xexun `:9004` → `th_telemetry_logs` + Redis live state tanpa mengubah service lain), dan
+> **B10 ✅ selesai** (guard prefix `tm_/th_/td_` otomatis, `TELEMETRY_INTERVAL_SECONDS` +
+> metrik `telemetry_interval_seconds`, config ganda LOCAL/COOLIFY diperluas, `internal/validate`
+> §8.5/§9.6 + penerapan pada IMEI/search/command). **Regresi:** `scripts/test.sh` exit 0
+> (9 modul) & `make e2e-pipeline` **5/5 PASS** (migrasi baru diterapkan ke tenant `DEV001`).
+> Bukti lengkap + gap jujur: `docs/B8-B10-VERIFICATION.md`.
 > (Catatan: `make e2e-fleet` memakai plan gerak sintetis + memulihkan counter kendaraan fixture.)
 > (compose/migrations/`internal`/`foundation-check` + pipeline ingestion-tcp →
 > worker-live → worker-persistence: load 1000 msg/s tanpa data loss, isolasi
@@ -82,9 +97,9 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | 🟡 Sebagian (2026-09-19) — load 400→2000 msg/s 0 loss, SLA query, monitoring stack + rule SLO/alert, backup/restore drill, retensi; **gap**: coverage ≥80% service inti, endurance 24 jam penuh, drill replika, load WS 50×1200. Bukti: `docs/B4-VERIFICATION.md` |
 | **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` |✅ Selesai 2026-09-24 — ACC **tri-state** (`bool` → `*bool`: `acc_status` NULL, key `acc` hilang saat device tidak melaporkan), DTO FR-5.2 lengkap dikunci test, REST/WS sesuai data device. Bukti: `docs/B6-B7-VERIFICATION.md` §1 |
 | **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ✅ Selesai 2026-09-24 — migrasi `018`/`019`/`020`, akumulator FR-2.5 (Haversine + guard jump/gap), state machine FR-2.6 (`th_vehicle_trips`/`td_vehicle_stops`), geocoding offline + RDP playback; `make e2e-fleet` **10/10 PASS** (odometer 0.334 km = rute, trip/stop sesuai rencana). Gap: presisi geocoding berhenti di level kota (seed wilayah tanpa koordinat kecamatan/desa) — `docs/B6-B7-VERIFICATION.md` §3 |
-| **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert` | ⬜ Planned |
-| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ⬜ Planned |
-| **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ⬜ Planned |
+| **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert`, `api-vehicle` (+ migrasi company `021`–`023`) | ✅ Selesai 2026-09-24 — downlink end-to-end (registry→encoder GT06 `0x80`→`td_device_commands`→ACK `0x21`), driver behaviour (`td_driver_events`/`th_driver_scores`, alert `driver_event`), maintenance reminder (`tm_maintenance_schedules`/`td_maintenance_logs`, alert `maintenance_due`), REST `POST|GET /vehicles/{id}/commands`. Gap: encoder non-GT06 `failed: unsupported`, skor belum dinormalisasi per jarak, command via core NATS. Bukti: `docs/B8-B10-VERIFICATION.md` §1 |
+| **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | 🟡 Sebagian 2026-09-24 — arsitektur decoder pluggable (`Decoder`+registry, 11 listener), **ingest penuh**: TK103/Meiligao/Xexun/H02(teks)/Totem(P1)/GT02; **framing+identitas**: Suntech/Navigil/Castel (payload belum terdokumentasi → `ingestion_unsupported_frames_total`). E2E nyata: Xexun `:9004` → `th_telemetry_logs` + Redis live state. Bukti: §2 |
+| **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ✅ Selesai 2026-09-24 — guard prefix otomatis (`internal/normalization_test.go`), split identitas + `business_type` terkunci test, `TELEMETRY_INTERVAL_SECONDS` + metrik `telemetry_interval_seconds`, `.env.{example,local,coolify}` diperluas, `internal/validate` diterapkan. Bukti: §3 |
 | **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant `Admin@123` (FR-5.5), migrasi DB otomatis Coolify (§14.5), dukungan protokol universal (Module 1c) | `backend/`, `deployments/` | ⬜ Planned |
 | **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | ⬜ Planned |
 | **F1** | Scaffold Frontend (Next.js + Tailwind + Map) | `frontend/` | ⬜ Not started |
