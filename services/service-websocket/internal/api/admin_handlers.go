@@ -164,7 +164,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	if len(userIDs) > 0 {
 		// Fetch all company codes
-		compRows, err := dbclient.Pool.Query(ctx, "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL AND business_type = 'b2b'")
+		compRows, err := dbclient.Pool.Query(ctx, "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ")
 		if err == nil {
 			var codes []string
 			for compRows.Next() {
@@ -190,7 +190,16 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 						var ccode string
 						if err := accessRows.Scan(&uid, &ccode); err == nil {
 							if user, ok := userMap[uid]; ok {
-								user.Tenants = append(user.Tenants, ccode)
+								found := false
+								for _, t := range user.Tenants {
+									if t == ccode {
+										found = true
+										break
+									}
+								}
+								if !found {
+									user.Tenants = append(user.Tenants, ccode)
+								}
 							}
 						}
 					}

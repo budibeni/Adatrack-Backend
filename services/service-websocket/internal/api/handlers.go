@@ -133,7 +133,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.CompanyCode == "" {
-		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL AND business_type = 'b2b'")
+		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ")
 		if err != nil {
 			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query companies")
 			return
@@ -162,7 +162,16 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				for rowsAccess.Next() {
 					var comp string
 					if err := rowsAccess.Scan(&comp); err == nil {
-						userCompanies = append(userCompanies, comp)
+						found := false
+						for _, c := range userCompanies {
+							if c == comp {
+								found = true
+								break
+							}
+						}
+						if !found {
+							userCompanies = append(userCompanies, comp)
+						}
 					}
 				}
 				rowsAccess.Close()
