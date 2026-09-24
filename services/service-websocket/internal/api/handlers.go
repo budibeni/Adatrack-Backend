@@ -247,6 +247,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			"refresh_token":        refreshToken,
 			"must_change_password": mustChange,
 			"role":                 role,
+			"email":                req.Email,
 			"company_code":         req.CompanyCode,
 		},
 	})
