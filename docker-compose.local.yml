@@ -76,7 +76,7 @@ services:
     - ./deployments/grafana/provisioning:/etc/grafana/provisioning
     - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
   minio:
-    image: minio/minio:latest
+    image: bitnami/minio:latest
     container_name: adatrack_minio_local
     command: server /data --console-address ":9001"
     environment:
