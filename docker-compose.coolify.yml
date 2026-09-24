@@ -294,7 +294,7 @@ services:
     - .env.coolify
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.adatrack-ws.rule=Host(`api.103.69.106.62.nip.io`) && (PathPrefix(`/api/v1/auth`) || PathPrefix(`/api/v1/admin`) || PathPrefix(`/ws`) || PathPrefix(`/api/v1/companies`))"
+      - "traefik.http.routers.adatrack-ws.rule=Host(`api.103.69.106.62.nip.io`) && (PathPrefix(`/api/v1`) || PathPrefix(`/ws`))"
       - "traefik.http.routers.adatrack-ws.priority=100"
       - "traefik.http.services.adatrack-ws.loadbalancer.server.port=8080"
     networks:
