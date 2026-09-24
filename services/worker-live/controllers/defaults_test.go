@@ -21,7 +21,7 @@ func TestWorkerAppliesModelDefaults(t *testing.T) {
 	cfg.Live.IdleAfter = 0
 	cfg.Live.OfflineAfterMinutes = 0
 
-	w := New(cfg, nil, nil)
+	w := New(cfg, nil, nil, nil)
 	if w.buffer == nil {
 		t.Fatal("buffer map must be allocated (bounded buffer, FR-4.4)")
 	}
@@ -55,7 +55,7 @@ func TestShouldMarkOfflineUsesModelDefault(t *testing.T) {
 func TestFlushBufferEmptyIsNoop(t *testing.T) {
 	cfg := internal.LoadConfig()
 	cfg.Live.MaxBatch = 8
-	w := New(cfg, nil, nil)
+	w := New(cfg, nil, nil, nil)
 	w.flushBuffer()
 	if len(w.buffer) != 0 {
 		t.Errorf("empty flush left %d entries", len(w.buffer))
@@ -65,7 +65,7 @@ func TestFlushBufferEmptyIsNoop(t *testing.T) {
 // TestPokeIsNonBlocking covers the buffered-signal contract: the second poke of
 // an already-signalled flusher must not block the caller (FR-2.3 fan-in).
 func TestPokeIsNonBlocking(t *testing.T) {
-	w := New(internal.LoadConfig(), nil, nil)
+	w := New(internal.LoadConfig(), nil, nil, nil)
 	w.poke()
 	w.poke() // must not block: the channel already holds one signal
 	if len(w.flushCh) != 1 {

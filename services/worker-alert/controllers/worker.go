@@ -266,7 +266,7 @@ func (w *Worker) detFuel(ctx context.Context, t models.TelemetryMessage, now tim
 
 	// Apply ACC-gate for FUEL_DROP (strict literal only when FUEL_DROP_REQUIRE_ACC=true).
 	if cfg.DropThresholdPct > 0 && w.cfg.Fuel.RequireACC {
-		if !t.ACC {
+		if !AccOn(t.ACC) {
 			w.fuelStashMu.Lock()
 			stash.accHistory = append(stash.accHistory, now.Unix())
 			if len(stash.accHistory) > w.cfg.Fuel.ACCStaleSeconds {

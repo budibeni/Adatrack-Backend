@@ -1644,8 +1644,10 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 
 ## 19. Success Criteria (Acceptance)
 
-- **Backend lengkap** — seluruh service multi-tenant (master + ≤50 company DB) B0–B6 selesai;
-  B7 sub-fase odometer/engine-hours & trip/stop selesai (reverse geocoding & point reduction ⬜).
+- **Backend lengkap** — seluruh service multi-tenant (master + ≤50 company DB) B0–B7 selesai;
+  B7.1 odometer/engine-hours, B7.2 trip/stop, B7.3 reverse geocoding (offline, presisi level
+  kota menunggu data koordinat kecamatan/desa) dan B7.4 point reduction (RDP) terverifikasi
+  `make e2e-fleet` 10/10 (bukti: `docs/B6-B7-VERIFICATION.md`).
 - **Throughput** — sustained 2.000 msg/s tanpa data loss (diverifikasi via load test +
   endurance 24 jam di B4).
 - **Telemetry interval default 20 s** per device (nominal 250 msg/s untuk 5.000 device).
@@ -1693,12 +1695,12 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | **B0** | Infrastruktur + Foundations (compose, migrations, internal pkg) | ✅ Selesai 2026-09-15 |
 | **B1** | Pipeline Data: ingestion-tcp · worker-live · worker-persistence | ✅ Selesai 2026-09-15 |
 | **B2** | service-websocket: REST + WebSocket + RBAC + auto-provision company | ✅ Selesai 2026-09-15 |
-| **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ⬜ Berikutnya (belum dimulai) |
-| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ⬜ Belum dimulai |
-| **B5b** | Dashcam Event Media Scope A (Module 8) | ⬜ Belum dimulai |
-| **B4** | Performance, Monitoring, Testing, Hardening | ⬜ Belum dimulai |
-| **B6** | Real-Time Data Hardening (Audit Fix) | ⬜ Belum dimulai |
-| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ⬜ Belum dimulai |
+| **B3** | worker-alert + api-vehicle: GEOFENCE/OVERSPEED/BATTERY/OFFLINE/SOS/ROUTE_DEVIATION + notifikasi | ✅ Selesai 2026-09-16 |
+| **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | ✅ Selesai 2026-09-22 (`make e2e-fuel` 11/11 PASS) |
+| **B5b** | Dashcam Event Media Scope A (Module 8) | ✅ Selesai 2026-09-22 (`make e2e-media` 18/18 PASS) |
+| **B4** | Performance, Monitoring, Testing, Hardening | 🟡 Sebagian 2026-09-24 (endurance 24/24, load 0 loss, SLA, DR drill, monitoring; gap: rollup `count.24h`, coverage lanjutan) — `docs/B4-VERIFICATION.md` |
+| **B6** | Real-Time Data Hardening (Audit Fix) | ✅ Selesai 2026-09-24 (ACC tri-state end-to-end, DTO FR-5.2 dikunci test) — `docs/B6-B7-VERIFICATION.md` |
+| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop · B7.3 Reverse Geocoding · B7.4 Point Reduction) | ✅ Selesai 2026-09-24 (`make e2e-fleet` 10/10 PASS; gap: presisi geocoding terbatas level kota) — `docs/B6-B7-VERIFICATION.md` |
 | **B8** | Advanced Fleet Features (downlink, driver behavior, maintenance) | ⬜ Planned |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | ⬜ Planned |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | ⬜ Planned |
@@ -1739,8 +1741,11 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 
 ### 21.1 A. Catatan Fitur Existing (Inkonsistensi & Kelengkapan)
 
-1. **Reverse Geocoding belum diintegrasikan** — tabel wilayah (provinces/cities/districts/
-   subdistricts) belum digunakan untuk resolusi alamat offline dan titik telemetri. (B7.3 ⬜)
+1. **Reverse Geocoding** — tabel wilayah (provinces/cities/districts/subdistricts) kini
+   dipakai untuk resolusi alamat offline (cache in-memory + Redis + indeks master) di endpoint
+   `GET /api/v1/geocode/reverse` dan pada titik playback (B7.3 ✅). **Gap data:** seed wilayah
+   hanya memuat centroid provinsi (35/38) & kota (180/514); `tm_districts`/`tm_subdistricts`
+   0 koordinat sehingga presisi berhenti di level kota — detail `docs/B6-B7-VERIFICATION.md` §3.
 2. **Keterbatasan protokol perangkat** — dari 200+ protokol Traccar, baru GT06/Teltonika/TK103
    aktif; TK103 provisional. Prioritas: Meiligao, Xexun, Suntech, H02 (B9).
 3. **Codec 7 Teltonika DROPPED** — tidak didukung (error `unsupported codec 0x07`); decision
@@ -1754,12 +1759,12 @@ go build -o <name> .            # tiap service, kontekst backend/ (module per se
 | # | Fitur | Estimasi | Fase |
 |---|---|---|---|
 | 1 | **Downlink / Remote Commands** — connection registry, engine cut-off (`DYD#`), interval change, reboot | 5 d | B8 |
-| 2 | **Odometer & Engine Hours** | 2 d | B7.1 |
-| 3 | **Trip & Stop Detection** | 5 d | B7.2 |
+| 2 | **Odometer & Engine Hours** | 2 d | B7.1 ✅ (2026-09-24) |
+| 3 | **Trip & Stop Detection** | 5 d | B7.2 ✅ (2026-09-24) |
 | 4 | **Driver Behavior Analysis** (harsh accel/braking/cornering — Teltonika IO 253/254, Concox alarm 0x09/0x0A) | 3 d | B8 |
 | 5 | **Maintenance Scheduling** (servis log, odometer/engine-hours reminders) | 3 d | B8 |
-| 6 | **Point Reduction** (Ramer–Douglas–Peucker utk history playback) | 2 d | B7.4 |
-| 7 | **Reverse Geocoding** | 3 d | B7.3 |
+| 6 | **Point Reduction** (Ramer–Douglas–Peucker utk history playback) | 2 d | B7.4 ✅ (2026-09-24) |
+| 7 | **Reverse Geocoding** | 3 d | B7.3 ✅ (2026-09-24, presisi menunggu data koordinat kecamatan/desa) |
 | 8 | **Mobile App driver** (route accept, SOS, offline recording) | — | Phase 3+ |
 | 9 | **Analytics & Reporting** (trip summary, violation summary, PDF/Excel, scheduled) | — | F4 |
 

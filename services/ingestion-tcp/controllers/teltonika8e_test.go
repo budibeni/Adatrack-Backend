@@ -58,7 +58,7 @@ func TestApplyTeltonikaIOMapping(t *testing.T) {
 	}
 
 	applyTeltonikaIO(&msg, 239, 1)
-	if !msg.ACC {
+	if msg.ACC == nil || !*msg.ACC {
 		t.Error("expected ACC=true for IO 239 = 1")
 	}
 

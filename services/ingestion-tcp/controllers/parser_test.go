@@ -105,7 +105,7 @@ func TestParsePositionRoundTrip(t *testing.T) {
 	if !msg.Fix {
 		t.Error("expected fix=true when the positioned bit is set")
 	}
-	if !msg.ACC {
+	if msg.ACC == nil || !*msg.ACC {
 		t.Error("expected ACC=true from the v3.1 tail byte")
 	}
 	if msg.Mileage != 0x64 {

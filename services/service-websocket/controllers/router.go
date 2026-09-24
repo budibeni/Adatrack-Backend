@@ -67,6 +67,9 @@ func (s *Service) buildRouter() *gin.Engine {
 	tenant.GET("/vehicles", s.handleListVehicles)
 	tenant.GET("/vehicles/:id", s.handleVehicleDetail)
 	tenant.GET("/vehicles/:id/history", s.handleVehicleHistory)
+	// B7.4 / B7.3: reduced history playback + offline reverse geocoding.
+	tenant.GET("/vehicles/:id/playback", s.handleVehiclePlayback)
+	tenant.GET("/geocode/reverse", s.handleReverseGeocode)
 
 	// --- real-time WebSocket (PRD §8.3) ------------------------------------
 	engine.GET("/ws/v1/adatrack",
@@ -138,6 +141,10 @@ func (s *Service) handleHealthz(c *gin.Context) {
 
 	body := gin.H{"status": "ok", "checks": checks, "connections": s.hub.ActiveConnections(),
 		"time": time.Now().UTC().Format(time.RFC3339)}
+	if s.geocoder != nil {
+		// B7.3 observability: how many centroids the offline resolver holds.
+		body["geocode_index_size"] = s.geocoder.indexSize()
+	}
 	if status != http.StatusOK {
 		body["status"] = "unavailable"
 	}

@@ -228,7 +228,7 @@ func (it *itPersister) rows(n int) []models.Row {
 		rows = append(rows, models.ToRow(models.TelemetryMessage{
 			IMEI: it.imei, CompanyCode: itCompany, VehicleID: vehicle,
 			Lat: -6.2088 + float64(i)/1000, Lon: 106.8456, Speed: 40,
-			ACC: true, Battery: 12, Timestamp: time.Now().Unix() + int64(i),
+			ACC: models.BoolPtr(true), Battery: 12, Timestamp: time.Now().Unix() + int64(i),
 		}))
 	}
 	return rows
@@ -242,7 +242,7 @@ func (it *itPersister) fuelRows(n int) []models.FuelRow {
 		level := 50.0 - float64(i)
 		rows = append(rows, models.ToFuelRow(models.TelemetryMessage{
 			IMEI: it.imei, CompanyCode: itCompany, VehicleID: vehicle,
-			FuelLevel: &level, ACC: true, Timestamp: time.Now().Unix() + int64(i),
+			FuelLevel: &level, ACC: models.BoolPtr(true), Timestamp: time.Now().Unix() + int64(i),
 		}))
 	}
 	return rows

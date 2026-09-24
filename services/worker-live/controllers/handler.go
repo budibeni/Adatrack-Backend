@@ -10,7 +10,8 @@ import (
 	"adatrack_gps/worker-live/models"
 )
 
-// handleMessage decodes one telemetry message into the live-state buffer.
+// handleMessage decodes one telemetry message into the live-state buffer and
+// feeds the B7 fleet accumulators (odometer/engine hours + trip detection).
 func (w *Worker) handleMessage(msg *nats.Msg) error {
 	var t models.TelemetryMessage
 	if err := json.Unmarshal(msg.Data, &t); err != nil {
@@ -19,6 +20,14 @@ func (w *Worker) handleMessage(msg *nats.Msg) error {
 	}
 	if t.Timestamp <= 0 {
 		t.Timestamp = time.Now().Unix()
+	}
+
+	// B7: pure in-memory accumulation (no I/O) so the live-state cadence is
+	// untouched; the flusher persists the drained deltas (FR-2.5/FR-2.6).
+	now := time.Now().UTC()
+	w.fleet.Observe(t, now)
+	if w.fleet.Pending() >= w.fleet.p.flushBatch {
+		w.pokeFleet()
 	}
 
 	key := w.red.LiveStateKey(t.CompanyCode, t.IMEI)
@@ -53,7 +62,6 @@ func (w *Worker) buildState(key string, t models.TelemetryMessage) models.LiveSt
 	if isFuelOnly(t) {
 		return w.mergeFuelState(key, t)
 	}
-	acc := t.ACC
 	return models.LiveState{
 		IMEI:        t.IMEI,
 		CompanyCode: t.CompanyCode,
@@ -66,14 +74,17 @@ func (w *Worker) buildState(key string, t models.TelemetryMessage) models.LiveSt
 		Altitude:    t.Altitude,
 		Battery:     t.Battery,
 		GsmSignal:   t.GsmSignal,
-		ACC:         &acc,
-		Mileage:     t.Mileage,
-		Fix:         t.Fix,
-		Status:      CalculateStatus(t.Speed, 0, w.idleAfter(), w.offlineAfter()),
-		LastSeen:    time.Now().Unix(),
-		Timestamp:   t.Timestamp,
-		FuelLevel:   t.FuelLevel,
-		FuelTempC:   t.FuelTempC,
+		// B6: the DEVICE ACC is projected verbatim — nil stays nil (absent in
+		// the JSON), so a client can distinguish "ignition off" from "the frame
+		// never reported ACC" instead of reading an inferred `false`.
+		ACC:       t.ACC,
+		Mileage:   t.Mileage,
+		Fix:       t.Fix,
+		Status:    CalculateStatus(t.Speed, 0, w.idleAfter(), w.offlineAfter()),
+		LastSeen:  time.Now().Unix(),
+		Timestamp: t.Timestamp,
+		FuelLevel: t.FuelLevel,
+		FuelTempC: t.FuelTempC,
 	}
 }
 

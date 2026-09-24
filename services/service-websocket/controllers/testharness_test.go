@@ -58,12 +58,15 @@ func (f *fakeLive) LiveStates(_ context.Context, companyCode string, imeis []str
 
 // testHarness bundles a Service with its fakes and an httptest server.
 type testHarness struct {
-	service *Service
-	store   *fakeStore
-	kv      *MemoryKV
-	live    *fakeLive
-	server  *httptest.Server
-	engine  *gin.Engine
+	service  *Service
+	store    *fakeStore
+	kv       *MemoryKV
+	live     *fakeLive
+	playback *fakePlayback
+	regions  *fakeRegions
+	settings Settings
+	server   *httptest.Server
+	engine   *gin.Engine
 }
 
 // sharedRegistry is built exactly ONCE per test binary, mirroring production
@@ -73,6 +76,7 @@ type testHarness struct {
 var (
 	sharedRegistry     *prometheus.Registry
 	sharedRegistryOnce sync.Once
+	geocodeMetricsOnce sync.Once
 )
 
 // testRegistry returns the process-wide test registry.
@@ -84,11 +88,20 @@ func testRegistry() *prometheus.Registry {
 // newHarness builds the service under test with hermetic collaborators.
 func newHarness(t *testing.T) *testHarness {
 	t.Helper()
+	return newHarnessWith(t, nil)
+}
+
+// newHarnessWith builds the harness and lets the caller tweak the settings (the
+// B7 playback/geocoding tests need small caps).
+func newHarnessWith(t *testing.T, tweak func(*Settings)) *testHarness {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	store := newTestStore()
 	kv := NewMemoryKV()
 	live := newFakeLive()
+	playbackFake := newFakePlayback()
+	regionsFake := newFakeRegions()
 
 	// The bcrypt cost is intentionally low in tests (the production default is 12
 	// and is asserted in the config tests).
@@ -129,13 +142,28 @@ func newHarness(t *testing.T) *testHarness {
 		AuditQueueSize:        256,
 		AuditBatchSize:        10,
 		AuditFlushEvery:       10 * time.Millisecond,
+		PlaybackMaxPoints:     20000,
+		PlaybackToleranceM:    10,
+		PlaybackMaxToleranceM: 1000,
+		GeocodeIndexRefresh:   time.Hour,
+		GeocodeCacheTTL:       time.Hour,
+		GeocodeMaxDistanceKM:  75,
+		GeocodeSpecificMaxKM:  30,
+		GeocodeMaxPoints:      500,
 	}
+	if tweak != nil {
+		tweak(&settings)
+	}
+	// The geocoder collectors must be registered exactly once per process.
+	geocodeMetricsOnce.Do(func() { RegisterGeocoderMetrics(testRegistry()) })
 
 	svc := NewService(Deps{
 		Settings: settings,
 		Store:    store,
 		KV:       kv,
 		Live:     live,
+		Playback: playbackFake,
+		Regions:  regionsFake,
 		Registry: testRegistry(),
 	})
 	svc.Start()
@@ -144,7 +172,9 @@ func newHarness(t *testing.T) *testHarness {
 	server := httptest.NewServer(svc.Handler())
 	t.Cleanup(server.Close)
 
-	return &testHarness{service: svc, store: store, kv: kv, live: live, server: server, engine: svc.Handler()}
+	return &testHarness{service: svc, store: store, kv: kv, live: live,
+		playback: playbackFake, regions: regionsFake, settings: settings,
+		server: server, engine: svc.Handler()}
 }
 
 // do issues one JSON request against the harness server.

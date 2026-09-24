@@ -20,6 +20,16 @@ func TestSettingsValidateRequiresJWTSecret(t *testing.T) {
 		MaxPageSize:      1000,
 		WSMaxQueueSize:   1000,
 		WSMaxConnections: 5000,
+
+		// B7.3/B7.4 playback + geocoding (the loader always fills these).
+		PlaybackMaxPoints:     20000,
+		PlaybackToleranceM:    10,
+		PlaybackMaxToleranceM: 1000,
+		GeocodeIndexRefresh:   6 * time.Hour,
+		GeocodeCacheTTL:       6 * time.Hour,
+		GeocodeMaxDistanceKM:  75,
+		GeocodeSpecificMaxKM:  30,
+		GeocodeMaxPoints:      500,
 	}
 	if err := base.Validate(); err != nil {
 		t.Fatalf("valid settings rejected: %v", err)
@@ -71,6 +81,25 @@ func TestSettingsValidateRequiresJWTSecret(t *testing.T) {
 		cfg.AccessExpiry = 0
 		if err := cfg.Validate(); err == nil {
 			t.Fatalf("JWT_EXPIRY_HOURS=0 accepted")
+		}
+	})
+
+	// B7.3/B7.4: impossible playback/geocoding values are rejected, zero keeps
+	// the documented defaults (see the *_FALLBACK constants in the geocoder).
+	t.Run("negative playback tolerance", func(t *testing.T) {
+		cfg := base
+		cfg.PlaybackToleranceM = -1
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("negative PLAYBACK_TOLERANCE_M accepted")
+		}
+	})
+
+	t.Run("negative geocode caps", func(t *testing.T) {
+		cfg := base
+		cfg.GeocodeMaxPoints = -5
+		cfg.GeocodeMaxDistanceKM = -1
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("negative GEOCODE_* values accepted")
 		}
 	})
 }

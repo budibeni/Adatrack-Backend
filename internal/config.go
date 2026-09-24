@@ -84,6 +84,37 @@ type Config struct {
 		IdleAfter time.Duration
 	}
 
+	// Fleet holds the B7 fleet-management accumulators that worker-live maintains
+	// from the telemetry stream: odometer + engine hours (FR-2.5) and the
+	// trip/stop state machine (FR-2.6).
+	Fleet struct {
+		// FlushEvery is the accumulator → PostgreSQL flush cadence (FR-2.5: 30 s).
+		FlushEvery time.Duration
+		// FlushBatch flushes early once this many vehicles carry pending data
+		// (FR-2.5: ≥100 vehicles).
+		FlushBatch int
+		// MaxJumpKM discards a single distance delta larger than this as a GPS
+		// jump (FR-2.5: 5 km).
+		MaxJumpKM float64
+		// MaxGap is the largest device-time gap credited to the odometer
+		// (FR-2.5 "interval terlalu lama").
+		MaxGap time.Duration
+		// EngineMaxGap is the largest gap credited to engine hours.
+		EngineMaxGap time.Duration
+		// StopGrace is how long a stationary vehicle must stay put before the
+		// stop is confirmed (TRIP_STOP_GRACE_SECONDS, 30 s).
+		StopGrace time.Duration
+		// MinStop is the shortest confirmed stop that becomes a `td_vehicle_stops`
+		// row and splits the trip (TRIP_MIN_STOP_SECONDS, 60 s).
+		MinStop time.Duration
+		// MaxStop auto-closes an open trip after this much standing/silence
+		// (TRIP_MAX_STOP_SECONDS, 3600 s).
+		MaxStop time.Duration
+		// MovingSpeedKMH separates MOVING from STOPPED (0 = any speed above zero,
+		// FR-2.2).
+		MovingSpeedKMH float64
+	}
+
 	Persistence struct {
 		// BatchSize / BatchTimeout follow FR-3.1 (500 records or 5 s).
 		BatchSize    int
@@ -227,6 +258,24 @@ func (c *Config) Validate() error {
 	}
 	if c.Live.MaxBatch <= 0 {
 		errs = append(errs, errors.New("LIVE_MAX_BATCH must be > 0"))
+	}
+	if c.Fleet.FlushEvery <= 0 {
+		errs = append(errs, errors.New("FLEET_FLUSH_SECONDS must be > 0"))
+	}
+	if c.Fleet.FlushBatch <= 0 {
+		errs = append(errs, errors.New("FLEET_FLUSH_BATCH must be > 0"))
+	}
+	if c.Fleet.MaxJumpKM <= 0 {
+		errs = append(errs, errors.New("ODOMETER_MAX_JUMP_KM must be > 0"))
+	}
+	if c.Fleet.MaxGap <= 0 || c.Fleet.EngineMaxGap <= 0 {
+		errs = append(errs, errors.New("ODOMETER_MAX_GAP_SECONDS/ENGINE_HOURS_MAX_GAP_SECONDS must be > 0"))
+	}
+	if c.Fleet.StopGrace <= 0 || c.Fleet.MinStop <= 0 || c.Fleet.MaxStop <= 0 {
+		errs = append(errs, errors.New("TRIP_STOP_GRACE_SECONDS/TRIP_MIN_STOP_SECONDS/TRIP_MAX_STOP_SECONDS must be > 0"))
+	}
+	if c.Fleet.MaxStop < c.Fleet.MinStop {
+		errs = append(errs, errors.New("TRIP_MAX_STOP_SECONDS must be >= TRIP_MIN_STOP_SECONDS"))
 	}
 	return errors.Join(errs...)
 }

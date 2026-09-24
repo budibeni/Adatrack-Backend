@@ -10,6 +10,8 @@
 //     (FR-2.2, OFFLINE_AFTER_MINUTES)
 //   - partial fuel messages merge into the existing state without touching
 //     position/speed (FR-2.3 / B5a scaffolding)
+//   - fleet accumulators: Haversine odometer + ACC-gated engine hours (FR-2.5)
+//     and the MOVING↔STOPPED trip/stop machine persisted every 30 s (FR-2.6)
 //   - readiness: /healthz + /metrics on LIVE_METRICS_ADDR
 package main
 
@@ -21,6 +23,7 @@ import (
 	"syscall"
 
 	"adatrack_gps/internal"
+	"adatrack_gps/internal/tenant"
 	"adatrack_gps/worker-live/controllers"
 )
 
@@ -48,6 +51,27 @@ func main() {
 	}
 	defer func() { _ = red.Close() }()
 
+	tcfg := tenant.ConfigFromEnv(cfg)
+	if err := tcfg.Validate(); err != nil {
+		slog.Error("invalid tenant configuration", "error", err)
+		os.Exit(1)
+	}
+	tm, err := tenant.New(ctx, cfg, tcfg, red, registry)
+	if err != nil {
+		slog.Error("tenant manager failed", "error", err)
+		os.Exit(1)
+	}
+	defer tm.Close()
+	go tm.Run(ctx)
+
+	if cfg.Migrate.OnBoot {
+		if _, err := internal.ApplyMigrations(ctx, tm.Master().DB, "master", cfg.Migrate.MasterSchema,
+			cfg.Migrate.MasterDir, cfg.Migrate.LedgerTable, cfg.Migrate.LockTimeout); err != nil {
+			slog.Error("auto-migration failed", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	nac, err := internal.NewNATSClient(cfg)
 	if err != nil {
 		slog.Error("nats unavailable", "error", err)
@@ -55,7 +79,8 @@ func main() {
 	}
 	defer nac.Close()
 
-	worker := controllers.New(cfg, red, nac)
+	store := controllers.NewPostgresFleetStore(tm)
+	worker := controllers.New(cfg, red, nac, store)
 	sub, err := worker.Start()
 	if err != nil {
 		slog.Error("failed to subscribe telemetry.raw.>", "error", err)
@@ -66,6 +91,8 @@ func main() {
 	hs := internal.NewHealthServer(cfg.Server.MetricsAddr, registry,
 		internal.HealthCheck{Name: "redis", Critical: true,
 			Fn: func(ctx context.Context) error { return red.Ping(ctx) }},
+		internal.HealthCheck{Name: "postgres", Critical: true,
+			Fn: func(ctx context.Context) error { return store.Readiness(ctx) }},
 		internal.HealthCheck{Name: "nats", Critical: true, Fn: func(context.Context) error {
 			if !nac.IsConnected() {
 				return errNATS
@@ -78,7 +105,12 @@ func main() {
 
 	slog.Info("worker-live started", "batch_interval_ms", cfg.Live.BatchInterval.Milliseconds(),
 		"offline_after_min", cfg.Live.OfflineAfterMinutes,
-		"idle_after_s", cfg.Live.IdleAfter.Seconds(), "state_ttl_s", cfg.Redis.TTL.Seconds())
+		"idle_after_s", cfg.Live.IdleAfter.Seconds(), "state_ttl_s", cfg.Redis.TTL.Seconds(),
+		"fleet_flush_s", cfg.Fleet.FlushEvery.Seconds(), "fleet_flush_batch", cfg.Fleet.FlushBatch,
+		"odometer_max_jump_km", cfg.Fleet.MaxJumpKM,
+		"trip_stop_grace_s", cfg.Fleet.StopGrace.Seconds(),
+		"trip_min_stop_s", cfg.Fleet.MinStop.Seconds(),
+		"trip_max_stop_s", cfg.Fleet.MaxStop.Seconds())
 
 	<-ctx.Done()
 	slog.Info("shutdown signal received; draining live-state buffer")

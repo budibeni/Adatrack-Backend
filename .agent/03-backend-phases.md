@@ -1,10 +1,10 @@
 # Backend Phases — Rencana Pengerjaan B0–B12 (Clean Slate)
 
-> **STATUS 2026-09-15 (diperbarui):** Landasan & pipeline data **SELESAI** —
-> **B0 ✅**, **B1 ✅**, dan **B2 ✅** (bukti verifikasi ada di tiap checklist).
-> Fase berikutnya yang dikerjakan: **B3** (worker-alert + api-vehicle: alerts,
-> geofence, routes). Fase B4–B12 masih ⬜ terbuka. Checklist hanya dicentang bila
-> ada bukti verifikasi nyata (perintah + hasil) pada kode baru di `backend/`.
+> **STATUS 2026-09-24 (diperbarui):** **B0–B6 SELESAI**, **B7 SELESAI (B7.1–B7.4)**, dan
+> **B4 🟡 sebagian** (endurance 24/24 tuntas; gap: rollup `count.24h`, coverage lanjutan).
+> Fase berikutnya: **B8/B9/B10/B11** (B10 mendahului B11), lalu **B12**.
+> Checklist hanya dicentang bila ada bukti verifikasi nyata (perintah + hasil) pada kode baru
+> di `backend/`; bukti B6+B7 ringkas ada di `docs/B6-B7-VERIFICATION.md` (E2E: `make e2e-fleet`).
 
 ## Referensi
 - **PRD:** `PRD.md` (konsolidasi v1.7.0) — sumber kebenaran requirement.
@@ -481,40 +481,88 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ---
 
-## Phase B6 — Real-Time Data Hardening (Audit Fix) ⬜
+## Phase B6 — Real-Time Data Hardening (Audit Fix) ✅ (selesai 2026-09-24)
 
 ### Tasks
-- [ ] ACC status live: pakai data asli device (`Acc` telemetry), bukan inferensi `Speed > 0`.
-- [ ] DTO `VehicleUpdateData` lengkap: fuel_level/fuel_volume/fuel_temp_c, satellites, altitude, gsm_signal.
+- [x] ACC status live: pakai data asli device (`Acc` telemetry), bukan inferensi `Speed > 0`.
+      → **Audit B6 menemukan inferensi yang tersisa**: `acc` masih `bool` + `omitempty`, sehingga
+      frame TANPA ACC (fuel-only `!AIOIL`, alarm LBS 0x19, Teltonika tanpa IO ignition) tetap
+      terkirim sebagai `acc:false`. ACC kini **tri-state `*bool` end-to-end**: ingestion
+      (`models.BoolPtr`, GT06 0x22/0x26 + Teltonika IO 66/67/239/1), live state worker-live
+      (`ACC: t.ACC` → key hilang saat tak dilaporkan), `worker-persistence` (`acc_status` boleh
+      NULL lewat migrasi `020_telemetry_acc_nullable.sql`), gate `FUEL_DROP_REQUIRE_ACC` di
+      worker-alert (`AccOn()` fail-safe), history/playback service-websocket (hanya mengisi `acc`
+      bila nilainya nyata).
+- [x] DTO `VehicleUpdateData` lengkap: fuel_level/fuel_volume/fuel_temp_c, satellites, altitude, gsm_signal.
+      → `b6_realtime_test.go` mengunci kontrak FR-5.2 pada frame WS nyata (semua field + `acc`
+      literal device / hilang saat tak dilaporkan).
 - [x] REST enrich live-state: overlay fuel_level & acc dari Redis. ✅ *selesai di B5a (lihat B5a "REST enrich live-state" + `live_test.go`): `live` block di list+detail, satu batched MGET, fuel-only tidak menghapus posisi DB, degradasi halus + `live_state_read_errors_total`.*
-- [x] Unit test bridge/parsing/enrich hijau. ✅ *enrich hijau di B5a; bridge/parsing tetap mengikuti B2/B3 yang sudah hijau.*
+- [x] Unit test bridge/parsing/enrich hijau. ✅ *enrich hijau di B5a; bridge/parsing hijau di B2/B3;
+      B6 menambah `acc_tristate_test.go` (ingestion), `models_test.go` (worker-persistence),
+      `TestBuildStateACCIsTriState` (worker-live), gate ACC (worker-alert), `b6_realtime_test.go`
+      (service-websocket).*
 
 ### Acceptance
-- [ ] Perubahan ACC tercermin real-time di WS & REST sesuai data device.
+- [x] Perubahan ACC tercermin real-time di WS & REST sesuai data device.
+      → `acc=true/false` device lewat apa adanya di WS + live block REST; frame tanpa ACC tidak
+      lagi memunculkan `acc:false` (key hilang / SQL NULL). Bukti: `docs/B6-B7-VERIFICATION.md` §1.
 
 ---
 
-## Phase B7 — Fleet Management Core ⬜ (sub-fase)
+## Phase B7 — Fleet Management Core ✅ (B7.1–B7.4 selesai 2026-09-24)
 
-### B7.1 Odometer & Engine Hours ⬜
-- [ ] Migrasi company `016_create_odometer_engine_hours.sql` (`company_pg/016`): kolom `odometer_km`, `engine_hours`.
-- [ ] Engine akumulasi odometer/engine-hours di worker-live (state machine, anti-rollback, persist berkala).
-- [ ] Unit test + live E2E (migrasi di-apply saat init tenant).
+### B7.1 Odometer & Engine Hours ✅
+- [x] Migrasi company `018_create_odometer_engine_hours.sql` (`company_pg/018`; nomor `016` sudah dipakai
+      B5b, `017` = indeks telemetri B4): kolom `odometer_km`, `engine_hours`, `odometer_updated_at`.
+      → `NUMERIC(12,3) NOT NULL DEFAULT 0` + CHECK `>= 0` (anti-rollback) + indeks; diterapkan pada
+      `adatrack_gps_default` & `adatrack_gps_dev001` (ledger 0 failure); `init-pg/03_company_setup.sql`
+      ikut diperbaiki (sebelumnya melewatkan 017).
+- [x] Engine akumulasi odometer/engine-hours di worker-live (state machine, anti-rollback, persist berkala).
+      → `internal/geo` (Haversine 6371 km) + `worker-live/controllers/{fleet,fleet_flush,fleet_store}.go`:
+      delta jarak per fix, guard FR-2.5 (fuel-only/heartbeat, VehicleID=0, GPS jump >5 km, gap >300 s,
+      timestamp mundur), engine hours hanya saat ACC ON terkonfirmasi (tidak pernah saat ACC tak
+      dilaporkan), flush 30 s / ≥100 vehicle, retry re-buffer, metrik `odometer_updates_total` +
+      `engine_hours_updates_total` + `trip_stop_flush_size`, readiness worker-live kini termasuk PostgreSQL.
+- [x] Unit test + live E2E (migrasi di-apply saat init tenant).
+      → `fleet_test.go`, `fleet_flush_test.go`, `fleet_store_it_test.go` (ADATRACK_IT=1, PostgreSQL nyata);
+      `make e2e-fleet` membuktikan delta = panjang rute (0.334 km) & GPS jump dibuang.
+      **Bug ditemukan E2E & diperbaiki:** bind `float64` ke parameter yang di-infer `numeric` tersimpan 0
+      (pgx) → semua parameter float kini di-cast `::float8` (bukti: `docs/B6-B7-VERIFICATION.md` §2.4).
 
-### B7.2 Trip & Stop Detection ⬜
-- [ ] Migrasi company `017_create_vehicle_trips.sql` (`company_pg/017`): `vehicle_trips` & `vehicle_stops`; init-pg `03_company_setup.sql` apply 017.
-- [ ] Deteksi trip/stop (start/end, distance, max/avg speed, stop_count, duration) + persist.
-- [ ] Unit test + live E2E.
+### B7.2 Trip & Stop Detection ✅
+- [x] Migrasi company `019_create_vehicle_trips.sql` (`company_pg/019`): `th_vehicle_trips` & `td_vehicle_stops`; init-pg `03_company_setup.sql` apply 019.
+- [x] Deteksi trip/stop (start/end, distance, max/avg speed, stop_count, duration) + persist.
+      → state machine MOVING↔STOPPED dengan grace 30 s, min stop 60 s (blip tidak memecah trip),
+      auto-close 3600 s (waktu server), trip ditutup pada awal stop; INSERT stop-only retry (tanpa trip
+      duplikat); metrik `trip_events_total{company_code,event_type}` + `stop_events_total{company_code}`.
+- [x] Unit test + live E2E.
+      → `fleet_trip_test.go` (siklus, blip, auto-close, requeue) + `fleet_store_it_test.go`;
+      E2E: trip 0.222 km / 60 s / max 44.5 km/h / stops=1 dan stop 130 s.
 
-### B7.3 Reverse Geocoding ⬜
-- [ ] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + fallback).
+### B7.3 Reverse Geocoding ✅ (gap seed terdokumentasi)
+- [x] Integrasi tabel wilayah (provinsi→desa) ke resolusi alamat offline (cache + fallback).
+      → `internal/geo` (indeks centroid) + `service-websocket/controllers/{store_regions,geocoder}.go`:
+      cache in-memory → Redis → indeks PostgreSQL (refresh 6 jam), kebijakan spesifisitas (kota ≤30 km,
+      fallback provinsi ≤75 km), fallback `resolved=false` tanpa error, endpoint
+      `GET /api/v1/geocode/reverse` + alamat pada titik playback, metrik `geocode_*`.
+      **Gap data (bukan kode):** seed hanya punya centroid provinsi (35/38) & kota (180/514);
+      `tm_districts`/`tm_subdistricts` 0 koordinat → resolusi berhenti di level kota. Query sudah
+      menyertakan distrik/desa sehingga presisi naik otomatis saat seed diperkaya.
 
-### B7.4 Point Reduction ⬜
-- [ ] Ramer-Douglas-Peucker untuk history playback (endpoint playback memakai hasil reduksi).
+### B7.4 Point Reduction ✅
+- [x] Ramer-Douglas-Peucker untuk history playback (endpoint playback memakai hasil reduksi).
+      → `internal/geo/reduce.go` (iteratif, jarak tegak-lurus meter, endpoint selalu dipertahankan,
+      `tolerance<=0` = tanpa reduksi) + `GET /api/v1/vehicles/{id}/playback`
+      (`from`/`to`/`tolerance_m`, ASC + truncation, `total/returned/reduction_percent/distance_km`).
 
 ### Acceptance
-- [ ] B7.1–B7.2 live E2E: odometer/engine-hours/trip/stop tercatat benar saat device jalan.
-- [ ] Playback menampilkan alamat & titik tereduksi tanpa kehilangan bentuk rute.
+- [x] B7.1–B7.2 live E2E: odometer/engine-hours/trip/stop tercatat benar saat device jalan.
+      → `make e2e-fleet` **10/10 PASS** (odometer 0.334 km = rute; trip/stop sesuai rencana; cleanup idempoten).
+- [x] Playback menampilkan alamat & titik tereduksi tanpa kehilangan bentuk rute.
+      → E2E: 21 titik → 2 titik (reduksi 90.5%), alamat offline pada titik awal; unit test RDP
+      (apex dipertahankan, garis lurus → 2 titik).
+
+> Bukti lengkap B6 + B7: `docs/B6-B7-VERIFICATION.md`. Target E2E: `make e2e-fleet`.
 
 ---
 

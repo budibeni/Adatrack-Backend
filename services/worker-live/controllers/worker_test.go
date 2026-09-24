@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,52 @@ func testConfig() *internal.Config {
 	cfg.Live.OfflineAfterMinutes = 3
 	cfg.Live.MaxBatch = 10
 	return cfg
+}
+
+// TestBuildStateACCIsTriState pins the B6 behaviour in the live state: the
+// device value is projected verbatim, an ACC-less frame stays absent, and the
+// status is never derived from ACC (it follows speed + staleness, FR-2.2).
+func TestBuildStateACCIsTriState(t *testing.T) {
+	w := New(testConfig(), nil, nil, nil)
+	base := models.TelemetryMessage{
+		IMEI: "864201040512345", CompanyCode: "DEV001", VehicleID: 1,
+		Lat: -6.2088, Lon: 106.8456, Timestamp: 1767000000,
+	}
+
+	on := base
+	on.ACC = models.BoolPtr(true)
+	on.Speed = 40
+	if state := w.buildState("k", on); state.ACC == nil || !*state.ACC {
+		t.Fatalf("ACC = %v, want the literal device value true", state.ACC)
+	}
+
+	off := base
+	off.ACC = models.BoolPtr(false)
+	off.Speed = 40 // moving with the ignition reported OFF must stay OFF
+	state := w.buildState("k", off)
+	if state.ACC == nil {
+		t.Fatal("ACC = nil, want a literal false when the device reported 0")
+	}
+	if *state.ACC {
+		t.Fatal("ACC = true, want false (never inferred from speed)")
+	}
+	if state.Status != models.StatusOnline {
+		t.Fatalf("status = %s, want ONLINE (status follows speed, not ACC)", state.Status)
+	}
+
+	unknown := base
+	unknown.Speed = 12
+	state = w.buildState("k", unknown)
+	if state.ACC != nil {
+		t.Fatalf("ACC = %v, want nil when the frame carried no ACC", *state.ACC)
+	}
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("marshal live state: %v", err)
+	}
+	if strings.Contains(string(encoded), `"acc"`) {
+		t.Fatalf("live state = %s, want no acc key for an unreported ACC", encoded)
+	}
 }
 
 // TestCalculateStatusMatrix covers the FR-2.2 state machine.
@@ -90,13 +138,13 @@ func TestIsFuelOnly(t *testing.T) {
 // TestBuildStateFromTelemetry verifies the live-state projection (FR-2.1),
 // including ACC, satellites, altitude, GSM and the online status.
 func TestBuildStateFromTelemetry(t *testing.T) {
-	w := New(testConfig(), nil, nil)
+	w := New(testConfig(), nil, nil, nil)
 
 	msg := models.TelemetryMessage{
 		IMEI: "864201040512345", CompanyCode: "DEV001", VehicleID: 1,
 		Lat: -6.2088, Lon: 106.8456, Speed: 42.5, Heading: 90,
 		Satellites: 9, Altitude: 120, Battery: 13, GsmSignal: 4,
-		ACC: true, Mileage: 1000, Fix: true, Timestamp: 1767000000,
+		ACC: models.BoolPtr(true), Mileage: 1000, Fix: true, Timestamp: 1767000000,
 	}
 	state := w.buildState("adatrack_gps:dev001:vehicle:state:864201040512345", msg)
 
@@ -123,7 +171,7 @@ func TestBuildStateFromTelemetry(t *testing.T) {
 // TestBuildStateStationaryIsIdle documents that a parked device is IDLE, not
 // ONLINE, once it exceeds the idle window (the sweeper handles OFFLINE).
 func TestBuildStateStationaryIsIdle(t *testing.T) {
-	w := New(testConfig(), nil, nil)
+	w := New(testConfig(), nil, nil, nil)
 	msg := models.TelemetryMessage{IMEI: "86001", CompanyCode: "DEV001", Lat: -6.2, Lon: 106.8}
 	state := w.buildState("key", msg)
 	if state.Status != models.StatusOnline {

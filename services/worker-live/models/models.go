@@ -17,10 +17,13 @@ type TelemetryMessage struct {
 	Altitude    int16   `json:"altitude"`
 	Battery     uint8   `json:"battery_level"`
 	GsmSignal   uint8   `json:"gsm_signal"`
-	ACC         bool    `json:"acc"`
-	Mileage     uint32  `json:"mileage"`
-	Fix         bool    `json:"fix"`
-	Timestamp   int64   `json:"timestamp"`
+	// ACC is tri-state (B6): non-nil = the device reported the ignition line,
+	// nil = the frame carried no ACC at all. Falling back to `false` for the
+	// latter was the audit finding B6 fixes.
+	ACC       *bool  `json:"acc,omitempty"`
+	Mileage   uint32 `json:"mileage"`
+	Fix       bool   `json:"fix"`
+	Timestamp int64  `json:"timestamp"`
 
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
 	FuelVolume *float64 `json:"fuel_volume,omitempty"`
@@ -41,10 +44,11 @@ type LiveState struct {
 	Altitude    int16   `json:"altitude"`
 	Battery     uint8   `json:"battery_level"`
 	GsmSignal   uint8   `json:"gsm_signal"`
-	ACC         *bool   `json:"acc,omitempty"`
-	Mileage     uint32  `json:"mileage,omitempty"`
-	Fix         bool    `json:"fix"`
-	Status      string  `json:"status"`
+	// ACC is tri-state (B6): pointer from the device message, nil = unreported.
+	ACC     *bool  `json:"acc,omitempty"`
+	Mileage uint32 `json:"mileage,omitempty"`
+	Fix     bool   `json:"fix"`
+	Status  string `json:"status"`
 	// LastSeen is the server receive time (UTC epoch seconds) used for the
 	// ONLINE/IDLE/OFFLINE state machine (FR-2.2). Timestamp is the device time.
 	LastSeen   int64    `json:"last_seen"`
@@ -74,3 +78,6 @@ const (
 	// IdleAfter is the ONLINE → IDLE threshold (FR-2.2).
 	IdleAfter = 90 * time.Second
 )
+
+// BoolPtr returns a pointer to v — the ACC flag is tri-state (B6).
+func BoolPtr(v bool) *bool { return &v }

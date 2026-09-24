@@ -93,7 +93,9 @@ func ParsePosition(data []byte) (models.TelemetryMessage, bool) {
 	}
 	applyGPSTo(&t, g)
 	if len(data) >= 27 {
-		t.ACC = data[26] == 1 // ACC low 0x00 / high 0x01 (v3.1 §3.1)
+		// ACC low 0x00 / high 0x01 (v3.1 §3.1). The byte is always present in
+		// this frame type, so the value is a real device reading (B6).
+		t.ACC = models.BoolPtr(data[26] == 1)
 	}
 	if len(data) >= 33 {
 		t.Mileage = binary.BigEndian.Uint32(data[29:33])
@@ -119,7 +121,8 @@ func ParseAlarm(data []byte) (models.TelemetryMessage, bool) {
 		idx += 9
 	}
 	if len(data) >= idx+1 {
-		t.ACC = data[idx]&0x02 != 0 // Terminal information bit1: ACC high/low
+		// Terminal information bit1: ACC high/low (a real device bit — B6).
+		t.ACC = models.BoolPtr(data[idx]&0x02 != 0)
 		idx++
 	}
 	if len(data) >= idx+1 {

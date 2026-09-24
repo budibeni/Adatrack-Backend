@@ -7,10 +7,10 @@
 SHELL := /bin/bash
 ROOT  := $(shell cd . && pwd)
 VARIANT ?= local
-MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/api-vehicle services/service-media services/worker-alert services/foundation-check tools/e2e tools/e2ews tools/e2e-media tools/e2e-fuel tools/querybench
+MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/api-vehicle services/service-media services/worker-alert services/foundation-check tools/e2e tools/e2ews tools/e2e-media tools/e2e-fuel tools/e2e-fleet tools/querybench
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel e2e-fleet clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -75,6 +75,9 @@ e2e-fuel: ## End-to-end fuel sensor test (frame 0x0D → td_fuel_logs → alert 
 
 e2e-media: ## End-to-end dashcam media test (HMAC → MinIO → katalog → WS → retensi, B5b)
 	@scripts/e2e-media.sh
+
+e2e-fleet: ## End-to-end fleet core test (odometer/engine hours + trip/stop + playback/geocode, B7.1–B7.4)
+	@scripts/e2e-fleet.sh
 
 clean: ## Remove build artifacts
 	@rm -rf bin logs/*.log logs/pids monitoring/targets/*.json

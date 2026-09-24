@@ -211,6 +211,61 @@ type VehicleUpdateData struct {
 	LastSeen    int64    `json:"last_seen"`
 }
 
+// PlaybackPoint is one history-playback vertex (B7.4) enriched with the offline
+// reverse-geocoded address of that position (B7.3).
+type PlaybackPoint struct {
+	Timestamp string  `json:"timestamp"`
+	Lat       float64 `json:"lat"`
+	Lon       float64 `json:"lon"`
+	Speed     float64 `json:"speed"`
+	Heading   int16   `json:"heading,omitempty"`
+	Battery   uint8   `json:"battery_level,omitempty"`
+	ACC       *bool   `json:"acc,omitempty"`
+	// Address is the human-readable offline resolution ("Kota X, Provinsi Y").
+	// It is empty when the reference data cannot resolve the coordinate (the
+	// documented fallback of B7.3).
+	Address  string `json:"address,omitempty"`
+	City     string `json:"city,omitempty"`
+	Province string `json:"province,omitempty"`
+}
+
+// PlaybackResponse is the `GET /api/v1/vehicles/{id}/playback` payload (B7.4):
+// the Ramer–Douglas–Peucker reduced route plus the reduction statistics so the
+// client can show "N dari M titik".
+type PlaybackResponse struct {
+	VehicleID        int64           `json:"vehicle_id"`
+	IMEI             string          `json:"imei"`
+	From             string          `json:"from"`
+	To               string          `json:"to"`
+	ToleranceM       float64         `json:"tolerance_m"`
+	TotalPoints      int             `json:"total_points"`
+	ReturnedPoints   int             `json:"returned_points"`
+	ReductionPercent float64         `json:"reduction_percent"`
+	DistanceKM       float64         `json:"distance_km"`
+	Truncated        bool            `json:"truncated"`
+	Points           []PlaybackPoint `json:"points"`
+}
+
+// AddressPayload is the offline reverse-geocoding result (B7.3).
+type AddressPayload struct {
+	Village    string  `json:"village,omitempty"`
+	District   string  `json:"district,omitempty"`
+	City       string  `json:"city,omitempty"`
+	Province   string  `json:"province,omitempty"`
+	PostalCode string  `json:"postal_code,omitempty"`
+	Level      string  `json:"level,omitempty"`
+	DistanceKM float64 `json:"distance_km,omitempty"`
+	Address    string  `json:"address"`
+	Resolved   bool    `json:"resolved"`
+}
+
+// ReverseGeocodeResponse is the `GET /api/v1/geocode/reverse` payload (B7.3).
+type ReverseGeocodeResponse struct {
+	Lat     float64        `json:"lat"`
+	Lon     float64        `json:"lon"`
+	Address AddressPayload `json:"address"`
+}
+
 // Envelope is the generic PRD §8.1 success response.
 type Envelope struct {
 	Status     string      `json:"status"`

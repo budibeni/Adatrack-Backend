@@ -47,6 +47,7 @@ func main() {
 	registry := internal.GetRegistry()
 	controllers.RegisterMetrics(registry)
 	controllers.RegisterBridgeMetrics(registry)
+	controllers.RegisterGeocoderMetrics(registry)
 
 	red, err := internal.NewRedisClient(cfg)
 	if err != nil {
@@ -90,6 +91,8 @@ func main() {
 		Store:    store,
 		KV:       controllers.NewRedisKV(red.Client()),
 		Live:     controllers.NewRedisLiveState(red),
+		Playback: store,
+		Regions:  store,
 		Redis:    red,
 		NATS:     nac,
 		Registry: registry,

@@ -20,6 +20,11 @@ type Deps struct {
 	Store    Store
 	KV       KVStore
 	Live     LiveStateStore
+	// Playback and Regions back the B7.3/B7.4 endpoints. They are optional: when
+	// they are nil the playback/geocoding routes answer 503 while the rest of the
+	// API keeps working (graceful degradation, PRD §8.1).
+	Playback PlaybackStore
+	Regions  RegionStore
 	Redis    *internal.RedisClient
 	NATS     *internal.NATSClient
 	Registry *prometheus.Registry
@@ -32,6 +37,8 @@ type Service struct {
 	store    Store
 	kv       KVStore
 	live     LiveStateStore
+	playback PlaybackStore
+	geocoder *geocoder
 	redis    *internal.RedisClient
 	nats     *internal.NATSClient
 	registry *prometheus.Registry
@@ -51,6 +58,8 @@ func NewService(deps Deps) *Service {
 		store:    deps.Store,
 		kv:       deps.KV,
 		live:     deps.Live,
+		playback: deps.Playback,
+		geocoder: newGeocoder(deps.Settings, deps.Regions, deps.Redis),
 		redis:    deps.Redis,
 		nats:     deps.NATS,
 		registry: deps.Registry,

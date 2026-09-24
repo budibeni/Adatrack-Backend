@@ -20,6 +20,7 @@
 /services/worker-persistence/worker-persistence
 /tools/e2e/e2e
 /tools/e2ews/e2ews
+/tools/e2e-fleet/e2e-fleet
 
 # Go
 vendor/

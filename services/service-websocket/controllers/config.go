@@ -47,6 +47,27 @@ type Settings struct {
 	HistoryMaxRangeDays int
 	MaxBodyBytes        int64
 
+	// --- Playback & reverse geocoding (B7.3/B7.4) ---------------------------
+	// PlaybackMaxPoints caps one playback response (truncation is reported).
+	PlaybackMaxPoints int
+	// PlaybackToleranceM is the default RDP tolerance in metres (0 disables it).
+	PlaybackToleranceM float64
+	// PlaybackMaxToleranceM bounds the client supplied `tolerance_m`.
+	PlaybackMaxToleranceM float64
+	// GeocodeIndexRefresh is how often the offline region index is reloaded.
+	GeocodeIndexRefresh time.Duration
+	// GeocodeCacheTTL is the TTL of a cached coordinate → address result.
+	GeocodeCacheTTL time.Duration
+	// GeocodeMaxDistanceKM bounds the fallback search (province level).
+	GeocodeMaxDistanceKM float64
+	// GeocodeSpecificMaxKM bounds the "specific level" search (city/district
+	// centroid); beyond it the resolver falls back to the province instead of
+	// claiming a city that is far away.
+	GeocodeSpecificMaxKM float64
+	// GeocodeMaxPoints caps how many playback points are geocoded (the endpoints
+	// are always resolved).
+	GeocodeMaxPoints int
+
 	// --- WebSocket (FR-5.3, FR-5.4) ----------------------------------------
 	WSMaxConnections int
 	WSSendBufferSize int
@@ -116,6 +137,15 @@ func LoadSettings() Settings {
 		AuditQueueSize:  internal.EnvIntDefault("AUDIT_QUEUE_SIZE", 1000),
 		AuditBatchSize:  internal.EnvIntDefault("AUDIT_BATCH_SIZE", 100),
 		AuditFlushEvery: time.Duration(internal.EnvIntDefault("AUDIT_FLUSH_MS", 1000)) * time.Millisecond,
+
+		PlaybackMaxPoints:     internal.EnvIntDefault("PLAYBACK_MAX_POINTS", 20000),
+		PlaybackToleranceM:    internal.EnvFloatDefault("PLAYBACK_TOLERANCE_M", 10),
+		PlaybackMaxToleranceM: internal.EnvFloatDefault("PLAYBACK_MAX_TOLERANCE_M", 1000),
+		GeocodeIndexRefresh:   time.Duration(internal.EnvIntDefault("GEOCODE_INDEX_REFRESH_SEC", 21600)) * time.Second,
+		GeocodeCacheTTL:       time.Duration(internal.EnvIntDefault("GEOCODE_CACHE_TTL_SEC", 21600)) * time.Second,
+		GeocodeMaxDistanceKM:  internal.EnvFloatDefault("GEOCODE_MAX_DISTANCE_KM", 75),
+		GeocodeSpecificMaxKM:  internal.EnvFloatDefault("GEOCODE_SPECIFIC_MAX_KM", 30),
+		GeocodeMaxPoints:      internal.EnvIntDefault("GEOCODE_MAX_POINTS", 500),
 	}
 }
 
@@ -149,6 +179,12 @@ func (s Settings) Validate() error {
 	}
 	if s.WSMaxConnections <= 0 {
 		errs = append(errs, errors.New("WS_MAX_CONNECTIONS must be > 0"))
+	}
+	if s.PlaybackMaxPoints < 0 || s.PlaybackToleranceM < 0 || s.PlaybackMaxToleranceM < 0 {
+		errs = append(errs, errors.New("PLAYBACK_MAX_POINTS/PLAYBACK_TOLERANCE_M/PLAYBACK_MAX_TOLERANCE_M must not be negative"))
+	}
+	if s.GeocodeMaxDistanceKM < 0 || s.GeocodeSpecificMaxKM < 0 || s.GeocodeMaxPoints < 0 {
+		errs = append(errs, errors.New("GEOCODE_MAX_DISTANCE_KM/GEOCODE_SPECIFIC_MAX_KM/GEOCODE_MAX_POINTS must not be negative"))
 	}
 	return errors.Join(errs...)
 }

@@ -88,10 +88,17 @@ type TelemetryMessage struct {
 	HDOP        float64 `json:"hdop,omitempty"`
 	// Altitude (metres, signed) — Teltonika AVL GPS element; GT06 has no
 	// altitude field so it stays 0 and is omitted from JSON.
-	Altitude  int16  `json:"altitude,omitempty"`
-	Battery   uint8  `json:"battery_level,omitempty"`
-	GsmSignal uint8  `json:"gsm_signal,omitempty"`
-	ACC       bool   `json:"acc,omitempty"`
+	Altitude  int16 `json:"altitude,omitempty"`
+	Battery   uint8 `json:"battery_level,omitempty"`
+	GsmSignal uint8 `json:"gsm_signal,omitempty"`
+	// ACC is the DEVICE ignition line (B6). It is TRI-STATE on purpose: a
+	// non-nil pointer means the frame reported ACC (true = ON, false = OFF),
+	// while `nil` means the protocol/packet did not carry ACC at all (fuel-only
+	// sentences, LBS frames, Teltonika devices without an ignition IO). The
+	// audit finding behind B6 was that a missing ACC used to be published as
+	// `false`, i.e. an inference — with `omitempty` the field now disappears
+	// from the payload instead, so downstream services can keep it NULL/absent.
+	ACC       *bool  `json:"acc,omitempty"`
 	Mileage   uint32 `json:"mileage,omitempty"`
 	AlarmCode uint8  `json:"alarm_code,omitempty"`
 	// AlarmLBS marks a GT06 0x19 LBS alarm packet (no GPS fix, no alarm reason
@@ -111,3 +118,9 @@ type TelemetryMessage struct {
 	// height is published as-is and consumers derive their own scale.
 	FuelHeightCM *float64 `json:"fuel_height_cm,omitempty"`
 }
+
+// BoolPtr returns a pointer to v. It exists because the ACC flag is tri-state
+// (B6): `BoolPtr(false)` means "the device reported ACC off", while `nil` means
+// "this frame carried no ACC information". Keeping the distinction explicit at
+// the call sites is what makes the audit fix visible in the code.
+func BoolPtr(v bool) *bool { return &v }

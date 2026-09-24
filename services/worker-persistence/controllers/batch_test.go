@@ -110,7 +110,7 @@ func TestModelsToRowMapsFields(t *testing.T) {
 	if row.Heading != -45 || row.Altitude != -12 {
 		t.Errorf("signed heading/altitude lost: heading=%v altitude=%v", row.Heading, row.Altitude)
 	}
-	if !row.ACC || row.Battery != 12 {
+	if row.ACC == nil || !*row.ACC || row.Battery != 12 {
 		t.Errorf("ACC/battery wrong: acc=%v battery=%d", row.ACC, row.Battery)
 	}
 	if row.Timestamp.IsZero() {

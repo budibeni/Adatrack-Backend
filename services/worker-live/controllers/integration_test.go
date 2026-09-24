@@ -85,7 +85,7 @@ func newITWorker(t *testing.T) *itWorker {
 		_ = red.Close()
 		t.Fatalf("nats unavailable on %s: %v", cfg.NATS.URL, err)
 	}
-	w := New(cfg, red, nac)
+	w := New(cfg, red, nac, nil)
 
 	it := &itWorker{t: t, cfg: cfg, red: red, nac: nac, w: w}
 	t.Cleanup(func() {
@@ -256,7 +256,7 @@ func positionMessage(imei string) models.TelemetryMessage {
 		IMEI: imei, CompanyCode: "DEV001", VehicleID: 71,
 		Lat: -6.2088, Lon: 106.8456, Speed: 42.5, Heading: 90,
 		Satellites: 9, Altitude: 120, Battery: 13, GsmSignal: 4,
-		ACC: true, Mileage: 1000, Fix: true,
+		ACC: models.BoolPtr(true), Mileage: 1000, Fix: true,
 		Timestamp: time.Now().Unix(),
 	}
 }

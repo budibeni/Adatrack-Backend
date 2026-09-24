@@ -20,7 +20,7 @@ func TestParseAlarm(t *testing.T) {
 	if !ok {
 		t.Fatal("ParseAlarm returned ok=false")
 	}
-	if !msg.ACC {
+	if msg.ACC == nil || !*msg.ACC {
 		t.Error("expected ACC=true from the terminal information byte (0x02)")
 	}
 	if msg.Battery != 5 {

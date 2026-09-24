@@ -19,7 +19,25 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > **B5a dituntaskan:** kalibrasi `FUEL_TANK_HEIGHT_CM` kini diterapkan di ingestion +
 > flusher fuel-only worker-persistence diperbaiki. E2E live: `make e2e-fuel` **11/11 PASS** dan
 > `make e2e-media` **18/18 PASS** (MinIO/PostgreSQL/Redis/NATS nyata) — checklist: `.agent/03-backend-phases.md`.
-> Fase berikutnya: **B6 / B7**.
+> **PROGRESS 2026-09-24:** **B6 ✅** dan **B7 ✅** (B7.1–B7.4) selesai.
+> **B6 (audit fix):** audit menemukan inferensi ACC yang tersisa — `acc` dipublikasikan `bool` +
+> `omitempty`, sehingga frame TANPA ACC (fuel-only `!AIOIL`, alarm LBS 0x19, Teltonika tanpa IO
+> ignition) tetap terkirim sebagai `acc:false`. ACC kini **tri-state `*bool` end-to-end**
+> (ingestion → live state → `acc_status` NULL via migrasi `020` → DTO WS/playback), dan DTO
+> FR-5.2 (`fuel_level/fuel_volume/fuel_temp_c/satellites/altitude/gsm_signal`) dikunci test.
+> **B7 (fleet core):** migrasi `018` (odometer/engine hours + CHECK anti-rollback) & `019`
+> (`th_vehicle_trips`/`td_vehicle_stops`), akumulator Haversine + guard FR-2.5 (GPS jump >5 km,
+> gap >300 s, fuel-only/heartbeat, VehicleID=0) dengan engine hours hanya saat ACC ON, state
+> machine trip/stop FR-2.6 (grace 30 s, min stop 60 s, auto-close 3600 s), reverse geocoding
+> offline (cache in-memory + Redis + indeks master, fallback `resolved=false`), dan point
+> reduction RDP pada endpoint baru `GET /vehicles/{id}/playback` + `GET /geocode/reverse`.
+> **E2E:** `make e2e-fleet` **10/10 PASS** (odometer 0.334 km = rute, GPS jump dibuang, trip
+> 0.222 km/60 s dengan 1 stop 130 s, playback 21→2 titik + alamat).
+> **Gap yang dicatat jujur:** presisi geocoding berhenti di level kota (seed wilayah tanpa
+> koordinat kecamatan/desa) & metrik B7 belum masuk dashboard B4.
+> Bukti: `docs/B6-B7-VERIFICATION.md`; checklist: `.agent/03-backend-phases.md`.
+> Fase berikutnya: **B8 / B9 / B10 / B11** (B10 mendahului B11), lalu **B12**.
+> (Catatan: `make e2e-fleet` memakai plan gerak sintetis + memulihkan counter kendaraan fixture.)
 > (compose/migrations/`internal`/`foundation-check` + pipeline ingestion-tcp →
 > worker-live → worker-persistence: load 1000 msg/s tanpa data loss, isolasi
 > tenant 0 leakage, unit+integration test hijau; **service-websocket**: login
@@ -49,8 +67,8 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B5a** | Fuel Sensor End-to-End (PRD v1.3.0 Module 7) | `ingestion-tcp`, `worker-live`, `worker-persistence`, `worker-alert`, `api-vehicle` | ✅ Selesai (unit + REST overlay; E2E live fuel menyusul) |
 | **B5b** | Dashcam Event Media — Scope A (PRD v1.3.0 Module 8) | `backend/services/service-media`, `internal/storage`, bridge `service-websocket` | ✅ Selesai 2026-09-22 (`make e2e-media` 18/18 PASS) |
 | **B4** | Performance, Monitoring, Testing, Hardening | `backend/` | 🟡 Sebagian (2026-09-19) — load 400→2000 msg/s 0 loss, SLA query, monitoring stack + rule SLO/alert, backup/restore drill, retensi; **gap**: coverage ≥80% service inti, endurance 24 jam penuh, drill replika, load WS 50×1200. Bukti: `docs/B4-VERIFICATION.md` |
-| **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` | ⬜ Belum dimulai |
-| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ⬜ Belum dimulai |
+| **B6** | Real-Time Data Hardening (Audit Fix) | `service-websocket` |✅ Selesai 2026-09-24 — ACC **tri-state** (`bool` → `*bool`: `acc_status` NULL, key `acc` hilang saat device tidak melaporkan), DTO FR-5.2 lengkap dikunci test, REST/WS sesuai data device. Bukti: `docs/B6-B7-VERIFICATION.md` §1 |
+| **B7** | Fleet Management Core (B7.1 Odometer & Engine Hours · B7.2 Trip & Stop Detection · B7.3 Reverse Geocoding · B7.4 Point Reduction) | `worker-live` (+ migrasi company) | ✅ Selesai 2026-09-24 — migrasi `018`/`019`/`020`, akumulator FR-2.5 (Haversine + guard jump/gap), state machine FR-2.6 (`th_vehicle_trips`/`td_vehicle_stops`), geocoding offline + RDP playback; `make e2e-fleet` **10/10 PASS** (odometer 0.334 km = rute, trip/stop sesuai rencana). Gap: presisi geocoding berhenti di level kota (seed wilayah tanpa koordinat kecamatan/desa) — `docs/B6-B7-VERIFICATION.md` §3 |
 | **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert` | ⬜ Planned |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ⬜ Planned |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ⬜ Planned |

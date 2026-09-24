@@ -15,7 +15,7 @@ import (
 func fuelMessage(imei, company string, level float64) models.TelemetryMessage {
 	return models.TelemetryMessage{
 		IMEI: imei, CompanyCode: company, VehicleID: 1,
-		FuelLevel: &level, ACC: true, Timestamp: time.Now().Unix(),
+		FuelLevel: &level, ACC: models.BoolPtr(true), Timestamp: time.Now().Unix(),
 	}
 }
 
@@ -204,7 +204,7 @@ func TestFuelRowProjection(t *testing.T) {
 	level := 55.5
 	msg := models.TelemetryMessage{
 		IMEI: "86001", CompanyCode: "DEV001", VehicleID: 7,
-		FuelLevel: &level, Lat: -6.2, Lon: 106.8, ACC: true,
+		FuelLevel: &level, Lat: -6.2, Lon: 106.8, ACC: models.BoolPtr(true),
 		Timestamp: time.Now().Unix(),
 	}
 	if !msg.HasFuel() {

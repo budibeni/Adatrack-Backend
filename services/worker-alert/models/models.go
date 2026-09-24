@@ -77,12 +77,15 @@ type TelemetryMessage struct {
 	Altitude    int16   `json:"altitude"`
 	Battery     uint8   `json:"battery_level"`
 	GsmSignal   uint8   `json:"gsm_signal"`
-	ACC         bool    `json:"acc"`
-	Mileage     uint32  `json:"mileage"`
-	AlarmCode   uint8   `json:"alarm_code,omitempty"`
-	AlarmLBS    bool    `json:"alarm_lbs,omitempty"`
-	Fix         bool    `json:"fix"`
-	Timestamp   int64   `json:"timestamp"`
+	// ACC is tri-state (B6): non-nil = the device reported the ignition line,
+	// nil = the frame carried no ACC (the strict fuel gate treats it as "not
+	// confirmed ON", which is the fail-safe choice).
+	ACC       *bool  `json:"acc,omitempty"`
+	Mileage   uint32 `json:"mileage"`
+	AlarmCode uint8  `json:"alarm_code,omitempty"`
+	AlarmLBS  bool   `json:"alarm_lbs,omitempty"`
+	Fix       bool   `json:"fix"`
+	Timestamp int64  `json:"timestamp"`
 
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
 	FuelVolume *float64 `json:"fuel_volume,omitempty"`

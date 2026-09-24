@@ -78,7 +78,7 @@ func telemetryMsg(t *testing.T, msg models.TelemetryMessage) *nats.Msg {
 func positionMessage(imei, company string) models.TelemetryMessage {
 	return models.TelemetryMessage{
 		IMEI: imei, CompanyCode: company, VehicleID: 1,
-		Lat: -6.2088, Lon: 106.8456, Speed: 40, ACC: true,
+		Lat: -6.2088, Lon: 106.8456, Speed: 40, ACC: models.BoolPtr(true),
 		Battery: 12, Timestamp: time.Now().Unix(),
 	}
 }

@@ -13,7 +13,23 @@ func LoadConfig() *Config {
 	loadAlertConfig(c)
 	loadFuelConfig(c)
 	loadMediaConfig(c)
+	loadFleetConfig(c)
 	return c
+}
+
+// loadFleetConfig fills the B7 fleet-management thresholds (FR-2.5/FR-2.6).
+// The defaults are the PRD values, so a service booted without these variables
+// behaves exactly like the specification.
+func loadFleetConfig(c *Config) {
+	c.Fleet.FlushEvery = time.Duration(envInt("FLEET_FLUSH_SECONDS", 30)) * time.Second
+	c.Fleet.FlushBatch = envInt("FLEET_FLUSH_BATCH", 100)
+	c.Fleet.MaxJumpKM = envFloat("ODOMETER_MAX_JUMP_KM", 5)
+	c.Fleet.MaxGap = time.Duration(envInt("ODOMETER_MAX_GAP_SECONDS", 300)) * time.Second
+	c.Fleet.EngineMaxGap = time.Duration(envInt("ENGINE_HOURS_MAX_GAP_SECONDS", 300)) * time.Second
+	c.Fleet.StopGrace = time.Duration(envInt("TRIP_STOP_GRACE_SECONDS", 30)) * time.Second
+	c.Fleet.MinStop = time.Duration(envInt("TRIP_MIN_STOP_SECONDS", 60)) * time.Second
+	c.Fleet.MaxStop = time.Duration(envInt("TRIP_MAX_STOP_SECONDS", 3600)) * time.Second
+	c.Fleet.MovingSpeedKMH = envFloat("TRIP_MOVING_SPEED_KMH", 0)
 }
 
 // loadCoreConfig fills the shared infrastructure settings (HTTP/metrics, NATS,

@@ -17,10 +17,12 @@ type TelemetryMessage struct {
 	Altitude    int16   `json:"altitude"`
 	Battery     uint8   `json:"battery_level"`
 	GsmSignal   uint8   `json:"gsm_signal"`
-	ACC         bool    `json:"acc"`
-	Mileage     uint32  `json:"mileage"`
-	Fix         bool    `json:"fix"`
-	Timestamp   int64   `json:"timestamp"`
+	// ACC is tri-state (B6): non-nil = the device reported the ignition line,
+	// nil = the frame carried no ACC (stored as SQL NULL in `acc_status`).
+	ACC       *bool  `json:"acc,omitempty"`
+	Mileage   uint32 `json:"mileage"`
+	Fix       bool   `json:"fix"`
+	Timestamp int64  `json:"timestamp"`
 
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
 	FuelVolume *float64 `json:"fuel_volume,omitempty"`
@@ -37,9 +39,10 @@ type Row struct {
 	Speed       float64
 	Heading     float64
 	Altitude    float64
-	ACC         bool
-	Battery     int
-	Timestamp   time.Time
+	// ACC is nil when the device did not report it (B6) → SQL NULL.
+	ACC       *bool
+	Battery   int
+	Timestamp time.Time
 }
 
 // Positionless reports whether the message carries no usable position (fuel-only
@@ -93,8 +96,9 @@ type FuelRow struct {
 	FuelTempC   *float64
 	Lat         float64
 	Lon         float64
-	ACC         bool
-	Timestamp   time.Time
+	// ACC is nil when the device did not report it (B6) → SQL NULL.
+	ACC       *bool
+	Timestamp time.Time
 }
 
 // HasFuel reports whether the message carries any fuel reading (B5a).
@@ -130,24 +134,31 @@ var FuelInsertColumns = []string{
 
 // Values renders a fuel row as the parameter slice matching FuelInsertColumns.
 func (r FuelRow) Values() []any {
-	acc := 0
-	if r.ACC {
-		acc = 1
-	}
 	return []any{
 		r.VehicleID, r.IMEI, r.CompanyCode, r.FuelLevel, r.FuelVolume,
-		r.FuelTempC, r.Lat, r.Lon, acc, r.Timestamp,
+		r.FuelTempC, r.Lat, r.Lon, accParam(r.ACC), r.Timestamp,
 	}
 }
 
 // Values renders a row as the parameter slice matching InsertColumns.
 func (r Row) Values() []any {
-	acc := 0
-	if r.ACC {
-		acc = 1
-	}
 	return []any{
 		r.VehicleID, r.IMEI, r.CompanyCode, r.Lat, r.Lon,
-		r.Speed, r.Heading, r.Altitude, acc, r.Battery, r.Timestamp,
+		r.Speed, r.Heading, r.Altitude, accParam(r.ACC), r.Battery, r.Timestamp,
 	}
 }
+
+// accParam maps the tri-state ACC onto the `acc_status` parameter (B6):
+// 1 = ON, 0 = OFF, nil = the device never reported it (SQL NULL).
+func accParam(acc *bool) any {
+	if acc == nil {
+		return nil
+	}
+	if *acc {
+		return 1
+	}
+	return 0
+}
+
+// BoolPtr returns a pointer to v (tri-state ACC helper, B6).
+func BoolPtr(v bool) *bool { return &v }

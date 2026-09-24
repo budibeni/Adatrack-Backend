@@ -78,3 +78,6 @@ func EnvBoolDefault(key string, def bool) bool { return envBool(key, def) }
 
 // EnvIntDefault exposes envInt for services.
 func EnvIntDefault(key string, def int) int { return envInt(key, def) }
+
+// EnvFloatDefault exposes envFloat for services (B7 playback/geocoding tunables).
+func EnvFloatDefault(key string, def float64) float64 { return envFloat(key, def) }

@@ -94,6 +94,7 @@ func TestFuelDetectorMatrix(t *testing.T) {
 	store4.fuelCfgs = []models.FuelConfig{{ID: 1, VehicleID: 0, DropThresholdPct: 10, WindowSeconds: 60, Enabled: true, RequireACC: true}}
 	accOff := telem(7)
 	accOff.FuelLevel = f64p(80)
+	accOff.ACC = BoolPtr(false)
 	accOff.Timestamp = now.Unix()
 	w4.detFuel(ctx, accOff, now)
 	if len(store4.alerts) != 0 {
@@ -101,6 +102,24 @@ func TestFuelDetectorMatrix(t *testing.T) {
 	}
 	if len(w4.fuelStash["DEV001:it-imei-7"].accHistory) != 1 {
 		t.Error("the shelved reading must be recorded in the ACC history")
+	}
+
+	// B6: a frame WITHOUT ACC information must be treated like ACC off by the
+	// strict gate (no evidence of a running engine) — never as an inferred ON.
+	store4b := newFakeAlertStore()
+	w4b, _, cfg4b := newMiniredisWorker(t, store4b)
+	cfg4b.Fuel.RequireACC = true
+	cfg4b.Fuel.ACCStaleSeconds = 60
+	store4b.fuelCfgs = store4.fuelCfgs
+	accUnknown := telem(7)
+	accUnknown.FuelLevel = f64p(80)
+	accUnknown.Timestamp = now.Unix()
+	w4b.detFuel(ctx, accUnknown, now)
+	if len(store4b.alerts) != 0 {
+		t.Fatalf("unreported ACC must be shelved by the strict gate: %+v", store4b.alerts)
+	}
+	if AccOn(accUnknown.ACC) {
+		t.Error("AccOn(nil) must be false")
 	}
 
 	// Refuel branch: a sharp rise with a non-zero baseline (the current reading

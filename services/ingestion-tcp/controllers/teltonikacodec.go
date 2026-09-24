@@ -40,9 +40,12 @@ func applyTeltonikaIO(t *models.TelemetryMessage, id uint16, val uint64) {
 	case 72: // battery voltage (V × 100)
 		t.Battery = uint8(val)
 	case 66, 67: // external/internal power + ignition (0/1)
-		t.ACC = val == 1
+		// ACC is only claimed when the IO element is actually present in the
+		// record (B6): a Teltonika device without an ignition input must leave
+		// the field nil instead of publishing an inferred `false`.
+		t.ACC = models.BoolPtr(val == 1)
 	case 239, 1: // ignition (firmware dependent)
-		t.ACC = val == 1
+		t.ACC = models.BoolPtr(val == 1)
 	case 24: // speed (km/h) fallback when the GPS element reports 0
 		if t.Speed == 0 {
 			t.Speed = float64(val)

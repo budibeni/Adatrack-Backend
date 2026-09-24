@@ -81,7 +81,7 @@ func TestParseCodec8Packet(t *testing.T) {
 	if got.Battery != 13 {
 		t.Errorf("battery = %d, want 13 (IO 72)", got.Battery)
 	}
-	if !got.ACC {
+	if got.ACC == nil || !*got.ACC {
 		t.Error("expected ACC=true from IO 1 (ignition)")
 	}
 	if got.Timestamp != 1_767_000_000 {
