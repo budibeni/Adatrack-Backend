@@ -515,7 +515,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	rows, err := dbclient.Pool.Query(ctx, `
-		SELECT imei, sim_number, protocol, assigned_company, status, created_at, updated_at
+		SELECT imei, COALESCE(device_model, ''), COALESCE(sim_number, ''), COALESCE(protocol, ''), assigned_company, status, created_at, updated_at
 		FROM adatrack_gps_master.tm_gps_devices
 		ORDER BY created_at DESC
 	`)
