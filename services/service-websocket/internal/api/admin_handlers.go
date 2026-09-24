@@ -273,7 +273,7 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		hash, _ := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 		err = tx.QueryRow(ctx, "INSERT INTO adatrack_gps_master.tm_users (email, password_hash) VALUES ($1, $2) RETURNING id", req.Email, string(hash)).Scan(&newUserID)
 		if err != nil {
-			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create user in master.")
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create user in master: " + err.Error())
 			return
 		}
 	}
@@ -288,12 +288,12 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		}
 		_, err = tx.Exec(ctx, fmt.Sprintf("INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active) VALUES ($1, $2, true)", schema), newUserID, req.RoleCode)
 		if err != nil {
-			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to link user to company schema.")
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to link user to company schema: " + err.Error())
 			return
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to commit user creation")
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to commit user creation: " + err.Error())
 		return
 	}
 
