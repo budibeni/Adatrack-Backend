@@ -14,7 +14,19 @@ func LoadConfig() *Config {
 	loadFuelConfig(c)
 	loadMediaConfig(c)
 	loadFleetConfig(c)
+	// B10: publish the effective FR-1.2 cadence on the shared gauge so every
+	// service reports the same configured interval on /metrics.
+	ObserveTelemetryInterval(c.Telemetry.IntervalSeconds)
 	return c
+}
+
+// ObserveTelemetryInterval records the configured device cadence (no-op when the
+// gauge was not registered, e.g. in a unit test that builds a bare Config).
+func ObserveTelemetryInterval(seconds int) {
+	if TelemetryIntervalSeconds == nil {
+		return
+	}
+	TelemetryIntervalSeconds.Set(float64(seconds))
 }
 
 // loadFleetConfig fills the B7 fleet-management thresholds (FR-2.5/FR-2.6).
@@ -88,13 +100,37 @@ func loadCoreConfig(c *Config) {
 	c.Migrate.CompanyPrefix = EnvOr("COMPANY_DB_PREFIX", "adatrack_gps_")
 }
 
-// loadPipelineConfig fills the ingestion/worker settings (B1).
+// loadPipelineConfig fills the ingestion/worker settings (B1) and the B9
+// protocol-expansion listeners (PRD Module 1c).
 func loadPipelineConfig(c *Config) {
 	c.TCP.Port = EnvOr("TCP_PORT", "9003")
 	c.TCP.TeltonikaPort = EnvOr("TELTONIKA_TCP_PORT", "9011")
+
+	// B9 listeners. Defaults are the Traccar ports (PRD Module 1c table) except
+	// where the canonical port would clash with a dev listener; every value is
+	// overridable and "0"/"" disables that protocol (empty by default so a dev
+	// host only opens the listeners it needs).
+	c.TCP.TK103Port = EnvOr("TK103_TCP_PORT", "")
+	c.TCP.MeiligaoPort = EnvOr("MEILIGAO_TCP_PORT", "")
+	c.TCP.XexunPort = EnvOr("XEXUN_TCP_PORT", "")
+	c.TCP.SuntechPort = EnvOr("SUNTECH_TCP_PORT", "")
+	c.TCP.H02Port = EnvOr("H02_TCP_PORT", "")
+	c.TCP.TotemPort = EnvOr("TOTEM_TCP_PORT", "")
+	c.TCP.GT02Port = EnvOr("GT02_TCP_PORT", "")
+	c.TCP.NavigilPort = EnvOr("NAVIGIL_TCP_PORT", "")
+	c.TCP.CastelPort = EnvOr("CASTEL_TCP_PORT", "")
+
 	c.TCP.MaxConnections = envInt("TCP_MAX_CONNECTIONS", 5000)
 	c.TCP.IdleTimeout = time.Duration(envInt("TCP_IDLE_TIMEOUT_SECONDS", 90)) * time.Second
 	c.TCP.DateBCD = envBool("GT06_DATE_BCD", false)
+
+	// FR-1.2: nominal device reporting cadence (default 20 s).
+	c.Telemetry.IntervalSeconds = envInt("TELEMETRY_INTERVAL_SECONDS", 20)
+
+	// B8: driver behaviour + maintenance reminder thresholds.
+	c.Driver.SpeedingMinSeconds = envInt("DRIVER_SPEEDING_MIN_SECONDS", 10)
+	c.Driver.MaintenanceSweepInterval = time.Duration(envInt("MAINTENANCE_SWEEP_SECONDS", 300)) * time.Second
+	c.Driver.MaintenanceCooldown = time.Duration(envInt("MAINTENANCE_REMINDER_COOLDOWN_HOURS", 24)) * time.Hour
 
 	c.Live.BatchInterval = time.Duration(envInt("LIVE_BATCH_INTERVAL_MS", 100)) * time.Millisecond
 	c.Live.MaxBatch = envInt("LIVE_MAX_BATCH", 5000)

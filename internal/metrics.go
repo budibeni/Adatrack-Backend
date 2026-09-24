@@ -31,6 +31,12 @@ var (
 
 	Goroutines      prometheus.GaugeFunc
 	MemoryAllocated prometheus.GaugeFunc
+
+	// TelemetryIntervalSeconds is the effective FR-1.2 device cadence (B10). It is
+	// exported so a deployment can assert "interval 20 s berlaku" from /metrics
+	// instead of trusting the env file, and so a change to
+	// TELEMETRY_INTERVAL_SECONDS is visible next to the ingest rate.
+	TelemetryIntervalSeconds prometheus.Gauge
 )
 
 // RegisterSharedMetrics creates and registers the shared collectors.
@@ -112,12 +118,19 @@ func RegisterSharedMetrics(reg *prometheus.Registry) {
 		return float64(ms.HeapInuse)
 	})
 
+	// TelemetryIntervalSeconds is the effective FR-1.2 device cadence (B10).
+	TelemetryIntervalSeconds = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "telemetry_interval_seconds",
+		Help: "Configured nominal device telemetry interval (FR-1.2, TELEMETRY_INTERVAL_SECONDS)",
+	})
+
 	reg.MustRegister(
 		HTTPRequestsTotal, HTTPRequestDuration,
 		NATSMessagesPublished, NATSMessagesConsumed, NATPendingMessages,
 		RedisOperations, RedisOperationDuration,
 		PGInsertDuration, PGInsertErrors, PGPoolInUse, PGPoolOpen,
 		DeadLetterTotal,
+		TelemetryIntervalSeconds,
 		Goroutines, MemoryAllocated,
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),

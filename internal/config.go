@@ -30,12 +30,44 @@ type Config struct {
 		Port string
 		// TeltonikaPort serves Teltonika Codec 8/8E (own reference, 9011/5027).
 		TeltonikaPort string
+		// B9 protocol-expansion listeners (PRD Module 1c). Empty/"0" disables
+		// that listener; the boot guard rejects two protocols sharing a port.
+		TK103Port    string
+		MeiligaoPort string
+		XexunPort    string
+		SuntechPort  string
+		H02Port      string
+		TotemPort    string
+		GT02Port     string
+		NavigilPort  string
+		CastelPort   string
 		// MaxConnections bounds concurrent device connections (FR-1.1).
 		MaxConnections int
 		// IdleTimeout drops silent device connections (FR-1.3).
 		IdleTimeout time.Duration
 		// DateBCD toggles GT06 date decoding (plain-hex default).
 		DateBCD bool
+	}
+
+	// Telemetry holds the FR-1.2 device reporting cadence (B10): the nominal
+	// interval every device should report at (default 20 s). It is used for
+	// buffer/health-check sizing and is pushed to devices that support a
+	// downlink interval command (B8 `TIMER`).
+	Telemetry struct {
+		IntervalSeconds int
+	}
+
+	// Driver holds the B8 driver-behaviour + maintenance reminder settings.
+	Driver struct {
+		// SpeedingMinSeconds is the shortest above-limit episode that becomes a
+		// `speeding` driver event (DRIVER_SPEEDING_MIN_SECONDS, default 10).
+		SpeedingMinSeconds int
+		// MaintenanceSweepInterval is the maintenance reminder cadence
+		// (MAINTENANCE_SWEEP_SECONDS, default 300).
+		MaintenanceSweepInterval time.Duration
+		// MaintenanceCooldown is how long after a reminder the same schedule stays
+		// quiet (MAINTENANCE_REMINDER_COOLDOWN_HOURS, default 24).
+		MaintenanceCooldown time.Duration
 	}
 
 	NATS struct {
@@ -277,7 +309,55 @@ func (c *Config) Validate() error {
 	if c.Fleet.MaxStop < c.Fleet.MinStop {
 		errs = append(errs, errors.New("TRIP_MAX_STOP_SECONDS must be >= TRIP_MIN_STOP_SECONDS"))
 	}
+	// B10: the FR-1.2 device cadence must be a positive number of seconds.
+	if c.Telemetry.IntervalSeconds <= 0 {
+		errs = append(errs, errors.New("TELEMETRY_INTERVAL_SECONDS must be > 0"))
+	}
+	// B8: driver behaviour / maintenance thresholds must be positive.
+	if c.Driver.SpeedingMinSeconds <= 0 {
+		errs = append(errs, errors.New("DRIVER_SPEEDING_MIN_SECONDS must be > 0"))
+	}
+	if c.Driver.MaintenanceSweepInterval <= 0 {
+		errs = append(errs, errors.New("MAINTENANCE_SWEEP_SECONDS must be > 0"))
+	}
+	if c.Driver.MaintenanceCooldown <= 0 {
+		errs = append(errs, errors.New("MAINTENANCE_REMINDER_COOLDOWN_HOURS must be > 0"))
+	}
+	// B9: every listener port is either disabled ("", "0") or a valid TCP port.
+	for _, p := range []struct{ name, value string }{
+		{"TCP_PORT", c.TCP.Port},
+		{"TELTONIKA_TCP_PORT", c.TCP.TeltonikaPort},
+		{"TK103_TCP_PORT", c.TCP.TK103Port},
+		{"MEILIGAO_TCP_PORT", c.TCP.MeiligaoPort},
+		{"XEXUN_TCP_PORT", c.TCP.XexunPort},
+		{"SUNTECH_TCP_PORT", c.TCP.SuntechPort},
+		{"H02_TCP_PORT", c.TCP.H02Port},
+		{"TOTEM_TCP_PORT", c.TCP.TotemPort},
+		{"GT02_TCP_PORT", c.TCP.GT02Port},
+		{"NAVIGIL_TCP_PORT", c.TCP.NavigilPort},
+		{"CASTEL_TCP_PORT", c.TCP.CastelPort},
+	} {
+		if err := ValidationErrorForPort(p.name, p.value); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	return errors.Join(errs...)
+}
+
+// ValidationErrorForPort reports whether a configured listener port is usable:
+// "" and "0" disable the listener (PRD Module 1c), anything else must be a
+// number in 1..65535. Rejecting a typo at boot beats a service that silently
+// never accepts that device family.
+func ValidationErrorForPort(envName, value string) error {
+	v := strings.TrimSpace(value)
+	if v == "" || v == "0" {
+		return nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("%s must be a TCP port in 1..65535 or 0 to disable (got %q)", envName, value)
+	}
+	return nil
 }
 
 // PostgresDSN builds the primary connection URL. DATABASE_URL (when set) wins,
@@ -395,3 +475,17 @@ func (c *Config) Subject(parts ...string) string {
 // SubjectPlain joins parts without the prefix (alert.*, notify.*, media.* keep
 // the documented layout — GAP2 resolution).
 func (c *Config) SubjectPlain(parts ...string) string { return strings.Join(parts, ".") }
+
+// CommandRequestSubject / CommandResultSubject are the B8 downlink subjects
+// (PRD §21.2 row 1): `command.request.<company>` (api-vehicle → ingestion-tcp)
+// and `command.result.<company>` (ingestion-tcp → fan-out). They live here so the
+// producer (api-vehicle) and the consumer (ingestion-tcp) cannot drift apart —
+// the dispatcher rejects a payload whose company does not match the subject.
+func CommandRequestSubject(company string) string {
+	return "command.request." + strings.ToUpper(strings.TrimSpace(company))
+}
+
+// CommandResultSubject returns the result subject of one company.
+func CommandResultSubject(company string) string {
+	return "command.result." + strings.ToUpper(strings.TrimSpace(company))
+}

@@ -20,6 +20,9 @@ const (
 	StreamAlert         = "alert"
 	StreamNotify        = "notify"
 	StreamMedia         = "media"
+	// StreamCommand carries the B8 downlink family: `command.request.<company>`
+	// (api-vehicle → ingestion-tcp) and `command.result.<company>` (fan-out).
+	StreamCommand = "command"
 )
 
 // NATSClient wraps the core NATS connection + JetStream context.
@@ -94,6 +97,7 @@ func (c *NATSClient) ensureStreams() error {
 		{StreamAlert, []string{"alert.>"}},
 		{StreamNotify, []string{"notify.>"}},
 		{StreamMedia, []string{"media.>"}},
+		{StreamCommand, []string{"command.>"}},
 	}
 
 	var errs []error
