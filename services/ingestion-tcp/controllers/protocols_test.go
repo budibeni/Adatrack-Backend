@@ -11,6 +11,7 @@ package controllers
 import (
 	"encoding/binary"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -346,6 +347,230 @@ func TestGT02PositionAndHeartbeat(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Totem (PATTERN_1), Navigil (header) and Castel (framing + IMEI in the id)
 // ---------------------------------------------------------------------------
+
+// TestMeiligaoPositionCommandVariants covers the interop fix: the upstream
+// revisions disagree on the command ids, so the decoder accepts the union and the
+// strict sentence parser decides (plus an optional leading alarm byte / 6-byte
+// logged header).
+func TestMeiligaoPositionCommandVariants(t *testing.T) {
+	sentence := "063519.000,A,0612.0000,S,10650.0000,E,022.4,084.4,240926,"
+
+	// The real device frame from the upstream test suite carries a position under
+	// 0x9999 with NO leading alarm byte (the in-repo doc calls 0x9999 the login ACK).
+	for _, cmd := range []uint16{meiligaoMsgPositionLatest, meiligaoMsgPosition,
+		meiligaoMsgPositionLegacy} {
+		tele, alarm, ok := parseMeiligaoPositionPayload([]byte(sentence))
+		if !ok {
+			t.Fatalf("command 0x%04x: payload rejected", cmd)
+		}
+		if alarm != 0 {
+			t.Fatalf("command 0x%04x: alarm = %d, want 0", cmd, alarm)
+		}
+		if !approx(tele.Lat, -6.2, 1e-6) || !approx(tele.Lon, 106.833333, 1e-6) {
+			t.Fatalf("command 0x%04x: position = (%v,%v)", cmd, tele.Lat, tele.Lon)
+		}
+		if !isMeiligaoPositionCommand(cmd) {
+			t.Fatalf("command 0x%04x must be routed to the position path", cmd)
+		}
+	}
+
+	// Alarm-style payload: one alarm byte in front of the sentence.
+	withAlarm := append([]byte{0x05}, []byte(sentence)...)
+	tele, alarm, ok := parseMeiligaoPositionPayload(withAlarm)
+	if !ok || alarm != 0x05 {
+		t.Fatalf("alarm payload: ok=%v alarm=%d, want true/5", ok, alarm)
+	}
+	if !approx(tele.Lat, -6.2, 1e-6) {
+		t.Fatalf("alarm payload position = (%v,%v)", tele.Lat, tele.Lon)
+	}
+
+	// Logged-position style payload: six skipped bytes.
+	withSkip := append([]byte{0, 0, 0, 0, 0, 0}, []byte(sentence)...)
+	if _, _, ok := parseMeiligaoPositionPayload(withSkip); !ok {
+		t.Fatal("logged-position payload (6-byte header) was rejected")
+	}
+
+	// Garbage must never be decoded into a position.
+	if _, _, ok := parseMeiligaoPositionPayload([]byte("not a sentence")); ok {
+		t.Fatal("garbage payload was accepted")
+	}
+}
+
+// TestMeiligaoLuhnIMEI: a real terminal reports a 14-digit id, and upstream
+// completes it with the IMEI Luhn check digit (not a leading zero) — the allowlist
+// stores the 15-digit form, so the candidate order matters.
+func TestMeiligaoLuhnIMEI(t *testing.T) {
+	// 14 digits whose Luhn check digit is 4 (hand-computed): 86420104051234 → …344
+	if got := luhnIMEI("86420104051234"); got != "864201040512344" {
+		t.Fatalf("luhnIMEI = %q, want 864201040512344", got)
+	}
+	if !isIMEI(luhnIMEI("86420104051234")) {
+		t.Fatal("the Luhn-completed id is not a valid 15-digit IMEI")
+	}
+	// Unknown length / non-digits are rejected instead of padded.
+	if got := luhnIMEI("1234"); got != "" {
+		t.Fatalf("luhnIMEI(short) = %q, want empty", got)
+	}
+	if got := luhnIMEI("1234567890123x"); got != "" {
+		t.Fatalf("luhnIMEI(non-digits) = %q, want empty", got)
+	}
+	// The legacy padded candidate is still produced by padIMEI for older firmwares.
+	if got := padIMEI("86420104051234"); got != "086420104051234" {
+		t.Fatalf("padIMEI = %q, want 086420104051234", got)
+	}
+}
+
+// TestTK103HandshakeAndOdometer covers the handshake login and the optional
+// `L<hex>` odometer of the upstream pattern.
+func TestTK103HandshakeAndOdometer(t *testing.T) {
+	frame := "(123456789012BP0012345678)"
+	id, kind, ok := parseTK103Handshake(frame)
+	if !ok || id != "123456789012" || kind != "BP00" {
+		t.Fatalf("handshake parse = %q/%q/%v", id, kind, ok)
+	}
+	if got := tk103Trailer(frame); got != "678" {
+		t.Fatalf("handshake trailer = %q, want 678", got)
+	}
+	if _, kind, ok := parseTK103Handshake("(123456789012BP05)"); !ok || kind != "BP05" {
+		t.Fatalf("BP05 handshake not recognised (kind=%q ok=%v)", kind, ok)
+	}
+	// A position frame must never be mistaken for a handshake.
+	if _, _, ok := parseTK103Handshake("imei:864201040512345,tracker,240926063519,"); ok {
+		t.Fatal("a tracker sentence was parsed as a handshake")
+	}
+
+	line := "imei:864201040512345,tracker,240926063519,,F,063519.000,A,0612.0000,S," +
+		"10650.0000,E,022.4,084.4,00000001,L1B4F)"
+	tele, ok := parseTK103Sentence(line)
+	if !ok {
+		t.Fatalf("parseTK103Sentence rejected %q", line)
+	}
+	if tele.Mileage != 0x1B4F {
+		t.Fatalf("odometer = %d, want 0x1B4F (%d)", tele.Mileage, 0x1B4F)
+	}
+	if !approx(tele.Lat, -6.2, 1e-6) || !approx(tele.Lon, 106.833333, 1e-6) {
+		t.Fatalf("position = (%v,%v)", tele.Lat, tele.Lon)
+	}
+	// A sentence without the odometer keeps it zero (never coerced from the state).
+	noOdo := "imei:864201040512345,tracker,240926063519,,F,063519.000,A,0612.0000,S," +
+		"10650.0000,E,022.4,084.4)"
+	if tele, ok := parseTK103Sentence(noOdo); !ok || tele.Mileage != 0 {
+		t.Fatalf("odometer without L-field = %d (ok=%v), want 0", tele.Mileage, ok)
+	}
+}
+
+// TestParseTotemPattern2 covers the pipe-delimited PATTERN_2 sentence. The layout
+// follows the upstream regex: `$$<len><IMEI>|<alarm><DDMMYY><HHMMSS>|<A/V>|…`.
+func TestParseTotemPattern2(t *testing.T) {
+	line := "$$0A" + testIMEI + "|AB240926063519|A|0612.0000|S|10650.0000|E|12.3|84" +
+		"|1.0|1|100|12.5|1|0|25|1234|1"
+	tele, ok := parseTotemPattern2(line)
+	if !ok {
+		t.Fatalf("parseTotemPattern2 rejected %q", line)
+	}
+	if !approx(tele.Lat, -6.2, 1e-6) || !approx(tele.Lon, 106.833333, 1e-6) {
+		t.Fatalf("totem p2 position = (%v,%v), want (-6.2,106.833333)", tele.Lat, tele.Lon)
+	}
+	if !approx(tele.Speed, 12.3*1.852, 1e-6) {
+		t.Fatalf("totem p2 speed = %v km/h, want %v", tele.Speed, 12.3*1.852)
+	}
+	if tele.Heading != 84 || !tele.Fix {
+		t.Fatalf("totem p2 heading/fix = %d/%v, want 84/true", tele.Heading, tele.Fix)
+	}
+	want := time.Date(2026, 9, 24, 6, 35, 19, 0, time.UTC).Unix()
+	if tele.Timestamp != want {
+		t.Fatalf("totem p2 timestamp = %d, want %d", tele.Timestamp, want)
+	}
+
+	// The doc layout (a pipe after the length) is tolerated as well.
+	doc := "$$0A|" + testIMEI + "|AB240926063519|A|0612.0000|S|10650.0000|E|12.3|84|x"
+	if _, ok := parseTotemPattern2(doc); !ok {
+		t.Fatalf("parseTotemPattern2 rejected the documented layout %q", doc)
+	}
+
+	// PATTERN_1 frames must not be swallowed by the pattern-2 parser.
+	p1 := "$$0A" + testIMEI + "|AB$GPRMC,123519.000,A,4807.038,S,01131.000,E,022.4,084.4,030926,,,A*6C|1.0|1.0|1.0|1|100|12.5|1|0|25|1234|1"
+	if _, ok := parseTotemPattern2(p1); ok {
+		t.Fatal("a PATTERN_1 frame was parsed as PATTERN_2")
+	}
+	// The GPRMC body is found regardless of its pipe index (identity + body search).
+	if body, idx := totemGPRMCField(strings.Split(p1, "|")); body == "" || idx != 1 {
+		t.Fatalf("gprmc field = %q idx=%d, want the body at index 1", body, idx)
+	}
+	// Identity: upstream layout (`$$<len><IMEI>|`) and doc layout (`$$<len>|<IMEI>|`)
+	// must both resolve — otherwise a real Totem device never authenticates.
+	if got := totemIMEI(line); got != testIMEI {
+		t.Fatalf("totemIMEI(upstream layout) = %q, want %q", got, testIMEI)
+	}
+	if got := totemIMEI(doc); got != testIMEI {
+		t.Fatalf("totemIMEI(doc layout) = %q, want %q", got, testIMEI)
+	}
+	if got := totemIMEI("$$0A|no-id-here|AB"); got != "" {
+		t.Fatalf("totemIMEI(no id) = %q, want empty", got)
+	}
+}
+
+// TestCastelPositionPayload covers the opt-in Castel position decoder (scales
+// verified upstream; sign bits chosen explicitly — see proto_castel.go).
+func TestCastelPositionPayload(t *testing.T) {
+	saved := castelGPSMode
+	defer func() { castelGPSMode = saved }()
+
+	body := make([]byte, castelPositionPayloadBytes)
+	body[0], body[1], body[2] = 24, 9, 26                             // day, month, year-2000
+	body[3], body[4], body[5] = 6, 35, 19                             // hour, minute, second
+	binary.LittleEndian.PutUint32(body[6:10], uint32(6.2*3600000))    // |lat| * 3.6e6
+	binary.LittleEndian.PutUint32(body[10:14], uint32(106.8*3600000)) // |lon| * 3.6e6
+	binary.LittleEndian.PutUint16(body[14:16], 1000)                  // 1000 cm/s = 36 km/h
+	binary.LittleEndian.PutUint16(body[16:18], 840)                   // 84.0 degrees
+	body[18] = 0x0A | 0x20                                            // lat sign bit clear (south), sats
+
+	// Default: decoding is OFF → the frame stays counted as unsupported.
+	castelGPSMode = castelGPSOff
+	if _, ok := parseCastelPosition(body); ok {
+		t.Fatal("position decoded while CASTEL_GPS_DECODE=off")
+	}
+
+	// Legacy sign bits: bit0 = latitude sign (0 → south), bit1 = longitude sign (1 → east).
+	castelGPSMode = castelGPSOn
+	tele, ok := parseCastelPosition(body)
+	if !ok {
+		t.Fatal("legacy mode rejected a valid position block")
+	}
+	if !approx(tele.Lat, -6.2, 1e-6) || !approx(tele.Lon, 106.8, 1e-6) {
+		t.Fatalf("legacy position = (%v,%v), want (-6.2,106.8)", tele.Lat, tele.Lon)
+	}
+	if !approx(tele.Speed, 36, 1e-6) || tele.Heading != 84 {
+		t.Fatalf("speed/heading = %v/%d, want 36/84", tele.Speed, tele.Heading)
+	}
+	if tele.Satellites != 2 {
+		t.Fatalf("satellites = %d, want 2 (high nibble of 0x20)", tele.Satellites)
+	}
+	want := time.Date(2026, 9, 24, 6, 35, 19, 0, time.UTC).Unix()
+	if tele.Timestamp != want || !tele.Fix {
+		t.Fatalf("timestamp/fix = %d/%v, want %d/true", tele.Timestamp, tele.Fix, want)
+	}
+
+	// Swapped mode: bit1 = latitude sign, bit0 = longitude sign → different result.
+	castelGPSMode = castelGPSOnSwapped
+	swapped, ok := parseCastelPosition(body)
+	if !ok {
+		t.Fatal("swapped mode rejected a valid position block")
+	}
+	if !approx(swapped.Lat, 6.2, 1e-6) {
+		t.Fatalf("swapped latitude = %v, want 6.2 (bit1 clear → south in legacy reads north here)", swapped.Lat)
+	}
+
+	// A short or implausible block never produces a position.
+	if _, ok := parseCastelPosition(body[:10]); ok {
+		t.Fatal("a truncated position block was accepted")
+	}
+	bad := append([]byte{}, body...)
+	bad[1] = 13 // month 13
+	if _, ok := parseCastelPosition(bad); ok {
+		t.Fatal("an impossible month was accepted")
+	}
+}
 
 func TestParseTotemPattern1(t *testing.T) {
 	line := "$$0123|" + testIMEI + "|help me!$GPRMC,123519.000,A,4807.038,S,01131.000,E,022.4,084.4,030926,,,A*6C" +

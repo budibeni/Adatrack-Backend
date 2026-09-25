@@ -623,7 +623,22 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ---
 
-## Phase B9 — Protocol Expansion 🟡 (sebagian, 2026-09-24)
+## Phase B9 — Protocol Expansion ✅ (2026-09-25; seluruh gap yang dapat diverifikasi ditutup)
+
+> **Status:** 9 keluarga terpasang. **Ingest penuh**: TK103 (login+handshake
+> `BP00/BP05`, posisi, odometer `L<hex>`, 7 perintah downlink), Meiligao (union id
+> lintas-revisi + **Luhn** untuk id 14 digit), Xexun, H02 (teks), Totem (PATTERN_1 +
+> **PATTERN_2**), GT02, **Navigil (MSG 8/18)**, **Suntech (teks universal klasik)**.
+> **Framing+identitas+respons**: Castel (login/heartbeat) dengan posisi GPS
+> **opt-in** `CASTEL_GPS_DECODE` — skala terverifikasi dari patch upstream resmi
+> (`/3600000`, `cms→km/h`, `/10`), hanya urutan bit tanda yang menunggu konfirmasi
+> device. Bukti live per keluarga: `docs/B8-B10-VERIFICATION.md` §2.3–§2.7.
+>
+> Yang secara eksplisit masih memblokir (rujukan tidak dapat diambil utuh atau
+> saling bertentangan, **bukan** karena belum dikerjakan): H02 biner, Meiligao
+> OBD/DTC/RFID, Navigil MSG 13/15, sisa matriks TK103 (alarm/RFID/BMS/OBD/suhu) —
+> semuanya tetap dihitung `ingestion_unsupported_frames_total` dan dicatat di §2.8/§4.
+
 
 ### Tasks
 - [x] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
@@ -651,9 +666,12 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ### Acceptance
 - [x] Device non-GT06 bisa ingest end-to-end (login→telemetry→persist→live state) tanpa perubahan service lain.
-      → terbukti untuk Xexun (TCP nyata, §2.3) dan berlaku untuk seluruh keluarga
-      ber-"ingest penuh" (kini termasuk Navigil MSG 8/18); keluarga framing-only
-      (Suntech, Castel GPS) belum memenuhi kriteria ini (gap §4).
+      → terbukti untuk Xexun (§2.3), Navigil (§2.4), Suntech (§2.5), **Totem P2,
+      Meiligao 0x9999, Castel opt-in** (§2.7) — semuanya lewat TCP nyata ke
+      `th_telemetry_logs` + Redis live state tanpa mengubah worker-live /
+      worker-persistence / worker-alert. Keluarga yang masih menunggu rujukan
+      (H02 biner, Castel default, Meiligao OBD/DTC/RFID) tetap dihitung sebagai
+      unsupported dan dicatat di §4/§2.8.
 
 ---
 

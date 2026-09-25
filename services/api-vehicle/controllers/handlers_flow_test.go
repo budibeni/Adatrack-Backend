@@ -15,25 +15,52 @@ func parseJSON(raw []byte, dst any) error {
 	return json.Unmarshal(raw, dst)
 }
 
-// TestUpdateVehicleIMEIImmutable: PATCH cannot change the device identity.
-func TestUpdateVehicleIMEIImmutable(t *testing.T) {
+// TestUpdateVehicleIMEIRepoint: a PATCH may re-point the device identity, but only
+// with a valid 15-digit IMEI that is free in the tenant (tracker replacement,
+// anti-spoofing FR-1.4). A malformed or already-used IMEI is rejected.
+func TestUpdateVehicleIMEIRepoint(t *testing.T) {
 	store := newFakeStore()
 	store.seedVehicle(&models.Vehicle{ID: 5, IMEI: "864201040512345", PlateNumber: "B 1 A", Status: "active"})
 	svc := newTestService(store)
 
-	body := `{"imei":"999999999999999","plate_number":"B 2 B"}`
-	c, rec := testContext(http.MethodPatch, "/api/v1/vehicles/5", body,
-		adminIdentity())
-	c.Params = gin.Params{{Key: "id", Value: "5"}}
+	t.Run("valid and free", func(t *testing.T) {
+		body := `{"imei":"999999999999999","plate_number":"B 2 B"}`
+		c, rec := testContext(http.MethodPatch, "/api/v1/vehicles/5", body, adminIdentity())
+		c.Params = gin.Params{{Key: "id", Value: "5"}}
 
-	svc.handleUpdateVehicle(c)
+		svc.handleUpdateVehicle(c)
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("got %d, want 409 CONFLICT for an IMEI change", rec.Code)
-	}
-	if store.updatedVehicle {
-		t.Error("the store must not be touched when the IMEI differs")
-	}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got %d, want 200 for a validated IMEI re-point (body %s)", rec.Code, rec.Body.String())
+		}
+		if !store.updatedVehicle {
+			t.Error("the store must be updated for a validated IMEI re-point")
+		}
+		if got := store.vehicles[5].IMEI; got != "999999999999999" {
+			t.Errorf("stored IMEI = %q, want the new one", got)
+		}
+	})
+
+	t.Run("malformed", func(t *testing.T) {
+		body := `{"imei":"12345","plate_number":"B 3 C"}`
+		c, rec := testContext(http.MethodPatch, "/api/v1/vehicles/5", body, adminIdentity())
+		c.Params = gin.Params{{Key: "id", Value: "5"}}
+		svc.handleUpdateVehicle(c)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("got %d, want 400 for a malformed IMEI", rec.Code)
+		}
+	})
+
+	t.Run("already used", func(t *testing.T) {
+		store.seedVehicle(&models.Vehicle{ID: 6, IMEI: "864201040577777", PlateNumber: "B 9 Z", Status: "active"})
+		body := `{"imei":"864201040577777","plate_number":"B 4 D"}`
+		c, rec := testContext(http.MethodPatch, "/api/v1/vehicles/5", body, adminIdentity())
+		c.Params = gin.Params{{Key: "id", Value: "5"}}
+		svc.handleUpdateVehicle(c)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("got %d, want 409 for an IMEI owned by another vehicle", rec.Code)
+		}
+	})
 }
 
 // TestGeofenceCreateGeometryValidation: a polygon with < 3 points is a 400 with

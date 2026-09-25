@@ -3,18 +3,24 @@ package controllers
 // proto_totem.go — Totem as a pluggable decoder (B9).
 //
 // Reference: docs/docs-device/traccar-reference/03-priority-medium.md §3.1 and the
-// upstream TotemProtocolDecoder PATTERN_1 (the GPRMC-based text form):
+// upstream TotemProtocolDecoder, whose two text patterns are both implemented here:
 //
-//	$$<length>|<IMEI>|<alarm>$GPRMC,<time>,<A/V>,<lat>,<N>,<lon>,<E>,<speed>,<course>,<date>*<cs>|
-//	<pdop>|<hdop>|<vdop>|<io>|<battery>|<power>|<adc>|<lac>|<cid>|<temp>|<odometer>|<serial><cs>
+//	PATTERN_1 (GPRMC):
+//	$$<len>|<IMEI>|<alarm>$GPRMC,<time>,<A/V>,<lat>,<N>,<lon>,<E>,<speed>,<course>,<date>*
+//	         |<pdop>|<hdop>|<vdop>|<io>|<battery>|<power>|<adc>|<lac>|<cid>|<temp>|<odo>|<serial><cs>
 //
-// Only PATTERN_1 is decoded: the pipe-delimited PATTERN_2 has no documented field
-// order in either reference, so those frames are counted as unsupported rather
-// than guessed. The NMEA body is decoded by the shared GPRMC parser (speed in
-// knots → km/h), and the documented `ACK OK` response is returned.
+//	PATTERN_2 (pipe-delimited, no GPRMC):
+//	$$<len>|<IMEI>|<alarm><DDMMYY><HHMMSS>|<A/V>|<lat DDMM.MMMM>|<N/S>|<lon DDDMM.MMMM>|<E/W>|
+//	         <speed>|<course>|<hdop>|<io>|<battery>|<power>|<adc>|<lac>|<temp>|<odometer>|<serial>
+//
+// Only these two text forms are decoded; the binary/OTHER frames are counted in
+// `ingestion_unsupported_frames_total` instead of being guessed. The documented
+// `ACK OK` response is returned for both.
 
 import (
+	"log/slog"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +28,26 @@ import (
 	"adatrack_gps/ingestion-tcp/models"
 	"adatrack_gps/internal"
 )
+
+// totemPattern2 is the upstream PATTERN_2 regex (field order verified verbatim from
+// TotemProtocolDecoder). Groups:
+//
+//	1 IMEI | 2 alarm | 3-5 date | 6-8 time | 9 validity |
+//	10-11 lat + 12 hemisphere | 13-14 lon + 15 hemisphere | 16 speed | 17 course
+var totemPattern2 = regexp.MustCompile(
+	`^\$\$[0-9A-Fa-f]{2}\|?` + // header + length (a pipe after the length is tolerated)
+		`(\d+)\|` + // IMEI
+		`(..)` + // alarm type
+		`(\d{2})(\d{2})(\d{2})` + // date (DDMMYY)
+		`(\d{2})(\d{2})(\d{2})\|` + // time (HHMMSS)
+		`([AV])\|` + // validity
+		`(\d+)(\d{2}\.\d+)\|` + // latitude (DDMM.MMMM)
+		`([NS])\|` + // hemisphere
+		`(\d+)(\d{2}\.\d+)\|` + // longitude (DDDMM.MMMM)
+		`([EW])\|` + // hemisphere
+		`(\d+\.\d+)?\|` + // speed
+		`(\d+)?\|` + // course
+		`.*$`)
 
 type totemDecoder struct{}
 
@@ -47,23 +73,38 @@ func (d totemDecoder) Serve(s *Server, c net.Conn) {
 			rejectedTotal.WithLabelValues("parse").Inc()
 			return nil, false
 		}
-		imei := strings.TrimSpace(fields[1])
+		// Identity: the IMEI sits either right after the `$$<len>` header (upstream
+		// regex: `$$<2 hex><IMEI>|`) or in the first pipe field (in-repo doc layout).
+		imei := totemIMEI(frame)
 		if !s.ensureAuth(&st, imei, protoName, c.RemoteAddr().String()) {
 			return nil, true
 		}
 		s.registerConn(&st, c, models.ProtoTotem)
 
-		if strings.Contains(fields[2], "GPRMC") || strings.Contains(fields[2], "GNRMC") {
+		// PATTERN_1: a field that carries the embedded GPRMC sentence.
+		if body, idx := totemGPRMCField(fields); body != "" {
 			framesTotal.WithLabelValues(protoName, "position").Inc()
-			tele, ok := parseGPRMCSentence(fields[2])
+			tele, ok := parseGPRMCSentence(body)
 			if !ok {
 				tcpParseErrors.WithLabelValues(protoName).Inc()
 				rejectedTotal.WithLabelValues("parse").Inc()
 				return []byte("ACK OK"), false
 			}
-			applyTotemExtras(&tele, fields)
+			// The battery/odometer pipe positions are only defined for the documented
+			// layout (body in fields[2]); with the upstream layout they shift, so the
+			// extras are applied only when the index proves the documented order.
+			if idx == 2 {
+				applyTotemExtras(&tele, fields)
+			}
 			s.publish(&st, tele, protoName)
 			// Documented response for PATTERN_1.
+			return []byte("ACK OK"), false
+		}
+
+		// PATTERN_2: pipe-delimited sentence without GPRMC.
+		if tele, ok := parseTotemPattern2(frame); ok {
+			framesTotal.WithLabelValues(protoName, "position").Inc()
+			s.publish(&st, tele, protoName)
 			return []byte("ACK OK"), false
 		}
 
@@ -72,8 +113,84 @@ func (d totemDecoder) Serve(s *Server, c net.Conn) {
 			s.publish(&st, models.TelemetryMessage{Timestamp: time.Now().Unix()}, protoName)
 		}
 		unsupportedFrames.WithLabelValues(protoName).Inc()
+		slog.Debug("totem: frame not in PATTERN_1/PATTERN_2", "imei", imei, "fields", len(fields))
 		return []byte("ACK OK"), false
 	})
+}
+
+// totemIMEI extracts the device identity: the digit run between the `$$<len>`
+// header and the first pipe (upstream layout) or the 15-digit IMEI of the
+// documented layout. Returns "" when the frame carries neither, so the caller can
+// reject it explicitly instead of treating it as an anonymous device.
+func totemIMEI(frame string) string {
+	if m := totemHeaderID.FindStringSubmatch(frame); m != nil {
+		return m[1]
+	}
+	return parseIMEIPrefix(frame)
+}
+
+// totemHeaderID mirrors the identity part of the upstream patterns:
+// `$$<2 hex>[|]<digits>|`.
+var totemHeaderID = regexp.MustCompile(`^\$\$[0-9A-Fa-f]{2}\|?(\d{6,})\|`)
+
+// totemGPRMCField finds the pipe field that carries the embedded NMEA sentence and
+// returns it with its index (so the caller knows whether the documented layout is
+// in play). Returns "" when the frame carries no GPRMC/GNRMC body.
+func totemGPRMCField(fields []string) (string, int) {
+	for i, f := range fields {
+		if strings.Contains(f, "GPRMC") || strings.Contains(f, "GNRMC") {
+			return f, i
+		}
+	}
+	return "", -1
+}
+
+// parseTotemPattern2 decodes the pipe-delimited PATTERN_2 sentence.
+//
+// Coordinates use the NMEA convention (`DDMM.MMMM` + hemisphere, degrees =
+// deg + min/60) exactly like PATTERN_1 and the upstream `third` format. The speed
+// field is written into traccar's internal speed (knots) UNCONVERTED upstream, so
+// it is read here as knots and converted to the pipeline's km/h — the same reading
+// PATTERN_1's GPRMC field gets.
+func parseTotemPattern2(frame string) (models.TelemetryMessage, bool) {
+	var t models.TelemetryMessage
+	m := totemPattern2.FindStringSubmatch(strings.TrimSpace(frame))
+	if m == nil {
+		return t, false
+	}
+	ts, ok := nmeaTimestamp(m[6]+m[7]+m[8], m[3]+m[4]+m[5])
+	if !ok {
+		return t, false
+	}
+	// The regex splits each coordinate into its degrees and `MM.MMMM` parts, so the
+	// NMEA form nmeaCoordinate expects is the concatenation of both groups.
+	lat, ok := nmeaCoordinate(m[10]+m[11], m[12])
+	if !ok {
+		return t, false
+	}
+	lon, ok := nmeaCoordinate(m[13]+m[14], m[15])
+	if !ok {
+		return t, false
+	}
+
+	t.Timestamp = ts
+	t.Lat, t.Lon = lat, lon
+	t.Fix = strings.EqualFold(m[9], "A")
+	if m[16] != "" {
+		if knots, err := strconv.ParseFloat(m[16], 64); err == nil {
+			t.Speed = knots * 1.852 // upstream stores the raw value in a knots field
+		}
+	}
+	if m[17] != "" {
+		if course, err := strconv.ParseFloat(m[17], 64); err == nil {
+			t.Heading = int16(course)
+		}
+	}
+	// NOTE: the fields after the course (hdop/io/battery/power/adc/lac/temperature/
+	// odometer) sit at DIFFERENT pipe positions than PATTERN_1, and the upstream code
+	// writes them to non-canonical extended attributes only. They are therefore not
+	// mapped here instead of being guessed into `battery`/`mileage`.
+	return t, true
 }
 
 // applyTotemExtras fills the fields Totem appends after the NMEA sentence

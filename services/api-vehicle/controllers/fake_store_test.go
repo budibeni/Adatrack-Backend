@@ -113,8 +113,18 @@ func (f *fakeStore) VehicleByID(_ context.Context, _ string, id int64, includeDe
 	return v, nil
 }
 
-func (f *fakeStore) IMEIExists(_ context.Context, _, _ string, _ int64) (bool, error) {
-	return f.imeiExists, nil
+// IMEIExists mirrors the SQL guard: a canned true (store-error tests) OR a real
+// scan of the seeded vehicles, so the IMEI re-point path can be tested faithfully.
+func (f *fakeStore) IMEIExists(_ context.Context, _ string, imei string, excludeID int64) (bool, error) {
+	if f.imeiExists {
+		return true, nil
+	}
+	for id, v := range f.vehicles {
+		if v.IMEI == imei && id != excludeID && v.DeletedAt == nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (f *fakeStore) CreateVehicle(_ context.Context, _ string, v *models.Vehicle, _ int64) (int64, error) {

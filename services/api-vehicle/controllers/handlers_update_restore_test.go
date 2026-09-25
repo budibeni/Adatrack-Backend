@@ -179,8 +179,8 @@ func TestPatchVehicleStatusIsOptional(t *testing.T) {
 }
 
 // TestPatchVehicleGuards covers the rejection paths of the PATCH handler:
-// malformed id, invalid body, unknown vehicle and an IMEI change attempt
-// (immutable identity, FR-1.4 anti-spoofing).
+// malformed id, invalid body, unknown vehicle, a malformed IMEI and an IMEI that
+// already belongs to another vehicle (the identity is validated, FR-1.4).
 func TestPatchVehicleGuards(t *testing.T) {
 	store := newFakeStore()
 	store.seedVehicle(&models.Vehicle{ID: 1, IMEI: "864201040512345",
@@ -197,9 +197,9 @@ func TestPatchVehicleGuards(t *testing.T) {
 		rec := patchVehicle(svc, "99", `{"imei":"864201040512345","plate_number":"B 1234 XYZ"}`)
 		wantError(t, rec, http.StatusNotFound, CodeVehicleNotFound)
 	})
-	t.Run("imei is immutable", func(t *testing.T) {
-		rec := patchVehicle(svc, "1", `{"imei":"864201040599999","plate_number":"B 1234 XYZ"}`)
-		wantError(t, rec, http.StatusConflict, CodeConflict)
+	t.Run("malformed imei", func(t *testing.T) {
+		rec := patchVehicle(svc, "1", `{"imei":"abc","plate_number":"B 1234 XYZ"}`)
+		wantError(t, rec, http.StatusBadRequest, CodeValidationError)
 	})
 }
 

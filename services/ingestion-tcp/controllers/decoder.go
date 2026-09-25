@@ -170,6 +170,30 @@ func readLine(r *bufio.Reader, delim byte, max int) ([]byte, error) {
 	}
 }
 
+// readLine reads until one of the delimiters (the delimiter is INCLUDED in the
+// result) or max bytes. It exists for families whose frames end with more than one
+// terminator: TK103 devices close a handshake with ')' but a login/report with ';',
+// and a device that never sends the expected byte would otherwise stall the session
+// until the idle timeout.
+func readLineAny(r *bufio.Reader, delims []byte, max int) ([]byte, error) {
+	buf := make([]byte, 0, 128)
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, b)
+		for _, d := range delims {
+			if b == d {
+				return buf, nil
+			}
+		}
+		if len(buf) > max {
+			return nil, fmt.Errorf("text frame exceeds %d bytes without a terminator", max)
+		}
+	}
+}
+
 // readFrame reads exactly n bytes (bounded by max); the framing header must
 // already have been consumed by the caller.
 func readFrame(r *bufio.Reader, n, max int) ([]byte, error) {

@@ -25,12 +25,27 @@ package controllers
 // IDENTITY: the 20-character id can carry the IMEI, so identity reuses the normal
 // allowlist path: every 15-digit run inside the id is tried (FR-1.4).
 //
-// GPS PAYLOAD: the field list is documented (timestamp 6B, lat 4B, lon 4B,
-// speed 1B, course 2B, status 4B) but without the lat/lon scale, and a wrong scale
-// silently reports a wrong position. The v3.0 source shows `/ 3600000.0` for a
-// different (older) message variant, which is NOT enough to claim the current
-// layout, so GPS frames stay counted in
-// `ingestion_unsupported_frames_total{protocol="castel"}` instead of guessed.
+// GPS PAYLOAD (MSG_SC_GPS 0x4001 and the MPIP position commands): the field order
+// and the scales are verified from the upstream source:
+//
+//	date/time(6, plain bytes) | lat(uint32 LE / 3_600_000) | lon(uint32 LE / 3_600_000) |
+//	speed(uint16 LE, cm/s → km/h) | course(uint16 LE / 10) | flags(1)
+//
+// (the 2026 upstream commit "Use division for decimal scaling" shows the exact lines:
+// `double lat = buf.readUnsignedIntLE() / 3600000.0;` … `knotsFromCps(buf.readUnsignedShortLE())`
+// … `setCourse(buf.readUnsignedShortLE() / 10.0)` … `int flags = buf.readUnsignedByte();`).
+//
+// The FLAG BITS are the one point the two upstream revisions do not state identically
+// (2015: bit0 = latitude sign, bit1 = longitude sign, bits 2-3 = fix, high nibble =
+// satellites; the modern source only shows that bit1 is checked first), so decoding is
+// OFF by default and the convention is chosen explicitly:
+//
+//	CASTEL_GPS_DECODE = off (default) | on (legacy sign bits) | on-swapped (bit1 = lat)
+//
+// With `off` the frames stay counted in `ingestion_unsupported_frames_total`, exactly
+// as before; with `on`/`on-swapped` the operator confirms the convention against one
+// real frame (a mirrored position is visible immediately) — the same honesty rule the
+// rest of the B9 work follows.
 
 import (
 	"bufio"
@@ -39,6 +54,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -46,6 +62,33 @@ import (
 	"adatrack_gps/ingestion-tcp/models"
 	"adatrack_gps/internal"
 )
+
+// Castel GPS decoding modes (CASTEL_GPS_DECODE).
+const (
+	castelGPSOff       = "off"
+	castelGPSOn        = "on"
+	castelGPSOnSwapped = "on-swapped"
+)
+
+// castelGPSMode reads the opt-in switch once at boot.
+var castelGPSMode = strings.ToLower(strings.TrimSpace(envOrLocal("CASTEL_GPS_DECODE", castelGPSOff)))
+
+// castelGPSEnabled reports whether position frames are decoded.
+func castelGPSEnabled() bool {
+	return castelGPSMode == castelGPSOn || castelGPSMode == castelGPSOnSwapped
+}
+
+// CastelGPSMode reports the active switch (boot log / ops).
+func CastelGPSMode() string { return castelGPSMode }
+
+// envOrLocal reads an env var with a default (kept local so the Castel switch stays
+// next to the code that documents it).
+func envOrLocal(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
 
 // Castel command types (docs §3.4 + upstream).
 const (
@@ -196,6 +239,72 @@ func castelLoginResponsePayload() []byte {
 	return binary.BigEndian.AppendUint32(out, uint32(time.Now().Unix()))
 }
 
+// castelPositionPayloadBytes is the exact length of the position block
+// (date/time 6 + lat 4 + lon 4 + speed 2 + course 2 + flags 1). Frames with fewer
+// bytes are never parsed into a half-position.
+const castelPositionPayloadBytes = 19
+
+// parseCastelPosition decodes the verified position block (see the file header).
+//
+//	date/time(6) | lat(uint32 LE / 3.6e6) | lon(uint32 LE / 3.6e6) |
+//	speed(uint16 LE, cm/s) | course(uint16 LE /10) | flags(1)
+//
+// It returns false when decoding is switched off (default), when the block is too
+// short, when the date/time is implausible or when the coordinates are out of range
+// — the caller then counts the frame as unsupported instead of publishing it.
+func parseCastelPosition(body []byte) (models.TelemetryMessage, bool) {
+	var t models.TelemetryMessage
+	if !castelGPSEnabled() || len(body) < castelPositionPayloadBytes {
+		return t, false
+	}
+	ts, ok := castelDateTime(body[0:6])
+	if !ok {
+		return t, false
+	}
+	lat := float64(binary.LittleEndian.Uint32(body[6:10])) / 3600000.0
+	lon := float64(binary.LittleEndian.Uint32(body[10:14])) / 3600000.0
+	// Speed travels in cm/s (upstream `knotsFromCps`); 1 cm/s = 0.036 km/h.
+	speedKMH := float64(binary.LittleEndian.Uint16(body[14:16])) * 0.036
+	course := float64(binary.LittleEndian.Uint16(body[16:18])) / 10.0
+	flags := body[18]
+
+	// Sign convention (see the file header): `on` = 2015 bit assignment, `on-swapped`
+	// = latitude takes bit1.
+	latBit, lonBit := byte(0x01), byte(0x02)
+	if castelGPSMode == castelGPSOnSwapped {
+		latBit, lonBit = 0x02, 0x01
+	}
+	if flags&latBit == 0 {
+		lat = -lat
+	}
+	if flags&lonBit == 0 {
+		lon = -lon
+	}
+	if lat < -90 || lat > 90 || lon < -180 || lon > 180 {
+		return t, false
+	}
+
+	t.Timestamp = ts
+	t.Lat, t.Lon = lat, lon
+	t.Speed = speedKMH
+	t.Heading = int16(course)
+	t.Fix = flags&0x0C > 0 // bits 2-3 = fix (2015 reference)
+	t.Satellites = flags >> 4
+	return t, true
+}
+
+// castelDateTime converts the 6 plain date/time bytes (day, month, year-2000, hour,
+// minute, second) into a Unix timestamp, rejecting implausible values.
+func castelDateTime(b []byte) (int64, bool) {
+	day, month, year := int(b[0]), int(b[1]), 2000+int(b[2])
+	hour, minute, second := int(b[3]), int(b[4]), int(b[5])
+	if month < 1 || month > 12 || day < 1 || day > 31 ||
+		hour > 23 || minute > 59 || second > 60 || year < 2000 || year > 2100 {
+		return 0, false
+	}
+	return time.Date(year, time.Month(month), day, hour, minute, second, 0, time.UTC).Unix(), true
+}
+
 // castelHandle dispatches one frame; false = the connection must close.
 func (s *Server) castelHandle(st *session, c net.Conn, f castelFrame, protoName string) bool {
 	// The device id carries the IMEI for SC/CC trackers; a frame without a
@@ -229,6 +338,18 @@ func (s *Server) castelHandle(st *session, c net.Conn, f castelFrame, protoName 
 	case castelMsgLogout:
 		framesTotal.WithLabelValues(protoName, "logout").Inc()
 		return false
+	case castelMsgGPS:
+		framesTotal.WithLabelValues(protoName, "position").Inc()
+		tele, ok := parseCastelPosition(f.Body)
+		if !ok {
+			unsupportedFrames.WithLabelValues(protoName).Inc()
+			slog.Debug("castel: position payload not decoded",
+				"id", f.ID, "bytes", len(f.Body), "mode", castelGPSMode)
+			break
+		}
+		if st.authenticated() {
+			s.publish(st, tele, protoName)
+		}
 	default:
 		framesTotal.WithLabelValues(protoName, "unsupported_payload").Inc()
 		unsupportedFrames.WithLabelValues(protoName).Inc()

@@ -1,24 +1,28 @@
-# B8 / B9 / B10 — Verifikasi & Audit (2026-09-24)
+# B8 / B9 / B10 — Verifikasi & Audit (revisi 3, 2026-09-25)
 
 > Ringkasan bukti nyata untuk fase **B8 (Advanced Fleet Features)**, **B9 (Protocol
 > Expansion)** dan **B10 (Normalisasi & Konfigurasi)**. Semua klaim di bawah punya
 > perintah + hasil yang bisa diulang; item yang belum lengkap ditulis eksplisit di
 > §4 (gap), mengikuti aturan `.agent/01-global-rules.md`.
 >
-> **Revisi 2 (audit lanjutan 2026-09-24):** lima belas temuan audit sudah diperbaiki —
-> ACK Navigil, payload Navigil MSG 8/18, peta identitas Navigil, framing+respons
-> Castel, downlink durable JetStream, bug SQL audit command, encoder TK103,
-> E2E downlink baru (`scripts/e2e-commands.sh`), ambiguitas balasan device saat dua
-> perintah in-flight, replay backlog JetStream, metrik `telemetry_interval_seconds`
-> yang selalu 0, **payload posisi Suntech**, **dua perintah TK103 tambahan**, dan
-> **skor mengemudi ternormalisasi per jarak**. Rincian: §5.
+> **Revisi 3 (penutupan GAP 2026-09-25):** dua puluh temuan sudah diperbaiki. Yang
+> baru: payload posisi **Suntech** (teks universal klasik), **Totem PATTERN_2** +
+> ekstraksi IMEI dua tata letak, **handshake TK103 BP00/BP05** + odometer `L<hex>` +
+> terminator `)`, **union id Meiligao** (frame device nyata 0x9999) + **Luhn** untuk
+> id 14 digit, **posisi Castel opt-in** (skala terverifikasi dari patch upstream),
+> **skor mengemudi per 100 km**, dan **re-point IMEI tervalidasi via PATCH**.
+> Sebelumnya (revisi 2): ACK Navigil 24 byte, payload Navigil MSG 8/18, peta
+> identitas Navigil, framing+respons Castel, downlink **durable JetStream** + dua
+> guard, bug SQL audit command, encoder TK103, E2E `scripts/e2e-commands.sh`, metrik
+> `telemetry_interval_seconds`. Bukti live: §2.4–§2.7; yang masih memblokir: §2.8/§4.
+> Rincian temuan: §5.
 
 ## 0. Ringkasan
 
 | Fase | Status | Bukti utama |
 |---|---|---|
 | **B8** Downlink `DYD#` / driver behaviour / maintenance | ✅ selesai (gap tersisa: encoder non-GT06/TK103, atribusi skor ke driver) | registry koneksi + dispatcher `command.request.>` **durable JetStream** + ACK `0x21` → `td_device_commands`; encoder GT06 + **7 perintah TK103**; alert `driver_event`/`maintenance_due`; **skor mengemudi per 100 km**; migrasi `021`–`025`; E2E `e2e-commands.sh` 5/5 |
-| **B9** Protocol expansion (9 keluarga) | 🟡 sebagian (8 keluarga ingest penuh, 1 framing + respons) | registry decoder pluggable; 11 listener; **Xexun/Navigil/Suntech end-to-end** → `th_telemetry_logs` + Redis live state; **Castel** framing benar + balasan login/heartbeat; test vector per protokol |
+| **B9** Protocol expansion (9 keluarga) | 🟡 sebagian (8 keluarga ingest penuh, Castel opt-in + respons) | registry decoder pluggable; 11 listener; **Xexun/Navigil/Suntech/Totem P2/Meiligao 0x9999 end-to-end** → `th_telemetry_logs` + Redis live state; **Castel** framing benar + balasan login/heartbeat + posisi opt-in |
 | **B10** Normalisasi & konfigurasi | ✅ selesai | guard prefix `tm_/th_/td_` otomatis; `TELEMETRY_INTERVAL_SECONDS` + metrik gauge; config ganda LOCAL/COOLIFY; `internal/validate` (§8.5/§9.6) |
 
 E2E regresi pipeline setelah refactor ingestion: **5/5 PASS**.
@@ -126,11 +130,11 @@ port-nya). Protokol dipilih oleh **listener/port**, bukan sniffing byte pertama.
 
 | Protokol | Port dev | Login/identitas | Position | Catatan |
 |---|---|---|---|---|
-| TK103 | 9013 | `##,imei:<15>,A` → `LOAD` | `imei:<15>,tracker,…` | subset posisi; matriks perintah TK103 (alarm/RFID/BMS/OBD) belum |
-| Meiligao | 9002 | BCD 7 byte (14 digit → dinormalkan 15) | kalimat ASCII NMEA + alarm | sesuai decoder Traccar (`decodeRegular`) |
+| TK103 | 9013 | `##,imei:<15>,A` → `LOAD`; **handshake `(<id>BP00/BP05…)`** → `(id AP01<3 akhir>)`/`(id AP05)` | `imei:<15>,tracker,…` + `L<hex>` odometer | terminator `;` **dan** `)` diterima; matriks perintah downlink 7 tipe |
+| Meiligao | 9002 | BCD 7 byte (14 digit → dinormalkan 15) | kalimat ASCII NMEA + alarm | id login menerima 0x5000/0x5001, posisi menerima 0x5002/0x5004/0x9955/0x9016/0x9999 (union rujukan), offset alarm/logged ditoleransi, id 14 digit dilengkapi **Luhn** (upstream) |
 | Xexun | 9004 | `imei:<15>` | GPRMC/GNRMC basic+full; knots→km/h; status ACC/SOS | **end-to-end terbukti** (§2.3) |
 | H02 | 9010 | `<IMEI>` per frame | teks `V3`/`VP1`, bit10 = ACC | mode biner (`$`) belum |
-| Totem | 9005 | pipe-delimited | `$$…$GPRMC…` (PATTERN_1) | PATTERN_2 (tanpa GPRMC) belum |
+| Totem | 9005 | pipe-delimited, ID = IMEI 15 digit (dua tata letak) | `$$…$GPRMC…` (PATTERN_1) + **pipe-delimited PATTERN_2** | PATTERN_2 didekode sejak GAP terakhir; ekstraksi IMEI menangani kedua tata letak |
 | GT02 | 9006 | 8 byte hex (nibble marker dibuang) | `0x10` data + `0x1A` heartbeat | checksum XOR menerima dua rentang (ambiguitas dokumen) |
 | Suntech | 9017 | teks; ID = IMEI 15 digit | **teks universal klasik** (ST215/ST300STT) | kalimat: `header;id;versi;YYYYMMDD;HH:MM:SS;[cell;]lat;lon;speed;course` — lat/lon bertanda, speed km/h; varian biner/per-model + CRR/HTE tetap dihitung |
 | Navigil | 9012 | header 20 B LE, device id 4 B + ACK 24 B | MSG 8 (unit report) + MSG 18 (tracking) | peta `NAVIGIL_DEVICE_MAP` (id→IMEI) karena allowlist berbasis IMEI; MSG 13/15 tetap dihitung |
@@ -250,6 +254,40 @@ events_per_100km=5.000 score_by_counts=90.00 score=100.00 grade=A
 baris uji dihapus kembali setelah verifikasi.
 
 
+### 2.7 Bukti end-to-end gelombang GAP terakhir (2026-09-25)
+
+| Keluarga | Yang dikirim | Hasil (`th_telemetry_logs` + log) |
+|---|---|---|
+| Suntech (teks) | `ST300STT;<IMEI>;1;20260924;06:35:19;ABCD;-06.20;+106.80;041.000;084.00;0#AB12` ke `:9017` | `lat=-6.20000000 lon=106.80000000 speed=41 heading=84 acc_status=NULL` + Redis ONLINE (§2.5) |
+| Navigil (MSG 8) | header 20 B + unit report ke `:9012` | `lat=-6.2 lon=106.8 altitude=45` + ACK 24 byte `crc_ok=True` (§2.4) |
+| Totem (PATTERN_2) | `$$0A<IMEI>|AB240926063519|A|0612.0000|S|10650.0000|E|12.3|84|…` ke `:9005` | `lat=-6.20000000 lon=106.83333333 speed=22.7796` (12.3 kn × 1.852), auth `protocol=totem` |
+| TK103 (handshake) | `(123456789012BP00<IMEI>)` ke `:9013` | balasan `(123456789012AP01345)` — bentuk upstream `(<id>AP01<3 akhir>)` |
+| Meiligao (0x9999) | login 0x5000 (id 14 digit BCD) → posisi 0x9999 ke `:9002` | ACK `2424000b999986420104051234000700e50d0a`; posisi `lat=-6.2 lon=106.83333333 speed=41.4848`; auth oleh **Luhn-completion** `86420104051234 → 864201040512344` |
+| Castel (MSG_SC_GPS) | `0x4001` + blok posisi 19 byte ke `:9019` (dengan `CASTEL_GPS_DECODE=on`) | `lat=-6.20000000 lon=106.80000000 speed=36 heading=84` (1000 cm/s, course 840/10) |
+
+Data fleet yang dibuat untuk uji Meiligao (kendaraan + peta IMEI) dihapus kembali
+setelah verifikasi; `CASTEL_GPS_DECODE` dikembalikan ke `off` (default aman) dan
+`NAVIGIL_DEVICE_MAP` tetap kosong.
+
+### 2.8 Catatan referensi yang masih memblokir (bukan tebakan)
+
+- **H02 mode biner**: dokumen in-repo (`02d-h02.md`) menyebut
+  `$<IMEI>,<Length>,<0x10>,<timestamp BCD 6B><lat 4B (deg×30000)><lon 4B><speed 1B><course 2B><status>`,
+  sedangkan sumber upstream (v3.0 lengkap + master) memakai **hex-ASCII** dengan
+  `BcdUtil.readInteger(...)/10000/60` dan envelope ber-id pendek/panjang (`longId`).
+  Dua rujukan itu saling bertentangan → frame `$` tetap dihitung
+  `ingestion_unsupported_frames_total` sampai ada satu capture device nyata.
+- **Meiligao OBD/DTC/RFID**: nilai `MSG_OBD_RT`/`MSG_OBD_RTA`/`MSG_DTC`/`MSG_RFID`
+  tidak tersedia di rujukan yang bisa diambil utuh (hanya pola `PATTERN_RFID` yang
+  terlihat); frame-nya tetap dihitung, bukan ditebak.
+- **Navigil MSG 13/15** dan **sisa matriks TK103** (alarm/RFID/BMS/OBD/suhu): sama,
+  menunggu layout lengkap dari referensi upstream yang tidak dapat diambil utuh.
+- **Castel `0x4001` ACK**: upstream mengirim balasan untuk mode MPIP; untuk SC/CC
+  perilakunya tidak terlihat di rujukan, jadi server tidak membalas frame posisi
+  (login/heartbeat tetap dibalas).
+
+
+
 ## 3. B10 — Normalisasi & Konfigurasi
 
 ### 3.1 Prefix tabel `tm_`/`th_`/`td_` (guard otomatis)
@@ -274,7 +312,8 @@ Diverifikasi test yang sama: `tm_users` (B2B, master `008`), `tm_users_b2c` (B2C
 
 `docker-compose.{local,coolify}.yml` + `.env.{local,coolify,example}` mendapat blok
 baru (`*_TCP_PORT` B9, `TELEMETRY_INTERVAL_SECONDS`, `COMMAND_*`, `DRIVER_*`,
-`MAINTENANCE_*`, `INGESTION_CHECKSUM_STRICT`, `GT06_COMMAND_LENGTH_INCLUDES_CRC`).
+`MAINTENANCE_*`, `INGESTION_CHECKSUM_STRICT`, `GT06_COMMAND_LENGTH_INCLUDES_CRC`,
+`CASTEL_RESPONSE_TYPE_BE`, `CASTEL_GPS_DECODE`, `NAVIGIL_DEVICE_MAP`).
 LOCAL memakai port dev 9xxx, COOLIFY memakai konvensi Traccar 5xxx — tanpa edit manual.
 
 ### 3.4 Telemetry interval 20 s
@@ -307,35 +346,28 @@ Bukti live sesudah perbaikan: port `8090/8091/8092/8094/8095` semuanya melaporka
 
 ## 4. Gap jujur (belum selesai)
 
-1. **B9 payload Castel GPS**: skala lat/lon `MSG_SC_GPS` (0x4001) tidak ada di rujukan
-   yang bisa diambil utuh, jadi frame posisinya tetap dihitung
-   `ingestion_unsupported_frames_total{protocol="castel"}` (bukan ditebak: skala yang
-   salah menghasilkan posisi yang salah tanpa error). Framing, identitas dan balasan
-   login/heartbeat sudah benar. Suntech **teks klasik sudah ditutup** (§2.5);
-   varian biner/per-model (ST2xx/ST4xx/ST9xx, CRR, HTE) masih dihitung. Navigil
-   ditutup untuk MSG 8/18; MSG 13/15 tetap terbuka.
-2. **B9 cakupan**: Meiligao OBD/RFID, H02 biner, Totem PATTERN_2, dan sisa matriks
-   perintah TK103 (85+ tipe upstream: handshake `BP00/BS50`, alarm/RFID/BMS/OBD,
-   suhu) belum diimplementasikan. Yang sudah ada kini **7 perintah** TK103
-   (`AV010`/`AV011`/`AT00`/`AP00`/`AP07`/`AR00<hex>`/`AR0000000000`); command
-   destruktif `AX01` (reset odometer) sengaja **tidak** diekspos.
-3. **B8 downlink**: encoder tersedia untuk GT06/Concox **dan TK103**; keluarga lain
-   melaporkan `failed: unsupported` (eksplisit, tercatat). Pengiriman command memakai
-   **JetStream durable consumer** (`ingestion-command-dispatch`, manual ack,
-   `MaxDeliver=5`) dengan dua guard (satu in-flight per device, batas umur 300 s).
-   **api-vehicle tetap butuh NATS saat boot** (fail-fast) karena endpoint command
-   tidak bisa bekerja tanpanya.
-4. **B8 skor mengemudi** sudah dinormalisasi per jarak (§1.2, migrasi 025). Sisa:
-   atribusi skor ke **driver** (`driver_id`) masih NULL karena penugasan driver↔trip
-   adalah modul B12; skor saat ini per kendaraan/hari.
-5. **B10 validasi IMEI** hanya di create kendaraan (IMEI tidak bisa diubah via PATCH),
-   sehingga binding lama (`min=5,max=30`) tetap ada demi kompatibilitas data lama
-   sementara jalur create sudah ketat 15 digit.
+1. **B9 payload H02 biner**: rujukan in-repo dan upstream saling bertentangan
+   (BCD+`deg×30000` vs hex-ASCII `readInteger/10000/60` + envelope `longId`), jadi
+   frame `$` tetap dihitung `ingestion_unsupported_frames_total` sampai ada satu
+   capture device (§2.8).
+2. **B9 payload Castel GPS**: kode lengkap dan teruji, tetapi **opt-in**
+   (`CASTEL_GPS_DECODE=off` default) karena bit tanda lat/lon berbeda antar revisi
+   upstream; aktifkan setelah satu frame nyata memastikan konvensinya (§2.7/§2.8).
+3. **B9 cakupan**: Meiligao OBD/DTC/RFID, Navigil MSG 13/15, dan sisa matriks TK103
+   (alarm/RFID/BMS/OBD/suhu) menunggu layout yang tidak dapat diambil utuh dari
+   rujukan. Yang sudah ada sekarang: 7 perintah downlink TK103 (tanpa `AX01` yang
+   destruktif), PATTERN_1+PATTERN_2 Totem, handshake TK103, payload Navigil MSG 8/18,
+   kalimat Suntech klasik, posisi Meiligao lintas-id.
+4. **B8 downlink**: encoder tersedia untuk GT06/Concox **dan TK103**; keluarga lain
+   melaporkan `failed: unsupported` (eksplisit, tercatat). Pengiriman memakai
+   JetStream durable + dua guard (satu in-flight per device, batas umur 300 s);
+   **api-vehicle tetap butuh NATS saat boot** (fail-fast).
+5. **B8 skor mengemudi** sudah dinormalisasi per jarak (§1.2). Sisa: atribusi ke
+   `driver_id` masih NULL karena penugasan driver↔trip adalah modul B12.
 6. **B9 identitas non-IMEI**: hanya Navigil yang punya jalur peta id→IMEI
-   (`NAVIGIL_DEVICE_MAP`, salah ketik ditolak + dihitung
-   `ingestion_unmapped_devices_total`). Suntech dengan id 6 digit dan Castel tanpa
-   IMEI di dalam ID belum punya jalur onboarding; device seperti itu tidak akan
-   pernah dianggap terautentikasi (dan kini tercatat, bukan gagal senyap).
+   (`NAVIGIL_DEVICE_MAP`). Suntech/Totem dengan id 6 digit dan Castel tanpa IMEI di
+   dalam ID belum punya jalur onboarding; frame seperti itu ditolak + dicatat
+   (bukan gagal senyap).
 
 ## 5. Perbaikan hasil audit (2026-09-24, lanjutan)
 
@@ -356,6 +388,11 @@ Bukti live sesudah perbaikan: port `8090/8091/8092/8094/8095` semuanya melaporka
 | 13 | (audit GAP) Payload posisi Suntech hanya framing/identitas | Teks universal klasik didekode: header;id;versi;YYYYMMDD;HH:MM:SS;[cell;]lat;lon;speed;course (sign `[-+]` wajib, speed km/h, rentang koordinat divalidasi, id 6 digit ditolak) | `TestParseSuntechTextLine` + E2E §2.5 |
 | 14 | (audit GAP) Matriks perintah TK103 kurang 2 perintah aman | `device_version` (`AP07`) + `position_stop` (`AR0000000000`) ditambahkan end-to-end (model, whitelist API, encoder, migrasi 024 + CHECK DB, `jsadmin`); `AX01` reset odometer sengaja tidak diekspos | `TestTK103CommandEncoding` + SQL check §5 |
 | 15 | (audit GAP) Skor mengemudi tidak dinormalisasi per jarak | Skor harian = poin event per 100 km dari `th_vehicle_trips` (migrasi 025: `distance_km`/`events_per_100km`/`score_by_counts`), bucket A..E, fallback rumus jumlah di bawah `DRIVER_SCORE_MIN_DISTANCE_KM` | `TestScoreFromDistance`, `TestRefreshDriverScoreUsesDistance` + E2E §2.6 |
+| 16 | (GAP) Totem PATTERN_2 tidak didekode + IMEI tidak terekstrak dari layout upstream | PATTERN_2 didekode dari regex upstream (koordinat NMEA, speed knots→km/h) + `totemIMEI` menerima kedua tata letak (`$$<len><IMEI>|` dan `$$<len>|<IMEI>|`); body GPRMC dicari di field mana pun | `TestParseTotemPattern2` + E2E §2.7 |
+| 17 | (GAP) TK103: login handshake `BP00/BP05` tidak dibalas, terminator `)` tidak dikenali, odometer `L<hex>` diabaikan | `parseTK103Handshake` + balasan `(id AP01<3 akhir>)`/`(id AP05)`, `serveLineProtocolAny` (terminator `;` dan `)`), `tk103Odometer` | `TestTK103HandshakeAndOdometer` + E2E §2.7 |
+| 18 | (GAP) Meiligao: id perintah dari dokumen in-repo menolak frame device nyata; IMEI 14 digit di-zero-pad (bukan Luhn) | Union id (login 0x5000/0x5001; posisi 0x5002/0x5004/0x9955/0x9016/0x9999) + offset alarm/logged ditoleransi, dan `luhnIMEI` (perilaku upstream) sebagai kandidat pertama | `TestMeiligaoPositionCommandVariants`, `TestMeiligaoLuhnIMEI` + E2E §2.7 |
+| 19 | (GAP) Castel: skala posisi tidak diketahui | Skala/field **terverifikasi** dari patch upstream resmi (`/3600000`, `knotsFromCps`, `/10`) dan diimplementasikan opt-in (`CASTEL_GPS_DECODE=off|on|on-swapped`) + boot log; default aman tetap "dihitung" | `TestCastelPositionPayload` + E2E §2.7 |
+| 20 | (GAP B10) IMEI tidak bisa diperbaiki lewat PATCH (penggantian device hanya via delete+create) | PATCH menerima IMEI baru bila valid 15 digit dan belum dipakai (`validate.IMEI` + `IMEIExists`), store memindahkan peta allowlist (lama dinonaktifkan, baru di-upsert) | `TestUpdateVehicleIMEIRepoint`, `TestPatchVehicleGuards` |
 
 Bukti runtime guard #11 (replay backlog nyata, `logs/ingestion-tcp.log`):
 

@@ -76,6 +76,31 @@ func (s *Server) serveLineProtocol(c net.Conn, protoName string, delim byte, max
 	}
 }
 
+// serveLineProtocolAny is serveLineProtocol with several accepted terminators
+// (TK103 handshake ')', report ';').
+func (s *Server) serveLineProtocolAny(c net.Conn, protoName string, delims []byte, max int,
+	handle func(line []byte) (reply []byte, closeConn bool)) {
+
+	r := bufio.NewReader(c)
+	for {
+		_ = c.SetReadDeadline(time.Now().Add(s.cfg.TCP.IdleTimeout))
+		line, err := readLineAny(r, delims, max)
+		if err != nil {
+			if err != io.EOF {
+				tcpParseErrors.WithLabelValues(protoName).Inc()
+			}
+			return
+		}
+		reply, closeConn := handle(line)
+		if len(reply) > 0 && !writeAll(c, reply) {
+			return
+		}
+		if closeConn {
+			return
+		}
+	}
+}
+
 // ensureAuth performs the tenant allowlist check (FR-1.4) exactly once per
 // connection: the first frame that carries a device identity authenticates it.
 func (s *Server) ensureAuth(st *session, imei, protoName, remote string) bool {
@@ -142,12 +167,34 @@ func parseTK103Sentence(sentence string) (models.TelemetryMessage, bool) {
 		heading, _ = parseFloatField(parts[idx])
 	}
 
+	// Optional tail of the upstream pattern: an 8-hex "state" block and a `L<hex>`
+	// odometer. They are read only when they are actually present (never coerced),
+	// and the odometer is the LAST matching token because the state block may also
+	// be hex.
+	t.Mileage = tk103Odometer(parts[idx+1:])
+
 	t.Timestamp = ts
 	t.Lat, t.Lon = lat, lon
 	t.Speed = speedKMH // TK103 reports km/h (upstream: convertSpeed(..., "kmh"))
 	t.Heading = int16(heading)
 	t.Fix = strings.EqualFold(validity, "A")
 	return t, true
+}
+
+// tk103Odometer extracts the `L<hex>` odometer the upstream pattern appends
+// (`(?:L([0-9a-fA-F]+))?`). Returns 0 when the frame carries none.
+func tk103Odometer(tail []string) uint32 {
+	for i := len(tail) - 1; i >= 0; i-- {
+		field := strings.TrimSpace(tail[i])
+		field = strings.TrimSuffix(field, ")")
+		if len(field) < 2 || field[0] != 'L' && field[0] != 'l' {
+			continue
+		}
+		if v, err := strconv.ParseUint(field[1:], 16, 32); err == nil {
+			return uint32(v)
+		}
+	}
+	return 0
 }
 
 func parseIMEIPrefix(line string) string {

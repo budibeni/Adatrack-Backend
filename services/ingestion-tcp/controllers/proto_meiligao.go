@@ -23,6 +23,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,14 +31,44 @@ import (
 	"adatrack_gps/internal"
 )
 
-// Meiligao command codes (upstream MeiligaoProtocolDecoder).
+// Meiligao command codes.
+//
+// Two upstream revisions and the in-repo reference disagree on the values, so the
+// decoder accepts the UNION and lets the strict sentence parser decide:
+//
+//	upstream v3.0 : MSG_HEARTBEAT 0x0001, MSG_LOGIN 0x5000, MSG_POSITION 0x9955,
+//	                MSG_POSITION_LOGGED 0x9016, MSG_ALARM 0x9999
+//	in-repo doc   : MSG_LOGIN 0x5001, MSG_POSITION 0x5002, MSG_HEARTBEAT 0x5003,
+//	                MSG_ALARM 0x5004, MSG_LOGIN_RESPONSE 0x9999
+//
+// A real device frame from the upstream test suite (`2424011e…9999` + position
+// sentence, no leading alarm byte) proves that position-bearing frames DO arrive
+// with 0x9999, which the in-repo doc labels as the login response — so accepting
+// both roles is the only honest option (see docs/B8-B10-VERIFICATION.md §2.7).
 const (
-	meiligaoMsgLogin     = 0x5001
-	meiligaoMsgPosition  = 0x5002
-	meiligaoMsgHeartbeat = 0x5003
-	meiligaoMsgAlarm     = 0x5004
-	meiligaoMsgAck       = 0x9999
+	meiligaoMsgHeartbeatLegacy = 0x0001
+	meiligaoMsgHeartbeat       = 0x5003
+	meiligaoMsgLoginLegacy     = 0x5000
+	meiligaoMsgLogin           = 0x5001
+	meiligaoMsgPosition        = 0x5002
+	meiligaoMsgAlarm           = 0x5004
+	meiligaoMsgPositionLogged  = 0x9016
+	meiligaoMsgPositionLegacy  = 0x9955
+	meiligaoMsgPositionLatest  = 0x9999
+	// meiligaoMsgAck is the command this server sends back for login/heartbeat
+	// (same value the in-repo reference documents).
+	meiligaoMsgAck = 0x9999
 )
+
+// isMeiligaoPositionCommand reports whether a command carries a position sentence.
+func isMeiligaoPositionCommand(cmd uint16) bool {
+	switch cmd {
+	case meiligaoMsgPosition, meiligaoMsgAlarm, meiligaoMsgPositionLogged,
+		meiligaoMsgPositionLegacy, meiligaoMsgPositionLatest:
+		return true
+	}
+	return false
+}
 
 type meiligaoDecoder struct{}
 
@@ -71,12 +102,16 @@ func (d meiligaoDecoder) Serve(s *Server, c net.Conn) {
 			}
 			return
 		}
-		switch frame.Command {
-		case meiligaoMsgLogin:
+		switch {
+		case frame.Command == meiligaoMsgLogin || frame.Command == meiligaoMsgLoginLegacy:
 			framesTotal.WithLabelValues(protoName, "login").Inc()
 			rawIMEI = frame.Payload[:min(len(frame.Payload), 7)]
 			imei := bcdIMEI(rawIMEI)
-			if !s.loginAny(&st, []string{imei, padIMEI(imei)}, protoName, c.RemoteAddr().String()) {
+			// Candidates, most likely first: the 15-digit IMEI the device means
+			// (Luhn-completed, upstream behaviour), the legacy zero-padded form and the
+			// raw 14-digit id (in case the allowlist stores it that way).
+			if !s.loginAny(&st, []string{luhnIMEI(imei), padIMEI(imei), imei},
+				protoName, c.RemoteAddr().String()) {
 				return
 			}
 			s.registerConn(&st, c, models.ProtoMeiligao)
@@ -84,7 +119,7 @@ func (d meiligaoDecoder) Serve(s *Server, c net.Conn) {
 				return
 			}
 
-		case meiligaoMsgHeartbeat:
+		case frame.Command == meiligaoMsgHeartbeat || frame.Command == meiligaoMsgHeartbeatLegacy:
 			framesTotal.WithLabelValues(protoName, "heartbeat").Inc()
 			if st.authenticated() {
 				s.publish(&st, models.TelemetryMessage{Timestamp: time.Now().Unix()}, protoName)
@@ -93,20 +128,20 @@ func (d meiligaoDecoder) Serve(s *Server, c net.Conn) {
 				return
 			}
 
-		case meiligaoMsgPosition, meiligaoMsgAlarm:
+		case isMeiligaoPositionCommand(frame.Command):
 			framesTotal.WithLabelValues(protoName, "position").Inc()
 			if !st.authenticated() {
 				rejectedTotal.WithLabelValues("no_auth").Inc()
 				return
 			}
-			tele, ok := parseMeiligaoSentence(string(frame.Payload))
+			tele, alarm, ok := parseMeiligaoPositionPayload(frame.Payload)
 			if !ok {
 				tcpParseErrors.WithLabelValues(protoName).Inc()
 				rejectedTotal.WithLabelValues("parse").Inc()
 				continue
 			}
-			if frame.Command == meiligaoMsgAlarm && len(frame.Payload) > 0 {
-				tele.AlarmCode = frame.Payload[0]
+			if alarm > 0 {
+				tele.AlarmCode = alarm
 			}
 			s.publish(&st, tele, protoName)
 
@@ -117,6 +152,31 @@ func (d meiligaoDecoder) Serve(s *Server, c net.Conn) {
 				"imei", st.imei)
 		}
 	}
+}
+
+// parseMeiligaoPositionPayload decodes the sentence of a position-bearing command.
+//
+// The revisions disagree on whether an alarm/logged header precedes the sentence
+// (v3.0 skips 6 bytes for MSG_POSITION_LOGGED and one alarm byte for MSG_ALARM, the
+// real 0x9999 frame from the upstream test suite has none), so the documented
+// offsets are tried IN ORDER and the first one the strict sentence parser accepts
+// wins. A payload that matches none is counted as unsupported — never guessed.
+func parseMeiligaoPositionPayload(payload []byte) (models.TelemetryMessage, byte, bool) {
+	for _, skip := range []int{0, 1, 6} {
+		if skip >= len(payload) {
+			continue
+		}
+		tele, ok := parseMeiligaoSentence(string(payload[skip:]))
+		if !ok {
+			continue
+		}
+		var alarm byte
+		if skip == 1 {
+			alarm = payload[0]
+		}
+		return tele, alarm, true
+	}
+	return models.TelemetryMessage{}, 0, false
 }
 
 // readMeiligaoFrame reads one 0x24 0x24 frame.
@@ -206,6 +266,31 @@ func padIMEI(imei string) string {
 		return imei
 	}
 	return strings.Repeat("0", 15-len(imei)) + imei
+}
+
+// luhnIMEI completes a 14-digit device id with the IMEI Luhn check digit, exactly
+// as the upstream decoder does (`id += Crc.luhnChecksum(id)`); this is the form a
+// real Meiligao terminal reports, so it is tried BEFORE the legacy zero-padded
+// variant.
+func luhnIMEI(id string) string {
+	if len(id) != 14 {
+		return ""
+	}
+	sum, double := 0, true
+	for i := len(id) - 1; i >= 0; i-- {
+		d := int(id[i] - '0')
+		if d < 0 || d > 9 {
+			return ""
+		}
+		if double {
+			if d *= 2; d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+		double = !double
+	}
+	return id + strconv.Itoa((10-sum%10)%10)
 }
 
 // loginAny runs the allowlist check against the first candidate that resolves,

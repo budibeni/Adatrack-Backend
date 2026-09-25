@@ -275,27 +275,59 @@ RETURNING id`,
 	return id, nil
 }
 
-// UpdateVehicle updates the mutable columns of one fleet row (+ IMEI sync).
+// UpdateVehicle updates the mutable columns of one fleet row.
+//
+// The IMEI is normally immutable (it IS the anti-spoofing identity), but a fleet
+// does replace a broken tracker, so a VALIDATED re-point is supported: the caller
+// has already checked the 15-digit form and the tenant uniqueness, and here the
+// master allowlist map is moved with the vehicle (old row deactivated, new row
+// upserted) so the device resolves again immediately (FR-1.4 + B10 gap).
 func (s *PostgresStore) UpdateVehicle(ctx context.Context, company string, v *models.Vehicle, updatedBy int64) error {
 	pool, err := s.tenantPool(company)
 	if err != nil {
 		return err
 	}
-	tag, err := pool.DB.ExecContext(ctx, `
+	var currentIMEI string
+	err = pool.DB.QueryRowContext(ctx, `
+SELECT imei FROM tm_vehicles WHERE id = $1 AND deleted_at IS NULL`, v.ID).Scan(&currentIMEI)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("store: update vehicle (read current imei): %w", err)
+	}
+	imeiChanged := v.IMEI != "" && v.IMEI != currentIMEI
+
+	const updateSQL = `
 UPDATE tm_vehicles SET plate_number = $2, make = $3, model = $4,
 year_of_manufacture = $5, color = $6, fuel_type = $7,
 vehicle_category_code = $8, vehicle_type_code = $9, driver_user_id = $10,
 driver_name = $11, device_model = $12, status = $13, updated_by = $14,
+imei = CASE WHEN $15 = '' THEN imei ELSE $15 END,
 updated_at = CURRENT_TIMESTAMP
-WHERE id = $1 AND deleted_at IS NULL`,
+WHERE id = $1 AND deleted_at IS NULL`
+
+	newIMEI := ""
+	if imeiChanged {
+		newIMEI = v.IMEI
+	}
+
+	tag, err := pool.DB.ExecContext(ctx, updateSQL,
 		v.ID, v.PlateNumber, v.Make, v.Model, v.Year, v.Color, v.FuelType,
 		v.CategoryCode, v.TypeCode, v.DriverUserID, v.DriverName, v.DeviceModel,
-		nullableString(v.Status), updatedBy)
+		nullableString(v.Status), updatedBy, newIMEI)
 	if err != nil {
 		return fmt.Errorf("store: update vehicle: %w", err)
 	}
 	if n, _ := tag.RowsAffected(); n == 0 {
 		return nil
+	}
+	if imeiChanged {
+		// Move the allowlist entry: the old IMEI must stop resolving before the new
+		// one starts, otherwise two vehicles could answer for the same device.
+		if err := s.SoftDeleteIMEIMap(ctx, currentIMEI, company); err != nil {
+			return err
+		}
 	}
 	return s.SyncIMEIMap(ctx, v.IMEI, company, v.ID)
 }

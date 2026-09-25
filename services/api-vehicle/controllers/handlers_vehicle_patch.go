@@ -1,16 +1,18 @@
 package controllers
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"adatrack_gps/api-vehicle/models"
+	"adatrack_gps/internal/validate"
 )
 
-// handleUpdateVehicle implements PATCH /api/v1/vehicles/:id. The IMEI is
-// immutable through the API — changing the device identity would break the
-// anti-spoofing map (FR-1.4); re-point a device by deleting + recreating.
+// handleUpdateVehicle implements PATCH /api/v1/vehicles/:id.
+//
+// The IMEI may be re-pointed (tracker replacement) but ONLY with a valid 15-digit
+// value that is free in this tenant: it is the anti-spoofing identity (FR-1.4), so a
+// malformed value is a 400 and a collision is a 409 — the master allowlist map is
+// moved by the store, never duplicated. Omitting the field keeps the current IMEI.
 func (s *Service) handleUpdateVehicle(c *gin.Context) {
 	identity, _ := currentIdentity(c)
 	id, perr := pathID(c)
@@ -33,9 +35,24 @@ func (s *Service) handleUpdateVehicle(c *gin.Context) {
 		respondError(c, errNotFound(CodeVehicleNotFound, "vehicle not found"))
 		return
 	}
-	if req.IMEI != existing.IMEI {
-		respondError(c, NewAPIError(http.StatusConflict, CodeConflict, "IMEI cannot be changed"))
-		return
+	if req.IMEI != "" && req.IMEI != existing.IMEI {
+		// B10: same strict rule as create — the identity must be the 15-digit form
+		// the allowlist can resolve, and it must be free.
+		if err := validate.IMEI(req.IMEI); err != nil {
+			respondError(c, errValidation("invalid IMEI",
+				map[string]string{"imei": "must be exactly 15 digits"}))
+			return
+		}
+		taken, err := s.store.IMEIExists(ctx, identity.companyCode, req.IMEI, id)
+		if err != nil {
+			respondError(c, vehicleStoreErr(err))
+			return
+		}
+		if taken {
+			respondError(c, errConflict("a vehicle with this IMEI already exists"))
+			return
+		}
+		existing.IMEI = req.IMEI
 	}
 
 	// PATCH overlay: provided fields win, absent fields keep the stored value.

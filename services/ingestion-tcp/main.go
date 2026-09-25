@@ -52,7 +52,8 @@ func main() {
 	slog.Info("protocol identity mappings",
 		"navigil_device_map_entries", controllers.NavigilDeviceMapSize(),
 		"env", "NAVIGIL_DEVICE_MAP",
-		"castel_response_type_big_endian", controllers.CastelResponseTypeBigEndian())
+		"castel_response_type_big_endian", controllers.CastelResponseTypeBigEndian(),
+		"castel_gps_decode", controllers.CastelGPSMode())
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
