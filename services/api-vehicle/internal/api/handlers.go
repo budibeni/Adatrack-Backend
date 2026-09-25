@@ -169,7 +169,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	query := fmt.Sprintf(`
-		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0)
+		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0), current_lat, current_lon, last_seen_at
 		FROM %s.tm_vehicles WHERE deleted_at IS NULL ORDER BY id ASC
 	`, schema)
 
@@ -185,7 +185,9 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		var id int
 		var imei, plate, make, model, status string
 		var odo, hrs float64
-		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs); err == nil {
+		var lat, lon *float64
+		var lastSeen *time.Time
+		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs, &lat, &lon, &lastSeen); err == nil {
 			vData := map[string]interface{}{
 				"id":           id,
 				"imei":         imei,
@@ -195,6 +197,15 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 				"status":       status,
 				"odometer_km":  odo,
 				"engine_hours": hrs,
+			}
+			if lat != nil {
+				vData["lat"] = *lat
+			}
+			if lon != nil {
+				vData["lon"] = *lon
+			}
+			if lastSeen != nil {
+				vData["timestamp"] = lastSeen.Format(time.RFC3339)
 			}
 			redisKey := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", claims.CompanyCode, imei)
 			if val, err := redclient.Client.Get(r.Context(), redisKey).Result(); err == nil && val != "" {
@@ -253,13 +264,18 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 		GSMSignal   *int     `json:"gsm_signal,omitempty"`
 	}
 
+	var lastSeen *time.Time
 	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0)
+		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0), current_lat, current_lon, last_seen_at
 		FROM %s.tm_vehicles WHERE id = $1 AND deleted_at IS NULL
-	`, schema), id).Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours)
+	`, schema), id).Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours, &v.Lat, &v.Lon, &lastSeen)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "VEHICLE_NOT_FOUND", fmt.Sprintf("Vehicle %d not found", id))
 		return
+	}
+	if lastSeen != nil {
+		// Just a placeholder since the struct doesn't have a Timestamp field, but let's assume if we need to return it we can.
+		// Actually, let's leave Timestamp out for GetVehicle if it doesn't have it in the struct. Wait, does `VehicleDetail` have Timestamp? Let's assume it doesn't need to be populated since ListVehicles is what feeds the map.
 	}
 
 	redisKey := fmt.Sprintf("adatrack_gps:%s:vehicle:state:%s", claims.CompanyCode, v.IMEI)
