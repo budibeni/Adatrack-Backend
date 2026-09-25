@@ -1285,23 +1285,33 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(idStr)
 
 	startStr := r.URL.Query().Get("start")
+	if startStr == "" {
+		startStr = r.URL.Query().Get("from")
+	}
 	endStr := r.URL.Query().Get("end")
+	if endStr == "" {
+		endStr = r.URL.Query().Get("to")
+	}
+
+	var start, end time.Time
+	var err error
 
 	if startStr == "" || endStr == "" {
-		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "start and end query parameters are required")
-		return
-	}
+		// Fallback to last 24 hours if not provided
+		end = time.Now().UTC()
+		start = end.Add(-24 * time.Hour)
+	} else {
+		start, err = time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid start time format")
+			return
+		}
 
-	start, err := time.Parse(time.RFC3339, startStr)
-	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid start time format")
-		return
-	}
-
-	end, err := time.Parse(time.RFC3339, endStr)
-	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid end time format")
-		return
+		end, err = time.Parse(time.RFC3339, endStr)
+		if err != nil {
+			h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid end time format")
+			return
+		}
 	}
 
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
