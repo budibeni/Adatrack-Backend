@@ -100,6 +100,8 @@ func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request, cfg *config.Confi
 		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
 	} else if proto := r.Header.Get("Sec-WebSocket-Protocol"); proto != "" {
 		tokenStr = proto
+	} else if qToken := r.URL.Query().Get("token"); qToken != "" {
+		tokenStr = qToken
 	}
 	
 	claims, err := auth.ValidateToken(cfg, tokenStr)
