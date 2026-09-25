@@ -1,31 +1,32 @@
-# ============================================================================
-# service-websocket — Dockerfile (build context: backend/)
-# ============================================================================
-# Serves REST + WebSocket + /healthz + /metrics on HTTP_ADDR (8082, PRD §14.2).
-FROM golang:1.25-alpine AS build
-
-WORKDIR /src
-
-COPY internal/ ./internal/
-COPY services/service-websocket/ ./services/service-websocket/
-
-WORKDIR /src/services/service-websocket
-RUN go mod download && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/service-websocket .
-
-FROM alpine:3.20 AS runtime
-
-RUN apk add --no-cache ca-certificates tzdata wget && \
-    adduser -D -u 10001 adatrack
+# Build phase
+FROM golang:alpine AS builder
 
 WORKDIR /app
-COPY --from=build /out/service-websocket /app/service-websocket
+# Enable Go modules workspace
+ENV CGO_ENABLED=0 GOOS=linux
 
-USER adatrack
+# Copy the entire backend monorepo to satisfy go.work and internal dependencies
+COPY . .
 
-EXPOSE 8082
+# Build the specific service
+RUN go build -o /app/bin/service ./services/service-websocket/main.go
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
-    CMD wget -q -O - http://127.0.0.1:8082/healthz || exit 1
+# Runtime phase
+FROM alpine:latest
 
-ENTRYPOINT ["/app/service-websocket"]
+# Add timezone data and CA certs
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /app
+# Copy the compiled binary
+COPY --from=builder /app/bin/service /app/service
+
+# Copy database migrations and scripts (Required for Coolify pre-deploy hooks - PRD 14.5)
+COPY database /app/database
+COPY scripts /app/scripts
+
+# Expose required ports
+EXPOSE 8080
+
+# Start the service
+CMD ["/app/service"]

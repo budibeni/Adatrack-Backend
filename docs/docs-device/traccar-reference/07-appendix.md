@@ -146,14 +146,14 @@ Saat mengimplementasikan protokol baru, gunakan port convention Traccar sebagai 
 | GT06 | 5001 | TCP_PORT (9000) |
 | Teltonika | 5027 | TELTONIKA_TCP_PORT (9011) |
 | TK103 | 5013 | TK103_TCP_PORT (9002) |
-| Meiligao | 5002 | MEILIGAO_TCP_PORT |
-| Xexun | 5003 | XEXUN_TCP_PORT |
-| Suntech | 5017 | SUNTECH_TCP_PORT |
+| Meiligao | 5002 | PORT_MEILIGAO_TCP |
+| Xexun | 5003 | PORT_XEXUN_TCP |
+| Suntech | 5017 | PORT_SUNTECH_TCP |
 | H02 | 5010 | H02_TCP_PORT |
-| Totem | 5005 | TOTEM_TCP_PORT |
-| GT02 | 5006 | GT02_TCP_PORT |
-| Navigil | 5012 | NAVIGIL_TCP_PORT |
-| Castel | 5019 | CASTEL_TCP_PORT |
+| Totem | 5005 | PORT_TOTEM_TCP |
+| GT02 | 5006 | PORT_GT02_TCP |
+| Navigil | 5012 | PORT_NAVIGIL_TCP |
+| Castel | 5019 | PORT_CASTEL_TCP |
 
 ### Port Allocation Strategy
 

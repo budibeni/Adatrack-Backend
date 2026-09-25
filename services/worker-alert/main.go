@@ -1,0 +1,68 @@
+package main
+
+import (
+	"context"
+	"net/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"backend/internal/config"
+	"backend/internal/logger"
+	"backend/internal/natsclient"
+	"backend/internal/redclient"
+	"backend/internal/tenant"
+	"backend/internal/dbclient"
+	"backend/worker-alert/internal/consumer"
+	"backend/worker-alert/internal/maintenance"
+)
+
+func main() {
+	logger.InitLogger()
+	cfg := config.Load()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := dbclient.Connect(ctx, cfg); err != nil {
+		logger.Log.Error("FATAL Database", "err", err); os.Exit(1)
+	}
+	defer dbclient.Pool.Close()
+
+	if err := redclient.Connect(ctx, cfg); err != nil {
+		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
+	}
+	tenant.InitManager(cfg)
+	
+	if err := natsclient.Connect(cfg); err != nil {
+		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
+	}
+	defer natsclient.NC.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.Handle("/metrics", promhttp.Handler())
+	healthServer := &http.Server{Addr: ":8083", Handler: mux}
+	go healthServer.ListenAndServe()
+
+	// Start Maintenance Checker
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
+	maintenance.StartMaintenanceChecker(bgCtx)
+
+	worker := consumer.NewWorker()
+	worker.Start()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	worker.Stop()
+	
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	healthServer.Shutdown(shutdownCtx)
+	
+	logger.Log.Info("Shutdown complete")
+}

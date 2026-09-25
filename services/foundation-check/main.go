@@ -1,114 +1,67 @@
-// Command foundation-check boots the full B0 foundation end-to-end and proves the
-// wiring (B0 task "Satu service minimal ter-boot end-to-end sebagai bukti wiring"):
-//
-//   - PostgreSQL  : master pool + auto-migration (MIGRATE_ON_BOOT, ledger §14.5)
-//   - Redis       : ping + live-state write/read/delete round trip
-//   - NATS        : JetStream streams created, publish → consume round trip
-//   - Multi-tenant: tenant registry + IMEI resolution (anti-spoofing path)
-//   - HTTP        : /healthz (readiness) + /metrics (Prometheus)
-//
-// It is a diagnostic service (no business logic): run it to verify a fresh
-// environment before starting the pipeline services (B1).
-//
-// Usage:
-//
-//	go run ./services/foundation-check          # continuous (serves /healthz)
-//	go run ./services/foundation-check -once    # one round trip, exit 0/1
 package main
 
 import (
 	"context"
-	"flag"
-	"log/slog"
+	"net/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"backend/internal/config"
+	"backend/internal/dbclient"
+	"backend/internal/logger"
+	"backend/internal/natsclient"
+	"backend/internal/redclient"
+	"backend/internal/tenant"
 )
 
 func main() {
-	internal.ConfigureLogging()
-	internal.LoadProjectEnv()
+	logger.InitLogger()
+	cfg := config.Load()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	once := flag.Bool("once", false, "run a single wiring check and exit")
-	flag.Parse()
-
-	cfg := internal.LoadConfig()
-	if err := cfg.Validate(); err != nil {
-		slog.Error("invalid configuration", "error", err)
-		os.Exit(1)
+	if err := dbclient.Connect(ctx, cfg); err != nil {
+		logger.Log.Error("FATAL DB", "err", err); os.Exit(1)
 	}
-	cfg.Server.MetricsAddr = internal.EnvOr("FOUNDATION_METRICS_ADDR", ":8093")
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	registry := internal.GetRegistry()
-
-	// --- PostgreSQL (master) -------------------------------------------------
-	pool, err := internal.OpenPostgresPool(cfg, cfg.Migrate.MasterSchema, "master")
-	if err != nil {
-		slog.Error("postgres unavailable", "error", err)
-		os.Exit(1)
+	if err := redclient.Connect(ctx, cfg); err != nil {
+		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
 	}
-	defer func() { _ = pool.Close() }()
-	slog.Info("postgres connected", "schema", cfg.Migrate.MasterSchema)
+	tenant.InitManager(cfg)
+	if err := natsclient.Connect(cfg); err != nil {
+		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
+	}
+	if err := natsclient.ProvisionStreams(cfg); err != nil {
+		logger.Log.Error("FATAL Stream", "err", err); os.Exit(1)
+	}
 
-	if cfg.Migrate.OnBoot {
-		res, migErr := internal.ApplyMigrations(ctx, pool.DB, "master", cfg.Migrate.MasterSchema,
-			cfg.Migrate.MasterDir, cfg.Migrate.LedgerTable, cfg.Migrate.LockTimeout)
-		if migErr != nil {
-			slog.Error("auto-migration failed", "error", migErr)
-			os.Exit(1)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{Addr: ":8080", Handler: mux}
+
+	go func() {
+		logger.Log.Info("Foundation server started on :8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Log.Error("Server error", "err", err)
 		}
-		slog.Info("auto-migration ok", "applied", res.Applied, "skipped", res.Skipped,
-			"duration_ms", res.Duration.Milliseconds())
-	}
+	}()
 
-	// --- Redis ---------------------------------------------------------------
-	red, err := internal.NewRedisClient(cfg)
-	if err != nil {
-		slog.Error("redis unavailable", "error", err)
-		os.Exit(1)
-	}
-	defer func() { _ = red.Close() }()
-	slog.Info("redis connected", "addr", cfg.RedisAddr())
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	logger.Log.Info("Graceful Shutdown...")
 
-	// --- NATS ----------------------------------------------------------------
-	nac, err := internal.NewNATSClient(cfg)
-	if err != nil {
-		slog.Error("nats unavailable", "error", err)
-		os.Exit(1)
-	}
-	defer nac.Close()
-	slog.Info("nats connected", "url", cfg.NATS.URL, "subject_prefix", cfg.NATS.SubjectPrefix)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	server.Shutdown(shutdownCtx)
 
-	// --- Tenant manager (routing + pre-warmed company pools) -----------------
-	tm, err := tenant.New(ctx, cfg, tenant.ConfigFromEnv(cfg), red, registry)
-	if err != nil {
-		slog.Error("tenant manager failed", "error", err)
-		os.Exit(1)
-	}
-	defer tm.Close()
-	go tm.Run(ctx)
-
-	// --- Round-trip checks ---------------------------------------------------
-	if !reportChecks(runChecks(ctx, cfg, red, nac, tm)) {
-		slog.Error("B0 foundation wiring check FAILED")
-		os.Exit(1)
-	}
-	slog.Info("B0 foundation wiring check PASSED (postgres + redis + nats + tenant)")
-
-	if *once {
-		return
-	}
-
-	hs := internal.NewHealthServer(cfg.Server.MetricsAddr, registry, healthChecks(cfg, pool, red, nac, tm)...)
-	hs.Start()
-	defer hs.Shutdown(context.Background())
-
-	<-ctx.Done()
-	slog.Info("shutdown signal received")
+	if dbclient.Pool != nil { dbclient.Pool.Close() }
+	if natsclient.NC != nil { natsclient.NC.Close() }
+	logger.Log.Info("Shutdown complete")
 }

@@ -1,30 +1,32 @@
-# ============================================================================
-# worker-live — Dockerfile (build context: backend/)
-# ============================================================================
-FROM golang:1.25-alpine AS build
-
-WORKDIR /src
-
-COPY internal/ ./internal/
-COPY services/worker-live/ ./services/worker-live/
-
-WORKDIR /src/services/worker-live
-RUN go mod download && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/worker-live .
-
-FROM alpine:3.20 AS runtime
-
-RUN apk add --no-cache ca-certificates tzdata wget && \
-    adduser -D -u 10001 adatrack
+# Build phase
+FROM golang:alpine AS builder
 
 WORKDIR /app
-COPY --from=build /out/worker-live /app/worker-live
+# Enable Go modules workspace
+ENV CGO_ENABLED=0 GOOS=linux
 
-USER adatrack
+# Copy the entire backend monorepo to satisfy go.work and internal dependencies
+COPY . .
 
-EXPOSE 8091
+# Build the specific service
+RUN go build -o /app/bin/service ./services/worker-live/main.go
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=5 \
-    CMD wget -q -O - http://127.0.0.1:8091/healthz || exit 1
+# Runtime phase
+FROM alpine:latest
 
-ENTRYPOINT ["/app/worker-live"]
+# Add timezone data and CA certs
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /app
+# Copy the compiled binary
+COPY --from=builder /app/bin/service /app/service
+
+# Copy database migrations and scripts (Required for Coolify pre-deploy hooks - PRD 14.5)
+COPY database /app/database
+COPY scripts /app/scripts
+
+# Expose required ports
+EXPOSE 8082
+
+# Start the service
+CMD ["/app/service"]

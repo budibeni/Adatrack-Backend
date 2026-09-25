@@ -1,141 +1,78 @@
-// Command service-websocket serves the authenticated REST API and the real-time
-// WebSocket fan-out of ADATRACK (PRD Module 5, phase B2):
-//
-//	HTTP  : REST (§8.2) + WS (§8.3) + /healthz + /metrics on HTTP_ADDR (:8082)
-//	Auth  : bcrypt login → JWT HS256 (24 h) + rotating opaque refresh token
-//	RBAC  : tm_user_company_access (role) + tm_user_vehicles (row-level)
-//	WS    : telemetry.live.<IMEI> --(queue group "websocket")--> hub --> clients
-//
-// Every mutation/security event is written to the append-only `tm_audit_logs`
-// (PRD §9.4); sensitive actions are fail-closed.
 package main
 
 import (
 	"context"
-	"errors"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
-	"ajb_gps/service-websocket/controllers"
+	"backend/internal/config"
+	"backend/internal/logger"
+	"backend/internal/natsclient"
+	"backend/internal/redclient"
+	"backend/internal/tenant"
+	"backend/internal/dbclient"
+	"backend/service-websocket/internal/api"
+	"backend/service-websocket/internal/ws"
 )
 
 func main() {
-	internal.ConfigureLogging()
-	internal.LoadProjectEnv()
+	logger.InitLogger()
+	cfg := config.Load()
+	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer initCancel()
 
-	cfg := internal.LoadConfig()
-	if err := cfg.Validate(); err != nil {
-		slog.Error("invalid configuration", "error", err)
-		os.Exit(1)
+	if err := dbclient.Connect(initCtx, cfg); err != nil {
+		logger.Log.Error("FATAL Database", "err", err); os.Exit(1)
 	}
+	defer dbclient.Pool.Close()
 
-	settings := controllers.LoadSettings()
-	if err := settings.Validate(); err != nil {
-		slog.Error("invalid service-websocket configuration", "error", err)
-		os.Exit(1)
+	if err := redclient.Connect(initCtx, cfg); err != nil {
+		logger.Log.Error("FATAL Redis", "err", err); os.Exit(1)
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	registry := internal.GetRegistry()
-	controllers.RegisterMetrics(registry)
-	controllers.RegisterBridgeMetrics(registry)
-
-	red, err := internal.NewRedisClient(cfg)
-	if err != nil {
-		slog.Error("redis unavailable", "error", err)
-		os.Exit(1)
+	tenant.InitManager(cfg)
+	
+	if err := natsclient.Connect(cfg); err != nil {
+		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
 	}
-	defer func() { _ = red.Close() }()
+	defer natsclient.NC.Close()
 
-	tcfg := tenant.ConfigFromEnv(cfg)
-	if err := tcfg.Validate(); err != nil {
-		slog.Error("invalid tenant configuration", "error", err,
-			"env", "MASTER_DB_NAME/COMPANY_DB_PREFIX/COMPANY_MIGRATIONS_DIR")
-		os.Exit(1)
-	}
-	tm, err := tenant.New(ctx, cfg, tcfg, red, registry)
-	if err != nil {
-		slog.Error("tenant manager failed", "error", err)
-		os.Exit(1)
-	}
-	defer tm.Close()
-	go tm.Run(ctx)
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
 
-	if cfg.Migrate.OnBoot {
-		if _, err := internal.ApplyMigrations(ctx, tm.Master().DB, "master", cfg.Migrate.MasterSchema,
-			cfg.Migrate.MasterDir, cfg.Migrate.LedgerTable, cfg.Migrate.LockTimeout); err != nil {
-			slog.Error("auto-migration failed", "error", err)
-			os.Exit(1)
-		}
-	}
+	// Initialize WebSocket Hub
+	hub := ws.NewHub(cfg)
+	go hub.Run()
+	// Setup consumer to push updates to hub
+	go hub.StartConsumer(appCtx)
 
-	nac, err := internal.NewNATSClient(cfg)
-	if err != nil {
-		slog.Error("nats unavailable", "error", err)
-		os.Exit(1)
-	}
-	defer nac.Close()
-
-	store := controllers.NewPostgresStore(tm)
-	service := controllers.NewService(controllers.Deps{
-		Settings: settings,
-		Store:    store,
-		KV:       controllers.NewRedisKV(red.Client()),
-		Live:     controllers.NewRedisLiveState(red),
-		Redis:    red,
-		NATS:     nac,
-		Registry: registry,
-	})
-	service.Start()
-	defer service.Stop()
-
-	bridge := controllers.NewBridge(cfg, nac, service.Hub())
-	sub, err := bridge.Start()
-	if err != nil {
-		slog.Error("failed to subscribe telemetry.live.>", "error", err)
-		os.Exit(1)
-	}
-	defer nac.Unsubscribe(sub)
+	// Initialize API Router
+	router := api.SetupRouter(cfg, hub)
 
 	server := &http.Server{
-		Addr:              settings.HTTPAddr,
-		Handler:           service.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		// Websocket connections are long-lived: WriteTimeout must stay 0 so the
-		// hijacked connection is not cut off (gorilla manages its own deadlines).
-		WriteTimeout: 0,
-		IdleTimeout:  120 * time.Second,
+		Addr:    ":" + cfg.PortWebsocket,
+		Handler: router,
 	}
 
 	go func() {
-		slog.Info("service-websocket listening", "addr", settings.HTTPAddr,
-			"jwt_expiry_h", settings.AccessExpiry.Hours(),
-			"refresh_expiry_h", settings.RefreshExpiry.Hours(),
-			"revocation", settings.RevocationEnabled,
-			"ws_max_connections", settings.WSMaxConnections)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("http server failed", "addr", settings.HTTPAddr, "error", err)
-			stop()
+		logger.Log.Info("Starting service-websocket", "port", cfg.PortWebsocket)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Log.Error("HTTP server error", "err", err)
 		}
 	}()
 
-	<-ctx.Done()
-	slog.Info("shutdown signal received; draining connections")
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	logger.Log.Info("Shutting down service-websocket...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	service.Stop()
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		slog.Warn("http server shutdown error", "error", err)
-	}
-	slog.Info("service-websocket stopped")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	
+	hub.Stop()
+	server.Shutdown(shutdownCtx)
+	
+	logger.Log.Info("Shutdown complete")
 }

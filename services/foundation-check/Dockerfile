@@ -1,35 +1,32 @@
-# ============================================================================
-# foundation-check — Dockerfile (build context: backend/)
-# ============================================================================
-# Diagnostic service that proves the B0 wiring (PostgreSQL + Redis + NATS +
-# tenant routing). Useful in CI/deploy smoke tests: `docker run ... -once`.
-# ============================================================================
-FROM golang:1.25-alpine AS build
-
-WORKDIR /src
-
-COPY internal/ ./internal/
-COPY services/foundation-check/ ./services/foundation-check/
-
-WORKDIR /src/services/foundation-check
-RUN go mod download && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/foundation-check .
-
-FROM alpine:3.20 AS runtime
-
-RUN apk add --no-cache ca-certificates tzdata wget && \
-    adduser -D -u 10001 adatrack
+# Build phase
+FROM golang:alpine AS builder
 
 WORKDIR /app
+# Enable Go modules workspace
+ENV CGO_ENABLED=0 GOOS=linux
 
-COPY database/ ./database/
-COPY --from=build /out/foundation-check /app/foundation-check
+# Copy the entire backend monorepo to satisfy go.work and internal dependencies
+COPY . .
 
-USER adatrack
+# Build the specific service
+RUN go build -o /app/bin/service ./services/foundation-check/main.go
 
-EXPOSE 8093
+# Runtime phase
+FROM alpine:latest
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=5 \
-    CMD wget -q -O - http://127.0.0.1:8093/healthz || exit 1
+# Add timezone data and CA certs
+RUN apk --no-cache add ca-certificates tzdata
 
-ENTRYPOINT ["/app/foundation-check"]
+WORKDIR /app
+# Copy the compiled binary
+COPY --from=builder /app/bin/service /app/service
+
+# Copy database migrations and scripts (Required for Coolify pre-deploy hooks - PRD 14.5)
+COPY database /app/database
+COPY scripts /app/scripts
+
+# Expose required ports
+EXPOSE 8080
+
+# Start the service
+CMD ["/app/service"]

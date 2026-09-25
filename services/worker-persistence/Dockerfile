@@ -1,34 +1,32 @@
-# ============================================================================
-# worker-persistence — Dockerfile (build context: backend/)
-# ============================================================================
-FROM golang:1.25-alpine AS build
-
-WORKDIR /src
-
-COPY internal/ ./internal/
-COPY services/worker-persistence/ ./services/worker-persistence/
-
-WORKDIR /src/services/worker-persistence
-RUN go mod download && \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/worker-persistence .
-
-FROM alpine:3.20 AS runtime
-
-RUN apk add --no-cache ca-certificates tzdata wget && \
-    adduser -D -u 10001 adatrack
+# Build phase
+FROM golang:alpine AS builder
 
 WORKDIR /app
+# Enable Go modules workspace
+ENV CGO_ENABLED=0 GOOS=linux
 
-# Migrations travel with the image so MIGRATE_ON_BOOT works offline (§14.5).
-COPY database/ ./database/
-COPY scripts/pg-wait.sh ./scripts/pg-wait.sh
-COPY --from=build /out/worker-persistence /app/worker-persistence
+# Copy the entire backend monorepo to satisfy go.work and internal dependencies
+COPY . .
 
-USER adatrack
+# Build the specific service
+RUN go build -o /app/bin/service ./services/worker-persistence/main.go
 
-EXPOSE 8092
+# Runtime phase
+FROM alpine:latest
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
-    CMD wget -q -O - http://127.0.0.1:8092/healthz || exit 1
+# Add timezone data and CA certs
+RUN apk --no-cache add ca-certificates tzdata
 
-ENTRYPOINT ["/app/worker-persistence"]
+WORKDIR /app
+# Copy the compiled binary
+COPY --from=builder /app/bin/service /app/service
+
+# Copy database migrations and scripts (Required for Coolify pre-deploy hooks - PRD 14.5)
+COPY database /app/database
+COPY scripts /app/scripts
+
+# Expose required ports
+EXPOSE 8085
+
+# Start the service
+CMD ["/app/service"]

@@ -1,33 +1,44 @@
-# Build artifacts
-/bin/
-/logs/
+# Compiled binaries
+bin/
+*/bin/
+tools/migrate/db-migrate
+tools/migrate/migrate
+tools/loadgen/loadgen
 *.exe
-*.test
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
 *.out
+*.test
 
-# Compiled module binaries — `go build .` inside a module drops the binary next
-# to its sources; canonical builds write to bin/ via `make build`. Never commit.
-/services/foundation-check/foundation-check
-/services/ingestion-tcp/ingestion-tcp
-/services/worker-live/worker-live
-/services/worker-persistence/worker-persistence
-/tools/e2e/e2e
-/tools/e2ews/e2ews
-
-# Go
-vendor/
-
-# Local runtime data
+# Patch, merge & temporary artifacts
+*.orig
+*.rej
+*.patch
 *.log
-tmp/
-.pgdata/
+*.tmp
+patch_*.go
+generate_*.sh
 
-# Secrets: never commit credentials (§9.5). `.env.local` (dev defaults) and
-# `.env.coolify` (production placeholders) are NOT tracked: copy the tracked
-# template `.env.example` and fill in values per variant (§7 — no mixed config).
+# Environment files
+.env
+.env.*.local
+
+services/ingestion-tcp/ingestion-tcp
+.env
+.env.*
+*.pem
+
+# Security & Audit Fixes
 .env.local
 .env.coolify
-.env.coolify.local
-.env.*.secret
-*.pem
-*.key
+*.bak
+*.diff
+*.py
+*.js
+main
+api-vehicle
+

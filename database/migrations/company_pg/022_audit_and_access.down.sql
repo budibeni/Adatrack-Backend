@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS th_user_logs CASCADE;
+DROP TABLE IF EXISTS th_audit_logs CASCADE;
+DROP TABLE IF EXISTS tm_user_menu_access CASCADE;
+DROP TABLE IF EXISTS tm_module_access CASCADE;

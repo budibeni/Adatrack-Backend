@@ -1,155 +1,127 @@
-// Command ingestion-tcp is the device-facing entry point of the telemetry
-// pipeline (PRD Module 1):
-//
-//	GPS device --TCP--> decode (GT06 / Teltonika) --> NATS telemetry.raw.<IMEI>
-//
-// Responsibilities:
-//   - one listener per protocol (GT06 on TCP_PORT, Teltonika on TELTONIKA_TCP_PORT;
-//     boot refuses a port clash → os.Exit(1), PRD Module 1c)
-//   - connection management: max connections, idle timeout, per-connection budget
-//   - anti-spoofing: IMEI allowlist through master.tm_vehicle_imei_map (FR-1.4)
-//   - backpressure: warn >50% / drop >90% of the JetStream budget (FR-1.5)
-//   - readiness: /healthz + /metrics on INGESTION_METRICS_ADDR
 package main
 
 import (
+	_ "net/http/pprof"
 	"context"
-	"log/slog"
-	"net"
+	"encoding/json"
+	"net/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
-	"ajb_gps/ingestion-tcp/controllers"
-	"ajb_gps/ingestion-tcp/models"
-	"ajb_gps/internal"
-	"ajb_gps/internal/tenant"
+	"backend/ingestion-tcp/internal/protocol/gt06"
+	"backend/ingestion-tcp/internal/protocol/teltonika"
+	"backend/ingestion-tcp/internal/server"
+	"backend/internal/config"
+	"backend/internal/dbclient"
+	"backend/internal/logger"
+	"backend/internal/natsclient"
+
+	"github.com/nats-io/nats.go"
 )
 
 func main() {
-	internal.ConfigureLogging()
-	internal.LoadProjectEnv()
+	logger.InitLogger()
+	cfg := config.Load()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	cfg := internal.LoadConfig()
-	if err := cfg.Validate(); err != nil {
-		slog.Error("invalid configuration", "error", err)
-		os.Exit(1)
+	if err := dbclient.Connect(ctx, cfg); err != nil {
+		logger.Log.Error("FATAL DB", "err", err); os.Exit(1)
 	}
-	cfg.Server.MetricsAddr = internal.EnvOr("INGESTION_METRICS_ADDR", ":8090")
-
-	// GT06 date encoding toggle (docs use plain-hex; some firmwares use BCD).
-	controllers.SetDateEncoding(cfg.TCP.DateBCD)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	registry := internal.GetRegistry()
-	controllers.RegisterMetrics(registry)
-
-	// --- PostgreSQL (master + company pools, IMEI resolution) ----------------
-	tcfg := tenant.ConfigFromEnv(cfg)
-	if err := tcfg.Validate(); err != nil {
-		slog.Error("invalid tenant configuration", "error", err,
-			"env", "MASTER_DB_NAME/COMPANY_DB_PREFIX/COMPANY_MIGRATIONS_DIR")
-		os.Exit(1)
+	if err := natsclient.Connect(cfg); err != nil {
+		logger.Log.Error("FATAL NATS", "err", err); os.Exit(1)
 	}
 
-	// Redis is optional here: it only accelerates IMEI lookups.
-	var cache tenant.Cache
-	red, err := internal.NewRedisClient(cfg)
-	if err != nil {
-		slog.Warn("redis unavailable; IMEI lookup cache disabled", "error", err)
-	} else {
-		cache = red
-		defer func() { _ = red.Close() }()
-	}
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	http.Handle("/metrics", promhttp.Handler())
+	healthServer := &http.Server{Addr: ":8081", Handler: nil}
+	go healthServer.ListenAndServe()
 
-	tm, err := tenant.New(ctx, cfg, tcfg, cache, registry)
-	if err != nil {
-		slog.Error("tenant manager failed", "error", err)
-		os.Exit(1)
-	}
-	defer tm.Close()
-	go tm.Run(ctx)
+	natsclient.NC.Subscribe("downlink.commands.*", func(m *nats.Msg) {
+		subject := m.Subject
+		// subject is downlink.commands.{imei}
+		imei := subject[len("downlink.commands."):]
 
-	if cfg.Migrate.OnBoot {
-		if _, err := internal.ApplyMigrations(ctx, tm.Master().DB, "master", cfg.Migrate.MasterSchema,
-			cfg.Migrate.MasterDir, cfg.Migrate.LedgerTable, cfg.Migrate.LockTimeout); err != nil {
-			slog.Error("auto-migration failed", "error", err)
-			os.Exit(1)
+		dc, ok := server.GetDeviceConn(imei)
+		if !ok {
+			logger.Log.Warn("Device offline or connection not in this node", "imei", imei)
+			return
 		}
-	}
 
-	// --- NATS ----------------------------------------------------------------
-	nac, err := internal.NewNATSClient(cfg)
-	if err != nil {
-		slog.Error("nats unavailable", "error", err)
-		os.Exit(1)
-	}
-	defer nac.Close()
-
-	// --- Listeners -----------------------------------------------------------
-	srv := controllers.NewServer(cfg, tm, nac)
-	defer srv.Shutdown()
-
-	targets := []struct {
-		port  string
-		proto models.Protocol
-	}{
-		{cfg.TCP.Port, models.ProtoGT06},
-		{cfg.TCP.TeltonikaPort, models.ProtoTeltonika},
-	}
-
-	seen := map[string]string{}
-	listeners := 0
-	for _, t := range targets {
-		if t.port == "" || t.port == "0" {
-			slog.Info("listener disabled by configuration", "protocol", t.proto.String(), "port", t.port)
-			continue
+		type CmdMsg struct {
+			Type   string            `json:"type"`
+			Params map[string]string `json:"params"`
+			Raw    string            `json:"raw"`
 		}
-		if other, clash := seen[t.port]; clash {
-			slog.Error("port clash between listeners", "port", t.port,
-				"protocols", other+" + "+t.proto.String())
-			os.Exit(1)
-		}
-		seen[t.port] = t.proto.String()
 
-		ln, err := net.Listen("tcp", ":"+t.port)
+		var cmdMsg CmdMsg
+		if err := json.Unmarshal(m.Data, &cmdMsg); err != nil {
+			logger.Log.Error("Invalid command message", "err", err)
+			return
+		}
+
+		encodedBytes, err := dc.Decoder.EncodeCommand(cmdMsg.Type, cmdMsg.Params, cmdMsg.Raw)
 		if err != nil {
-			slog.Error("failed to listen", "port", t.port, "protocol", t.proto.String(), "error", err)
-			os.Exit(1)
+			logger.Log.Error("Failed to encode command", "err", err, "imei", imei, "type", cmdMsg.Type)
+			return
 		}
-		defer func() { _ = ln.Close() }()
-		go srv.AcceptLoop(ln, t.proto)
-		listeners++
-		slog.Info("ingestion listener started", "addr", ":"+t.port, "protocol", t.proto.String(),
-			"max_connections", cfg.TCP.MaxConnections, "idle_timeout_s", cfg.TCP.IdleTimeout.Seconds())
-	}
-	if listeners == 0 {
-		slog.Error("no TCP listener configured (set TCP_PORT and/or TELTONIKA_TCP_PORT)")
-		os.Exit(1)
+
+		success := server.SendCommand(imei, encodedBytes)
+		if success {
+			logger.Log.Info("Command sent", "imei", imei, "type", cmdMsg.Type)
+		} else {
+			logger.Log.Warn("Command failed to send", "imei", imei)
+		}
+	})
+
+	// Traccar-style Port Binding using Dynamic Ports from ENV
+	var wg sync.WaitGroup
+	servers := []*server.TCPServer{
+		server.NewTCPServer(":"+cfg.PortGT06, 5000, &gt06.Decoder{}),
+		server.NewTCPServer(":"+cfg.PortTeltonika, 5000, &teltonika.Decoder{}),
+		// H-06 Enterprise Hardening: Disabled experimental / non-production protocols
+		// to prevent edge-case panics and instability. Must be rigorously tested before re-enabling.
+		// server.NewTCPServer(":"+cfg.PortCoban, 5000, &coban.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortMeitrack, 5000, &meitrack.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortH02, 5000, &h02.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortMeiligao, 5000, &meiligao.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortXexun, 5000, &xexun.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortSuntech, 5000, &suntech.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortTotem, 5000, &totem.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortGT02, 5000, &gt02.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortNavigil, 5000, &navigil.Decoder{}),
+		// server.NewTCPServer(":"+cfg.PortCastel, 5000, &castel.Decoder{}),
 	}
 
-	// --- Readiness + metrics -------------------------------------------------
-	hs := internal.NewHealthServer(cfg.Server.MetricsAddr, registry,
-		internal.HealthCheck{Name: "postgres_master", Critical: true,
-			Fn: func(ctx context.Context) error { return tm.Master().Ping(ctx) }},
-		internal.HealthCheck{Name: "tenant_pools", Critical: false,
-			Fn: func(ctx context.Context) error { return tm.Health(ctx) }},
-		internal.HealthCheck{Name: "nats", Critical: true, Fn: func(context.Context) error {
-			if !nac.IsConnected() {
-				return errNATS
+	for _, srv := range servers {
+		wg.Add(1)
+		go func(s *server.TCPServer) {
+			defer wg.Done()
+			if err := s.Start(); err != nil {
+				logger.Log.Error("TCP Server crashed", "err", err)
 			}
-			return nil
-		}},
-	)
-	hs.Start()
-	defer hs.Shutdown(context.Background())
+		}(srv)
+	}
 
-	slog.Info("ingestion-tcp started", "listeners", listeners)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
 
-	<-ctx.Done()
-	slog.Info("shutdown signal received; stopping listeners")
-	srv.Shutdown()
-	slog.Info("ingestion-tcp stopped", "dropped_frames", srv.DroppedFrames())
+	logger.Log.Info("Initiating Graceful Shutdown across all protocols...")
+	for _, srv := range servers {
+		srv.Stop()
+	}
+	wg.Wait()
+	
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	healthServer.Shutdown(shutdownCtx)
+	
+	dbclient.Pool.Close()
+	natsclient.NC.Close()
+	logger.Log.Info("Shutdown complete")
 }

@@ -1,0 +1,88 @@
+# Build phase
+FROM golang:alpine AS builder
+
+WORKDIR /app
+ENV CGO_ENABLED=0 GOOS=linux
+
+# Cache go modules using go.work
+COPY . .
+# We can optionally run go mod download in each directory, or just let go build handle it.
+# We will just let go build handle it since they share the module cache.
+
+# Build all binaries sequentially to prevent OOM/CPU starvation on the host
+RUN go build -o /app/bin/api-vehicle ./services/api-vehicle/main.go && \
+    go build -o /app/bin/ingestion-tcp ./services/ingestion-tcp/main.go && \
+    go build -o /app/bin/worker-live ./services/worker-live/main.go && \
+    go build -o /app/bin/worker-persistence ./services/worker-persistence/main.go && \
+    go build -o /app/bin/worker-alert ./services/worker-alert/main.go && \
+    go build -o /app/bin/service-websocket ./services/service-websocket/main.go && \
+    go build -o /app/bin/foundation-check ./services/foundation-check/main.go && \
+    go build -o /app/bin/service-monitor ./services/service-monitor/main.go
+
+# ==========================================
+# RUNTIME IMAGES
+# ==========================================
+
+# --- api-vehicle ---
+FROM alpine:latest AS api-vehicle
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/api-vehicle /app/service
+COPY database /app/database
+COPY scripts /app/scripts
+EXPOSE 8084
+CMD ["/app/service"]
+
+# --- ingestion-tcp ---
+FROM alpine:latest AS ingestion-tcp
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/ingestion-tcp /app/service
+EXPOSE 8081
+CMD ["/app/service"]
+
+# --- worker-live ---
+FROM alpine:latest AS worker-live
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/worker-live /app/service
+CMD ["/app/service"]
+
+# --- worker-persistence ---
+FROM alpine:latest AS worker-persistence
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/worker-persistence /app/service
+CMD ["/app/service"]
+
+# --- worker-alert ---
+FROM alpine:latest AS worker-alert
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/worker-alert /app/service
+CMD ["/app/service"]
+
+# --- service-websocket ---
+FROM alpine:latest AS service-websocket
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/service-websocket /app/service
+COPY database /app/database
+EXPOSE 8080
+CMD ["/app/service"]
+
+# --- foundation-check ---
+FROM alpine:latest AS foundation-check
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/foundation-check /app/service
+EXPOSE 8080
+CMD ["/app/service"]
+
+# --- service-monitor ---
+FROM alpine:latest AS service-monitor
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app/bin/service-monitor /app/service
+EXPOSE 8085
+CMD ["/app/service"]
