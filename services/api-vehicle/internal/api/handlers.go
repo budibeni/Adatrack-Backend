@@ -511,9 +511,11 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
-		SELECT id, name, area_type, coordinates, radius_meters, boundary_points, created_by 
-		FROM %s.tm_geofences WHERE deleted_at IS NULL ORDER BY id ASC
-	`, schema))
+		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points, g.created_by, gg.group_id
+		FROM %s.tm_geofences g
+		LEFT JOIN %s.tm_group_geofences gg ON g.id = gg.geofence_id
+		WHERE g.deleted_at IS NULL ORDER BY g.id ASC
+	`, schema, schema))
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list geofences")
 		return
@@ -526,8 +528,9 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 		var name, areaType string
 		var coords, bounds json.RawMessage
 		var radius *float64
-		if err := rows.Scan(&id, &name, &areaType, &coords, &radius, &bounds, &createdBy); err == nil {
-			geofences = append(geofences, map[string]interface{}{
+		var groupID *int
+		if err := rows.Scan(&id, &name, &areaType, &coords, &radius, &bounds, &createdBy, &groupID); err == nil {
+			geofence := map[string]interface{}{
 				"id":              id,
 				"name":            name,
 				"area_type":       areaType,
@@ -535,7 +538,11 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 				"radius_meters":   radius,
 				"boundary_points": bounds,
 				"created_by":      createdBy,
-			})
+			}
+			if groupID != nil {
+				geofence["groupId"] = fmt.Sprintf("%d", *groupID)
+			}
+			geofences = append(geofences, geofence)
 		}
 	}
 
@@ -719,9 +726,11 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
-		SELECT id, name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters
-		FROM %s.tm_routes WHERE deleted_at IS NULL ORDER BY id ASC
-	`, schema))
+		SELECT r.id, r.name, r.waypoints, r.driver_user_id, r.vehicle_id, r.status, r.deviation_threshold_meters, gr.group_id
+		FROM %s.tm_routes r
+		LEFT JOIN %s.tm_group_routes gr ON r.id = gr.route_id
+		WHERE r.deleted_at IS NULL ORDER BY r.id ASC
+	`, schema, schema))
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list routes")
 		return
@@ -733,10 +742,10 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 		var id int
 		var name, status string
 		var waypoints json.RawMessage
-		var driverID, vehicleID *int
+		var driverID, vehicleID, groupID *int
 		var threshold float64
-		if err := rows.Scan(&id, &name, &waypoints, &driverID, &vehicleID, &status, &threshold); err == nil {
-			routes = append(routes, map[string]interface{}{
+		if err := rows.Scan(&id, &name, &waypoints, &driverID, &vehicleID, &status, &threshold, &groupID); err == nil {
+			route := map[string]interface{}{
 				"id":                         id,
 				"name":                       name,
 				"waypoints":                  waypoints,
@@ -744,7 +753,11 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 				"vehicle_id":                 vehicleID,
 				"status":                     status,
 				"deviation_threshold_meters": threshold,
-			})
+			}
+			if groupID != nil {
+				route["groupId"] = fmt.Sprintf("%d", *groupID)
+			}
+			routes = append(routes, route)
 		}
 	}
 
