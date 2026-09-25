@@ -73,14 +73,18 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.Get("/vehicles/{id}", h.GetVehicle)
 			r.Get("/vehicles/{id}/history", h.GetVehicleHistory)
 			
-			// Websocket endpoint
-			r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
-				ws.ServeWS(hub, w, r, cfg) // Handshake also checks JWT via query/header
-			})
+					})
+
+		// Websocket endpoint - NO AuthMiddleware here because ServeWS does its own auth (can read query string)
+		r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
+			ws.ServeWS(hub, w, r, cfg) 
 		})
+		
+		// Fallback for /tracking/live, just alias to ListVehicles which already supports live_state
+		r.With(auth.AuthMiddleware(cfg)).Get("/tracking/live", h.ListVehicles)
 	})
 	
-	r.Handle("/metrics", promhttp.Handler())
+r.Handle("/metrics", promhttp.Handler())
 
 	return r
 }
