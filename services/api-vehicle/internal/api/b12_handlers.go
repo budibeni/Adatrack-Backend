@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -171,6 +172,7 @@ type Group struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	Type        string `json:"type,omitempty"`
 }
 
 type Asset struct {
@@ -194,7 +196,7 @@ type Integration struct {
 func (h *Handler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
-	query := fmt.Sprintf(`SELECT id, name, description FROM %s.tm_groups WHERE deleted_at IS NULL`, schema)
+	query := fmt.Sprintf(`SELECT id, name, description, group_type FROM %s.tm_groups WHERE deleted_at IS NULL`, schema)
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
@@ -204,7 +206,13 @@ func (h *Handler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	var items []Group
 	for rows.Next() {
 		var g Group
-		rows.Scan(&g.ID, &g.Name, &g.Description)
+		var gtype sql.NullString
+		rows.Scan(&g.ID, &g.Name, &g.Description, &gtype)
+		if gtype.Valid {
+			g.Type = gtype.String
+		} else {
+			g.Type = "vehicle"
+		}
 		items = append(items, g)
 	}
 	h.writeJSON(w, http.StatusOK, items)
