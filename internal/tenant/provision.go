@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"ajb_gps/internal"
+	"backend/internal"
 )
 
 // ProvisionResult reports what a provisioning run changed.

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"ajb_gps/internal"
+	"backend/internal"
 )
 
 // Config holds the tenant routing parameters (PRD §7.2 MASTER_DB_*/COMPANY_DB_*).

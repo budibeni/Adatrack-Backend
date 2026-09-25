@@ -72,7 +72,30 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.Get("/vehicles", h.ListVehicles)
 			r.Get("/vehicles/{id}", h.GetVehicle)
 			r.Get("/vehicles/{id}/history", h.GetVehicleHistory)
-			
+
+			// Drivers endpoints
+			r.Get("/drivers", h.ListDrivers)
+			r.Get("/drivers/{id}", h.GetDriver)
+			r.Post("/drivers", h.CreateDriver)
+			r.Put("/drivers/{id}", h.UpdateDriver)
+			r.Delete("/drivers/{id}", h.DeleteDriver)
+			r.Post("/drivers/{id}/assign", h.AssignDriverVehicle)
+
+			// Routes endpoints
+			r.Get("/routes", h.ListRoutes)
+			r.Get("/routes/{id}", h.GetRoute)
+			r.Post("/routes", h.CreateRoute)
+			r.Put("/routes/{id}", h.UpdateRoute)
+			r.Delete("/routes/{id}", h.DeleteRoute)
+			r.Post("/routes/{id}/assign", h.AssignRoute)
+
+			// Geofences endpoints
+			r.Get("/geofences", h.ListGeofences)
+			r.Get("/geofences/{id}", h.GetGeofence)
+			r.Post("/geofences", h.CreateGeofence)
+			r.Put("/geofences/{id}", h.UpdateGeofence)
+			r.Delete("/geofences/{id}", h.DeleteGeofence)
+			r.Post("/geofences/{id}/assign", h.AssignGeofence)
 					})
 
 		// Websocket endpoint - NO AuthMiddleware here because ServeWS does its own auth (can read query string)
