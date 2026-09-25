@@ -45,6 +45,7 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		// Vehicles
 		r.Get("/vehicles", h.ListVehicles)
 		r.Get("/vehicles/{id}", h.GetVehicle)
+		r.Get("/vehicles/{id}/history", h.GetVehicleHistory)
 		r.Post("/vehicles", h.CreateVehicle)
 		r.Put("/vehicles/{id}", h.UpdateVehicle)
 		r.Delete("/vehicles/{id}", h.SoftDeleteVehicle)
