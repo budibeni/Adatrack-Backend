@@ -1,0 +1,171 @@
+package controllers
+
+// enterpriseResources is the registry of the table-driven enterprise CRUD
+// (B12, PRD §5.10). Adding a resource here (plus its migration) registers
+// list/get/create/update/delete/restore endpoints with RBAC, soft delete and the
+// mandatory audit trail for free.
+//
+// Column names are compile-time constants, so the generated SQL identifiers are
+// never client-controlled (PRD §9.6).
+var enterpriseResources = map[string]resourceSpec{
+	"drivers": {
+		Name: "drivers", Table: "tm_drivers", Entity: "DRIVER",
+		Fields: []fieldSpec{
+			{Column: "user_id", Kind: kindInt},
+			{Column: "name", Kind: kindString, Required: true, MaxLen: 120},
+			{Column: "employee_code", Kind: kindString, MaxLen: 40},
+			{Column: "license_number", Kind: kindString, MaxLen: 60},
+			{Column: "license_type", Kind: kindString, MaxLen: 40},
+			{Column: "license_expiry", Kind: kindTime},
+			{Column: "phone", Kind: kindString, MaxLen: 32},
+			{Column: "email", Kind: kindString, MaxLen: 255},
+			{Column: "address", Kind: kindString, MaxLen: 1000},
+			{Column: "status", Kind: kindString, Enum: []string{"active", "inactive", "suspended"}},
+		},
+		Search:  []string{"name", "employee_code", "license_number", "phone"},
+		OrderBy: "name ASC, id ASC",
+	},
+	"groups": {
+		Name: "groups", Table: "tm_groups", Entity: "GROUP",
+		Fields: []fieldSpec{
+			{Column: "name", Kind: kindString, Required: true, MaxLen: 120},
+			{Column: "group_type", Kind: kindString, Enum: []string{"vehicle", "driver", "mixed"}},
+			{Column: "description", Kind: kindString, MaxLen: 2000},
+		},
+		Search:  []string{"name", "description"},
+		OrderBy: "name ASC, id ASC",
+	},
+	"personnel": {
+		Name: "personnel", Table: "tm_personnel", Entity: "PERSONNEL",
+		Fields: []fieldSpec{
+			{Column: "user_id", Kind: kindInt},
+			{Column: "org_id", Kind: kindInt},
+			{Column: "name", Kind: kindString, Required: true, MaxLen: 120},
+			{Column: "position", Kind: kindString, MaxLen: 80},
+			{Column: "department", Kind: kindString, MaxLen: 80},
+			{Column: "phone", Kind: kindString, MaxLen: 32},
+			{Column: "email", Kind: kindString, MaxLen: 255},
+			{Column: "status", Kind: kindString, Enum: []string{"active", "inactive"}},
+		},
+		Search:  []string{"name", "position", "department", "phone", "email"},
+		OrderBy: "name ASC, id ASC",
+	},
+	"cards": {
+		Name: "cards", Table: "tm_cards", Entity: "CARD",
+		Fields: []fieldSpec{
+			{Column: "card_number", Kind: kindString, Required: true, MaxLen: 64},
+			{Column: "card_type", Kind: kindString, Enum: []string{"rfid", "nfc", "mifare", "other"}},
+			{Column: "personnel_id", Kind: kindInt},
+			{Column: "status", Kind: kindString, Enum: []string{"active", "blocked", "expired"}},
+			{Column: "issued_at", Kind: kindTime},
+			{Column: "expires_at", Kind: kindTime},
+			{Column: "notes", Kind: kindString, MaxLen: 2000},
+		},
+		Search:  []string{"card_number", "notes"},
+		OrderBy: "card_number ASC, id ASC",
+	},
+	"access-logs": {
+		Name: "access-logs", Table: "tm_access_logs", Entity: "ACCESS_LOG",
+		Fields: []fieldSpec{
+			{Column: "personnel_id", Kind: kindInt},
+			{Column: "card_id", Kind: kindInt},
+			{Column: "vehicle_id", Kind: kindInt},
+			{Column: "gate", Kind: kindString, MaxLen: 80},
+			{Column: "direction", Kind: kindString, Required: true, Enum: []string{"in", "out"}},
+			{Column: "result", Kind: kindString, Enum: []string{"granted", "denied"}},
+			{Column: "occurred_at", Kind: kindTime},
+			{Column: "notes", Kind: kindString, MaxLen: 2000},
+		},
+		Search:    []string{"gate", "notes"},
+		OrderBy:   "occurred_at DESC, id DESC",
+		Immutable: true,
+	},
+	"assets": {
+		Name: "assets", Table: "tm_assets", Entity: "ASSET",
+		Fields: []fieldSpec{
+			{Column: "name", Kind: kindString, Required: true, MaxLen: 160},
+			{Column: "asset_type", Kind: kindString, MaxLen: 40},
+			{Column: "serial_number", Kind: kindString, MaxLen: 80},
+			{Column: "assigned_vehicle_id", Kind: kindInt},
+			{Column: "location", Kind: kindString, MaxLen: 255},
+			{Column: "purchase_date", Kind: kindTime},
+			{Column: "purchase_value", Kind: kindFloat},
+			{Column: "currency", Kind: kindString, MaxLen: 3},
+			{Column: "status", Kind: kindString, Enum: []string{"active", "maintenance", "retired"}},
+			{Column: "notes", Kind: kindString, MaxLen: 2000},
+		},
+		Search:  []string{"name", "asset_type", "serial_number", "location"},
+		OrderBy: "name ASC, id ASC",
+	},
+	"incidents": {
+		Name: "incidents", Table: "tm_incidents", Entity: "INCIDENT",
+		Fields: []fieldSpec{
+			{Column: "vehicle_id", Kind: kindInt},
+			{Column: "driver_id", Kind: kindInt},
+			{Column: "incident_type", Kind: kindString, Required: true,
+				Enum: []string{"overspeed", "harsh_brake", "harsh_accel", "harsh_corner", "crash", "sos", "other"}},
+			{Column: "severity", Kind: kindString, Enum: []string{"low", "medium", "high", "critical"}},
+			{Column: "occurred_at", Kind: kindTime},
+			{Column: "lat", Kind: kindFloat},
+			{Column: "lon", Kind: kindFloat},
+			{Column: "speed", Kind: kindFloat},
+			{Column: "description", Kind: kindString, MaxLen: 4000},
+			{Column: "status", Kind: kindString, Enum: []string{"open", "investigating", "resolved", "dismissed"}},
+		},
+		Search:  []string{"description", "incident_type"},
+		OrderBy: "occurred_at DESC, id DESC",
+	},
+	"organizations": {
+		Name: "organizations", Table: "tm_organizations", Entity: "ORGANIZATION",
+		Fields: []fieldSpec{
+			{Column: "parent_id", Kind: kindInt},
+			{Column: "code", Kind: kindString, MaxLen: 40},
+			{Column: "name", Kind: kindString, Required: true, MaxLen: 160},
+			{Column: "manager_name", Kind: kindString, MaxLen: 120},
+			{Column: "status", Kind: kindString, Enum: []string{"active", "inactive"}},
+		},
+		Search:  []string{"name", "code", "manager_name"},
+		OrderBy: "name ASC, id ASC",
+	},
+	// §1.4 Perawatan (Maintenance): B8 owns the reminder ENGINE
+	// (worker-alert evaluates these schedules); B12 adds the CRUD the UI needs.
+	"maintenance": {
+		Name: "maintenance", Table: "tm_maintenance_schedules", Entity: "MAINTENANCE",
+		Fields: []fieldSpec{
+			{Column: "vehicle_id", Kind: kindInt, Required: true},
+			{Column: "name", Kind: kindString, Required: true, MaxLen: 120},
+			{Column: "maintenance_type", Kind: kindString,
+				Enum: []string{"oil_change", "tire", "service", "inspection", "brake", "filter", "other"}},
+			{Column: "interval_km", Kind: kindFloat},
+			{Column: "interval_engine_hours", Kind: kindFloat},
+			{Column: "interval_days", Kind: kindInt},
+			{Column: "last_service_at", Kind: kindTime},
+			{Column: "last_service_odometer_km", Kind: kindFloat},
+			{Column: "last_service_engine_hours", Kind: kindFloat},
+			{Column: "reminder_km_before", Kind: kindFloat},
+			{Column: "reminder_days_before", Kind: kindInt},
+			{Column: "is_active", Kind: kindBool},
+			{Column: "notes", Kind: kindString, MaxLen: 2000},
+		},
+		Search:  []string{"name", "notes"},
+		OrderBy: "name ASC, id ASC",
+	},
+	"maintenance-logs": {
+		Name: "maintenance-logs", Table: "td_maintenance_logs", Entity: "MAINTENANCE_LOG",
+		Fields: []fieldSpec{
+			{Column: "schedule_id", Kind: kindInt},
+			{Column: "vehicle_id", Kind: kindInt, Required: true},
+			{Column: "performed_at", Kind: kindTime},
+			{Column: "odometer_km", Kind: kindFloat},
+			{Column: "engine_hours", Kind: kindFloat},
+			{Column: "cost", Kind: kindFloat},
+			{Column: "currency", Kind: kindString, MaxLen: 3},
+			{Column: "vendor", Kind: kindString, MaxLen: 160},
+			{Column: "notes", Kind: kindString, MaxLen: 2000},
+			{Column: "status", Kind: kindString, Enum: []string{"scheduled", "done", "cancelled"}},
+		},
+		Search:    []string{"vendor", "notes"},
+		OrderBy:   "performed_at DESC, id DESC",
+		Immutable: true,
+	},
+}

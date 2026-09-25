@@ -44,10 +44,18 @@ func (s *Service) buildRouter() *gin.Engine {
 
 	api := engine.Group("/api/v1")
 
+	// FR-9.3 public location share: UNAUTHENTICATED by design — the token itself
+	// carries the tenant, so it must be mounted BEFORE the tenant tier.
+	s.registerPublicShareRoute(api)
+
 	// --- tenant tier (JWT + RBAC + row-level, PRD §3.1/§8.2) ----------------
 	tenant := api.Group("",
 		s.authenticate(), s.apiRateLimitMiddleware(), s.requireTenantScope(),
 		s.requirePasswordRotated())
+	// B11: every mutation behind this point writes the mandatory audit trail
+	// (PRD §9.4). Mounted last so it wraps the handlers and can read the final
+	// status code, after the actor/tenant have been resolved.
+	tenant.Use(s.auditMutationMiddleware())
 
 	vehicles := tenant.Group("/vehicles")
 	vehicles.GET("", s.handleListVehicles)
@@ -104,6 +112,24 @@ func (s *Service) buildRouter() *gin.Engine {
 	alerts.GET("", s.handleListAlerts)
 	alerts.POST("/:id/acknowledge", s.handleAcknowledgeAlert)
 	alerts.POST("/:id/resolve", s.handleResolveAlert)
+
+	// B11 governance: the tenant slice of the append-only audit trail (§9.4).
+	// Reading history is itself audited (AUDIT_LOGS_VIEWED).
+	auditLogs := tenant.Group("/audit-logs")
+	auditLogs.GET("", s.requireAdmin(), s.handleListAuditLogs)
+
+	// --- B12 enterprise & industry modules (additive, PRD §5.10) -------------
+	// Every table-driven enterprise resource gets list/get/create/update/delete/
+	// restore with RBAC + soft delete + audit; the bespoke modules (menu registry,
+	// integrations, share, heatmap/reports/safety, group mapping) are wired below.
+	for _, spec := range enterpriseResources {
+		s.registerEnterpriseRoutes(tenant, spec)
+	}
+	s.registerGroupMemberRoutes(tenant)
+	s.registerAccessGovernanceRoutes(tenant)
+	s.registerIntegrationRoutes(tenant)
+	s.registerShareRoutes(tenant)
+	s.registerAnalyticsRoutes(tenant)
 
 	return engine
 }

@@ -69,6 +69,20 @@ func (s *Service) handleUpdateVehicle(c *gin.Context) {
 	existing.DriverUserID = overlay(existing.DriverUserID, req.DriverUserID)
 	existing.DriverName = overlay(existing.DriverName, req.DriverName)
 	existing.DeviceModel = overlay(existing.DeviceModel, req.DeviceModel)
+	// B11 universal brand support: a provided protocol must be in the registry and
+	// its listener port is derived server-side (never client-supplied).
+	if req.Protocol != nil || req.Brand != nil {
+		proto, port, brand, perr := resolveProtocol(req.Protocol, req.Brand)
+		if perr != nil {
+			respondError(c, perr)
+			return
+		}
+		if proto != nil {
+			existing.Protocol = proto
+			existing.ProtocolPort = port
+			existing.Brand = brand
+		}
+	}
 	if req.Status != nil {
 		existing.Status = *req.Status
 	}

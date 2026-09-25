@@ -36,12 +36,26 @@ var commandsRequested = prometheus.NewCounterVec(prometheus.CounterOpts{
 	Help: "Downlink command requests accepted by api-vehicle, per command",
 }, []string{"command"})
 
+// auditWriteErrors counts tm_audit_logs write failures (retried then
+// dead-lettered — PRD §9.4 "no silent drop").
+var auditWriteErrors = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "audit_write_errors_total",
+	Help: "Audit persistence failures (retried, then dead-lettered — no silent drop)",
+})
+
+// auditEvents counts persisted audit rows per action/outcome (PRD §9.4).
+var auditEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "audit_events_total",
+	Help: "Audit rows written per action/outcome (PRD §9.4)",
+}, []string{"action", "outcome"})
+
 // RegisterMetrics registers the api-vehicle collectors.
 func RegisterMetrics(reg prometheus.Registerer) {
 	if reg == nil {
 		return
 	}
-	reg.MustRegister(rbacDenied, httpErrors, liveStateErrors, commandsRequested)
+	reg.MustRegister(rbacDenied, httpErrors, liveStateErrors, commandsRequested,
+		auditWriteErrors, auditEvents)
 }
 
 // apiRateLimitMiddleware enforces PRD §8.4 (100 requests / minute / user).
@@ -78,14 +92,46 @@ func (s *Service) apiRateLimitMiddleware() gin.HandlerFunc {
 	}
 }
 
-// denyRequest answers an auth/RBAC failure with the PRD §8.1 envelope.
+// denyRequest answers an auth/RBAC failure with the PRD §8.1 envelope and records
+// the denial in the mandatory audit trail (PRD §9.4: "100% event keamanan ...
+// tercatat"). The audit row is best-effort: the request is rejected either way.
 func (s *Service) denyRequest(c *gin.Context, claims *Claims, err error, reason string) {
 	apiErr := asAPIError(err)
 	rbacDenied.WithLabelValues(reason).Inc()
-	_ = claims
 	s.countHTTPError(apiErr.Status, apiErr.Code)
+	s.auditDenial(c, claims, apiErr, reason)
 	respondError(c, apiErr)
 	c.Abort()
+}
+
+// auditDenial writes one ACCESS_DENIED row (actor resolved from the identity or,
+// before tenant resolution, from the verified claims).
+func (s *Service) auditDenial(c *gin.Context, claims *Claims, apiErr *APIError, reason string) {
+	if s.auditor == nil || !s.auditor.Enabled() {
+		return
+	}
+	row := AuditRow{
+		Action:         ActionAccessDenied,
+		Outcome:        OutcomeDenied,
+		EntityType:     auditEntityFor(c.FullPath()),
+		EntityID:       c.Param("id"),
+		Reason:         reason,
+		RequestID:      requestID(c),
+		ActorIP:        c.ClientIP(),
+		ActorUserAgent: c.GetHeader("User-Agent"),
+		AfterState:     map[string]string{"error_code": apiErr.Code, "path": c.FullPath()},
+	}
+	if identity, ok := currentIdentity(c); ok && identity != nil {
+		row.ActorUserID = identity.userID
+		row.ActorEmail = identity.email
+		row.ActorRole = identity.role
+		row.CompanyCode = identity.companyCode
+	} else if claims != nil {
+		row.ActorUserID = claims.UserID
+		row.ActorEmail = claims.Email
+		row.ActorRole = claims.Role
+	}
+	s.recordAudit(c, row)
 }
 
 // countHTTPError feeds `http_errors_total{status,error_code}`.

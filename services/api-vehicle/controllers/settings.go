@@ -37,6 +37,10 @@ type Settings struct {
 	// CORS allowlist (PRD §9.3).
 	AllowedOrigins   []string
 	AllowEmptyOrigin bool
+
+	// Audit trail (PRD §9.4, B11): when disabled no tm_audit_logs row is written
+	// (fail-safe default is ON — the trail is mandatory in production).
+	AuditEnabled bool
 }
 
 // OriginAllowed reports whether the Origin header may be echoed back.
@@ -69,6 +73,8 @@ func LoadSettings() Settings {
 
 		AllowedOrigins:   splitList(internal.EnvOr("WS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")),
 		AllowEmptyOrigin: internal.EnvBoolDefault("WS_ALLOW_EMPTY_ORIGIN", true),
+
+		AuditEnabled: internal.EnvBoolDefault("AUDIT_ENABLED", true),
 	}
 }
 

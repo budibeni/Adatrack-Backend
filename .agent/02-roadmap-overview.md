@@ -52,6 +52,29 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 > Fase berikutnya: **B8 / B9 / B10 / B11** (B10 mendahului B11), lalu **B12**.
 >
 > ---
+> **STATUS 2026-09-26 (sesi B11+B12):** **B11 ✅ selesai**, **B12 🟡 sebagian (core selesai)**.
+> **B11:** audit trail wajib untuk **SEMUA** mutasi api-vehicle + penolakan (`ACCESS_DENIED`) via
+> `audit_mw.go` (redaksi rahasia, retry+dead-letter, metrik `audit_write_errors_total`), endpoint
+> baca `GET /api/v1/audit-logs` (Admin, `AUDIT_LOGS_VIEWED`), **dukungan protokol universal
+> (Module 1c)**: registry `internal/protocol` (11 keluarga, port/env/status + test) + katalog
+> master `tm_protocols` + kolom `protocol/protocol_port/brand` di `tm_vehicles` &
+> `tm_vehicle_imei_map`, validasi brand saat registrasi (tak dikenal → 400). Hardening: satu
+> file `internal/protocol/registry_test.go` mengunci tabel port agar tidak melenceng dari
+> listener ingestion. Migrasi baru: master `021`–`024`, company `026`–`027` — **keenam file
+> diuji apply+ROLLBACK pada PostgreSQL dev nyata**.
+> **B12 (core):** registry modul/menu + lisensi industri (`tm_company_modules`), `GET /access/menu`
+> (per role pemanggil), CRUD matriks role→menu, `GET/PUT /modules`, CRUD enterprise tabel-driven
+> (`drivers`, `groups` (+members), `personnel`, `cards`, `access-logs`, `assets`, `incidents`,
+> `organizations`, `maintenance`, `maintenance-logs`) dengan soft delete + restore + audit,
+> `integrations` (API key/webhook, rahasia sekali-tampil), `share-links` + endpoint **publik**
+> `GET /api/v1/share/{token}` (TTL + revokasi), `heatmap` (+rebuild), `reports/trips`,
+> `reports/violations`, `safety/scores` (B8). **Sisa B12 dicatat jujur** (halaman per-modul
+> industri, Personal/B2C, export/scheduled report, settings tenant, E2E harness) — lihat
+> `docs/B11-B12-VERIFICATION.md` §4.
+> Bukti: `docs/B11-B12-VERIFICATION.md` (unit test + SQL nyata: 12 sel heatmap dari telemetri,
+> trip report 3 trip/0.222 km dari data nyata, 86 baris matriks menu Admin).
+>
+> ---
 > **STATUS 2026-09-24 (sesi B8+B9+B10):** **B8 ✅ selesai** (downlink `DYD#` end-to-end:
 > registry koneksi → encoder GT06 `0x80` → `td_device_commands` `pending/sent/acked/offline/
 > failed/timeout`; driver behaviour `td_driver_events` + `th_driver_scores` + alert
@@ -133,8 +156,8 @@ Prinsip: **Backend diselesaikan dulu secara berurutan, lalu Frontend.**
 | **B8** | Advanced Fleet Features (downlink/remote commands `DYD#`, driver behavior, maintenance scheduling) | `ingestion-tcp`, `worker-alert`, `api-vehicle` (+ migrasi company `021`–`025`) | ✅ Selesai 2026-09-24 (+ audit lanjutan & GAP) — downlink end-to-end (registry→encoder GT06 `0x80` **dan TK103 7 perintah**→`td_device_commands`→ACK `0x21`), konsumsi **JetStream durable** + guard (satu in-flight/device, batas umur 300 s), driver behaviour (`td_driver_events`/`th_driver_scores` **per 100 km**), maintenance reminder (`tm_maintenance_schedules`/`td_maintenance_logs`, alert `maintenance_due`), REST `POST|GET /vehicles/{id}/commands`, E2E `scripts/e2e-commands.sh` 5/5. Gap: encoder keluarga lain, atribusi skor ke `driver_id`. Bukti: `docs/B8-B10-VERIFICATION.md` §1 |
 | **B9** | Protocol Expansion (Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103) — port & decoding per referensi Traccar | `ingestion-tcp` | ✅ Selesai 2026-09-25 (decoder pluggable, 11 listener, 9 keluarga; ingest penuh TK103+handshake+odometer, Meiligao lintas-id+Luhn, Xexun, H02 teks, Totem P1+P2, GT02, Navigil MSG 8/18, Suntech teks klasik; Castel framing+respons+posisi opt-in `CASTEL_GPS_DECODE`; E2E nyata Xexun/Navigil/Suntech/Totem/Meiligao/Castel). Sisa yang memblokir dicatat: H02 biner, Meiligao OBD/DTC/RFID, Navigil MSG 13/15, sisa matriks TK103. Bukti: §2 |
 | **B10** | **Normalisasi & Konfigurasi** — prefix tabel `tm_`/`th_`/`td_` (migrasi rename idempoten), split user master `tm_users` (B2B) / `tm_users_b2c` (B2C), `business_type` di `tm_companies`, config ganda LOCAL + COOLIFY (`docker-compose.{local,coolify}.yml` + `.env.{local,coolify}`), telemetry interval 20 s, input validation + anti-attack hardening (§8.5/§9.6) | `backend/`, `database/migrations` | ✅ Selesai 2026-09-24 — guard prefix otomatis (`internal/normalization_test.go`), split identitas + `business_type` terkunci test, `TELEMETRY_INTERVAL_SECONDS` + metrik `telemetry_interval_seconds`, `.env.{example,local,coolify}` diperluas, `internal/validate` diterapkan. Bukti: §3 |
-| **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant `Admin@123` (FR-5.5), migrasi DB otomatis Coolify (§14.5), dukungan protokol universal (Module 1c) | `backend/`, `deployments/` | ⬜ Planned |
-| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | ⬜ Planned |
+| **B11** | **Governance & Data Lifecycle** — audit trail wajib `tm_audit_logs` (§9.4), soft delete global + endpoint restore (§6.0.1), auto-create admin tenant `Admin@123` (FR-5.5), migrasi DB otomatis Coolify (§14.5), dukungan protokol universal (Module 1c) | `backend/`, `deployments/` | ✅ Selesai 2026-09-26 — audit middleware untuk **semua** mutasi + penolakan (`audit_mw.go`: redaksi, retry, dead-letter, metrik), `GET /api/v1/audit-logs` (Admin), registry protokol universal `internal/protocol` + katalog `tm_protocols` + `protocol/brand` di `tm_vehicles`/`tm_vehicle_imei_map` (brand tak dikenal → 400), migrasi master `021`–`024`/company `026`–`027` (apply+ROLLBACK nyata). Bukti: `docs/B11-B12-VERIFICATION.md` §1 |
+| **B12** | **Enterprise & Industry Modules** (acuan `docs/FRONTEND.md`, PRD §5.10 Module 9) — drivers, groups, personel/kartu RFID/log akses, assets, maintenance, safety score & incidents, laporan/analitik lanjutan, organization, integrations (API/Webhook), share lokasi publik, heatmap; modul industry-specific (rental, transport, logistics, sales, field service, patrol, project site) bertahap; Personal/B2C; registry module & menu master (`tm_modules`/`tm_menus`) + role menu access per-tenant (`tm_role_menu_access`) | `backend/` | 🟡 Core selesai 2026-09-26 — `GET /access/menu` per role + matriks role→menu (CRUD) + lisensi modul (`tm_company_modules`, industri opt-in), CRUD tabel-driven (drivers/groups+members/personnel/cards/access-logs/assets/incidents/organizations/maintenance) dengan soft delete+restore+audit, integrations (API key/webhook), share lokasi publik (`GET /api/v1/share/{token}`, TTL+revokasi), heatmap (+rebuild), reports trips/violations, safety scores (B8). **Sisa**: halaman per-modul industri, Personal/B2C (FR-9.2), export/scheduled report, settings tenant, E2E harness. Bukti: `docs/B11-B12-VERIFICATION.md` §2–§4 |
 | **F1** | Scaffold Frontend (Next.js + Tailwind + Map) | `frontend/` | ⬜ Not started |
 | **F2** | Live Tracking Dashboard | `frontend/` | ⬜ Not started |
 | **F3** | History Playback, Geofence, Alerts UI | `frontend/` | ⬜ Not started |

@@ -60,6 +60,22 @@ type AlertQuery struct {
 	Limit       int
 }
 
+// AuditLogQuery is the validated audit-trail list filter (PRD §9.4). The tenant
+// scope is mandatory; filters are parameterized.
+type AuditLogQuery struct {
+	CompanyCode string
+	Action      string
+	Outcome     string
+	EntityType  string
+	ActorUserID int64
+	From, To    *time.Time
+	Page        int
+	Limit       int
+}
+
+// AuditLogQuery is declared here so the Store doc block stays the single index of
+// persistence surfaces; the PG implementation lives in store_pg_audit.go.
+
 // CommandQuery is the validated downlink-command list filter.
 type CommandQuery struct {
 	CompanyCode string
@@ -89,7 +105,7 @@ type Store interface {
 	UpdateVehicle(ctx context.Context, company string, v *models.Vehicle, updatedBy int64) error
 	SoftDeleteVehicle(ctx context.Context, company string, id, by int64, reason string) error
 	RestoreVehicle(ctx context.Context, company string, id int64) error
-	SyncIMEIMap(ctx context.Context, imei, company string, vehicleID int64) error
+	SyncIMEIMap(ctx context.Context, imei, company string, vehicleID int64, protocol string) error
 	SoftDeleteIMEIMap(ctx context.Context, imei, company string) error
 
 	// --- geofences -----------------------------------------------------------
@@ -147,4 +163,11 @@ type Store interface {
 	DeviceCommandByRequestID(ctx context.Context, company, requestID string) (*models.DeviceCommand, error)
 	// ListDeviceCommands returns the command history with row-level filtering.
 	ListDeviceCommands(ctx context.Context, q CommandQuery) ([]models.DeviceCommand, int64, error)
+
+	// --- B11 governance: audit trail (PRD §9.4) -------------------------------
+	// WriteAudit appends rows to the master append-only `tm_audit_logs`; it is
+	// invoked for EVERY mutation by the audit middleware and for access denials.
+	WriteAudit(ctx context.Context, rows []AuditRow) error
+	// ListAuditLogs reads the tenant slice of the trail (Admin-only endpoint).
+	ListAuditLogs(ctx context.Context, q AuditLogQuery) ([]models.AuditLog, int64, error)
 }

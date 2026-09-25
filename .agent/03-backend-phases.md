@@ -1,12 +1,16 @@
 # Backend Phases — Rencana Pengerjaan B0–B12 (Clean Slate)
 
-> **STATUS 2026-09-24 (diperbarui):** **B0–B7 SELESAI**, **B8 ✅ selesai**, **B9 🟡 sebagian**
-> (6 keluarga ingest penuh + 3 framing-only), **B10 ✅ selesai**, dan **B4 🟡 sebagian**
-> (endurance 24/24 tuntas; gap: rollup `count.24h`, coverage lanjutan).
-> Fase berikutnya: **B11** (B10 sudah mendahuluinya), lalu **B12**.
+> **STATUS 2026-09-26 (diperbarui):** **B0–B8 SELESAI**, **B9 🟡 sebagian**
+> (6 keluarga ingest penuh + 3 framing-only), **B10 ✅ selesai**, **B11 ✅ selesai**,
+> **B12 🟡 core selesai** (sisa: halaman per-modul industri, Personal/B2C, export/scheduled,
+> settings tenant, E2E harness), dan **B4 🟡 sebagian** (endurance 24/24 tuntas; gap: rollup
+> `count.24h`, coverage lanjutan).
+> Fase backend berikutnya: **B12 sisa** (lihat §Phase B12) — atau mulai **F1** (gate frontend
+> B0–B6 sudah terpenuhi).
 > Checklist hanya dicentang bila ada bukti verifikasi nyata (perintah + hasil) pada kode baru
-> di `backend/`; bukti B6+B7 ringkas ada di `docs/B6-B7-VERIFICATION.md` dan bukti B8+B9+B10
-> di `docs/B8-B10-VERIFICATION.md` (regresi E2E: `make e2e-pipeline` 5/5 PASS).
+> di `backend/`; bukti B6+B7 ringkas ada di `docs/B6-B7-VERIFICATION.md`, bukti B8+B9+B10
+> di `docs/B8-B10-VERIFICATION.md`, dan bukti B11+B12 di `docs/B11-B12-VERIFICATION.md`
+> (regresi E2E: `make e2e-pipeline` 5/5 PASS).
 
 ## Referensi
 - **PRD:** `PRD.md` (konsolidasi v1.7.0) — sumber kebenaran requirement.
@@ -709,18 +713,51 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 
 ---
 
-## Phase B11 — Governance & Data Lifecycle ⬜ (PRD §6.0.1, §9.4, §14.5)
+## Phase B11 — Governance & Data Lifecycle ✅ (PRD §6.0.1, §9.4, §14.5) — selesai 2026-09-26
 
 ### Tasks
-- [ ] Audit trail wajib `tm_audit_logs` (semua mutation endpoint menulis audit).
-- [ ] Soft delete global + endpoint restore (semua entity utama).
-- [ ] Auto-create admin tenant password `Admin@123` (FR-5.5) saat provisioning.
-- [ ] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy).
-- [ ] Dukungan protokol universal (Module 1c) — registrasi device lintas brand.
+- [x] Audit trail wajib `tm_audit_logs` (semua mutation endpoint menulis audit).
+      → `services/api-vehicle/controllers/audit_mw.go`: `auditMutationMiddleware` dipasang pada
+      group tenant (setelah auth+RBAC) sehingga **setiap** POST/PATCH/PUT/DELETE menulis satu baris
+      audit (actor, tenant, entity, entity_id, request_id, payload ter-redaksi, reason); penolakan
+      auth/RBAC menulis `ACCESS_DENIED`/`denied` (`ratelimit_mw.go` → `auditDenial`). Retry +
+      backoff, metrik `audit_write_errors_total`, dead-letter `notify.deadletter` (tanpa silent
+      drop), `AUDIT_ENABLED` dihormati. Endpoint baca `GET /api/v1/audit-logs` (Admin,
+      tenant-scoped) + menulis `AUDIT_LOGS_VIEWED`. Test:
+      `TestAuditMiddlewareWritesEveryMutation` (6 mutasi → 6 baris, GET → 0),
+      `TestAuditMiddlewareRedactsSensitivePayload`, `TestDenialIsAudited` — `go test ./...` ok.
+- [x] Soft delete global + endpoint restore (semua entity utama).
+      → pola §6.0.1 sudah ada untuk vehicles/geofences/routes/speed/fuel (B3) dan media (B5b);
+      B12 memperluas ke drivers/groups/personnel/cards/assets/incidents/organizations/maintenance
+      dengan satu implementasi tabel-driven (`store_pg_enterprise.go`: `SoftDeleteEnterprise` /
+      `RestoreEnterprise`), resource log (`access-logs`, `maintenance-logs`) sengaja append-only.
+      Test lifecycle create→patch→delete→restore: `TestEnterpriseCRUDLifecycle`.
+- [x] Auto-create admin tenant password `Admin@123` (FR-5.5) saat provisioning.
+      → sudah dipenuhi pada B2 (`service-websocket` → `internal/tenant.ProvisionCompany` + admin
+      `admin@{code}.local`, bcrypt cost 12, `must_change_password=true`, audit
+      `ADMIN_USER_AUTOCREATED`; run provisioning E2E B2 **31/31 PASS**). Parameter
+      `PASSWORD_DEFAULT_TENANT_ADMIN` tersedia di `.env.local`/`.env.coolify`.
+- [x] Migrasi DB otomatis di Coolify (job/entrypoint apply migrasi saat deploy).
+      → `deployments/docker-compose.coolify.yml` (`x-app-env: MIGRATE_ON_BOOT=${MIGRATE_ON_BOOT:-true}`)
+      + `scripts/migrate.sh` sebagai pre-deploy hook (7 langkah fail-fast, ledger verification) —
+      didokumentasikan `docs/DEPLOY_COOLIFY.md` §3; seluruh verifikasi B11/B12 memakai jalur
+      `internal.ApplyMigrations` yang sama.
+- [x] Dukungan protokol universal (Module 1c) — registrasi device lintas brand.
+      → registry baru `internal/protocol` (11 keluarga + port Traccar + env override + status
+      jujur, Teltonika satu-satunya referensi `own`) terkunci test `registry_test.go`; katalog
+      master `tm_protocols` (migrasi master `021`, seed idempoten) + `tm_vehicle_imei_map.protocol`
+      (`022`) + `tm_vehicles.protocol/protocol_port/brand` (`company 026`); `resolveProtocol`
+      menolak brand tak dikenal **400** dan menurunkan port **server-side**
+      (`TestResolveProtocol`, `TestCreateVehicleStoresProtocol`, `TestCreateVehicleRejectsUnknownProtocol`).
 
 ### Acceptance
-- [ ] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
-- [ ] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
+- [x] Setiap mutation ter-audit (sampling verifikasi); restore mengembalikan data utuh.
+      → `TestAuditMiddlewareWritesEveryMutation` (6/6 aksi tercatat, GET tidak), `TestDenialIsAudited`,
+      `TestEnterpriseCRUDLifecycle` (delete → `deleted_at` terisi; restore → hidup lagi, 200).
+- [x] Provisioning tenant baru menghasilkan admin default + migrasi jalan otomatis di Coolify.
+      → B2 run 31/31 PASS (admin `Admin@123`, hash `$2a$12$`); `MIGRATE_ON_BOOT=true` + ledger/advisory
+      lock; enam file migrasi baru B11/B12 diuji apply terhadap PostgreSQL dev nyata (apply+ROLLBACK):
+      master `021`–`024` & company `026`–`027` **semua OK**.
 
 ---
 
@@ -732,23 +769,61 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 > prefix `tm_`/`th_`/`td_`; **additive-only**.
 
 ### Tasks
-- [ ] Registry modul & menu di master (`tm_modules`, `tm_menus` — seed idempoten dari FRONTEND.md) + **role akses menu per-tenant** (`tm_role_menu_access` di company schema, seed default per role).
-- [ ] Endpoint `GET /api/v1/access/menu` (menu tersedia utk user) + admin CRUD mapping (ter-audit).
-- [ ] Master: **Drivers** (`tm_drivers`) & **Groups** (`tm_groups` + mapping vehicle/driver).
-- [ ] Akses: **Personel**, **Kartu (RFID)**, **Log akses**.
-- [ ] Aset: **Assets** registry; **Maintenance** (jadwal + reminder — menyambung B8).
-- [ ] Keamanan: **Safety score** (dari B8) & **Incidents**.
-- [ ] Analisis: **Reports/Analytics** lanjutan (trip & violation summary, export, scheduled).
-- [ ] Administrasi: **Organization** (hierarki), **Integrations** (webhook outbound + API key), **Settings** tenant.
-- [ ] **Share lokasi publik** — link token TTL + endpoint publik `GET /api/v1/share/{token}` (FR-9.3).
-- [ ] **Heatmap** agregasi historis (menu Pemantauan).
-- [ ] Industry-specific bertahap (per flag lisensi tenant): Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site.
+- [x] Registry modul & menu di master (`tm_modules`, `tm_menus` — seed idempoten dari FRONTEND.md) + **role akses menu per-tenant** (`tm_role_menu_access` di company schema, seed default per role).
+      → sudah ada sejak B0 (11 modul / 86 menu; seed per-role company `004`); B12 mengaktifkannya:
+      `MenuItemsForRole` (master `tm_menus` ∩ `tm_role_menu_access` ∩ lisensi modul) + matriks
+      role→menu; data nyata: role Admin = **86 baris** akses.
+- [x] Endpoint `GET /api/v1/access/menu` (menu tersedia utk user) + admin CRUD mapping (ter-audit).
+      → `handlers_access.go`: `GET /access/menu` (role pemanggil; test `TestAccessMenuUsesCallerRole`),
+      `GET /access/menu/role/{role}` + `PUT /access/menu/role/{role}` (Admin, ganti matriks atomik di
+      satu transaksi; audit `MENU_ACCESS_UPDATED` lewat middleware B11).
+- [x] Master: **Drivers** (`tm_drivers`) & **Groups** (`tm_groups` + mapping vehicle/driver).
+      → CRUD tabel-driven (`enterprise_registry.go`) + `GET|POST /api/v1/groups/{id}/members` +
+      `DELETE .../members/{memberId}` (upsert idempoten lewat partial unique index).
+- [x] Akses: **Personel**, **Kartu (RFID)**, **Log akses**.
+      → `personnel`, `cards`, `access-logs`; log akses **append-only** (tanpa route mutasi).
+- [x] Aset: **Assets** registry; **Maintenance** (jadwal + reminder — menyambung B8).
+      → `assets` CRUD; `maintenance` (=`tm_maintenance_schedules`) + `maintenance-logs`
+      (=`td_maintenance_logs`, append-only). Reminder engine tetap milik B8 (worker-alert).
+- [x] Keamanan: **Safety score** (dari B8) & **Incidents**.
+      → `GET /api/v1/safety/scores` (membaca `th_driver_scores` B8, tanpa duplikasi data) +
+      CRUD `incidents` (open → investigating → resolved/dismissed).
+- [~] Analisis: **Reports/Analytics** lanjutan (trip & violation summary, export, scheduled).
+      → **sebagian**: `GET /reports/trips` (agregat `th_vehicle_trips`) & `GET /reports/violations`
+      (agregat `td_driver_events`) **selesai**; export CSV/PDF & laporan terjadwal **belum**.
+- [~] Administrasi: **Organization** (hierarki), **Integrations** (webhook outbound + API key), **Settings** tenant.
+      → Organization + Integrations **selesai** (`/organizations` hierarki parent_id; `/integrations`
+      kind `api_key|webhook`, rahasia sekali-tampil disimpan sebagai SHA-256, delete → langsung
+      `disabled`). **Settings tenant belum** (settings pengguna sudah ada di service-websocket).
+- [x] **Share lokasi publik** — link token TTL + endpoint publik `GET /api/v1/share/{token}` (FR-9.3).
+      → master `tm_share_links` (migrasi `024`), create/list/revoke (Admin) + endpoint publik
+      tanpa auth yang menghitung `view_count` dan hanya mengembalikan posisi kendaraan link itu;
+      token revoked/expired → 404. Test: `TestPublicShareLifecycle`.
+- [x] **Heatmap** agregasi historis (menu Pemantauan).
+      → `GET /api/v1/heatmap` (baca cache `tm_heatmap_cells`) + `POST /api/v1/heatmap/rebuild`
+      (Admin, agregasi `th_telemetry_logs` dengan ukuran sel parameter); verifikasi SQL nyata:
+      **12 sel** dari telemetri dev.
+- [~] Industry-specific bertahap (per flag lisensi tenant): Rental · Transport · Logistics · Sales · Field Service · Patrol · Project Site.
+      → **sebagian**: lisensi per tenant (`tm_company_modules`, migrasi master `023`, industri
+      opt-in) + `GET /modules` / `PUT /modules/{code}` (Admin) + gating menu otomatis. Halaman/CRUD
+      per sub-modul industri **belum** (pola tabel bertipe per modul belum dibuat).
 - [ ] Personal/B2C: auth `tm_users_b2c`, Statistics agregasi, Settings preferensi (FR-9.2).
+      → **belum** (`tm_users_b2c` sudah ada dari B10; auth + endpoint Personal menyusul).
 
 ### Acceptance
-- [ ] Navigasi frontend dimuat dinamis dari `GET /api/v1/access/menu` sesuai role.
-- [ ] Setiap menu FRONTEND.md punya endpoint ber-RBAC + test (aturan coverage B4).
-- [ ] Tabel baru normalisasi + audit + soft delete; migrasi idempoten.
+- [x] Navigasi frontend dimuat dinamis dari `GET /api/v1/access/menu` sesuai role.
+      → `handlers_access.go` + `MenuItemsForRole`; satu-satunya sumber menu adalah master
+      `tm_menus` ∩ akses role ∩ lisensi modul; test `TestAccessMenuUsesCallerRole` (role pemanggil
+      diteruskan, 200).
+- [~] Setiap menu FRONTEND.md punya endpoint ber-RBAC + test (aturan coverage B4).
+      → menu Business §1.1–§1.6 & §1.8 (kecuali Settings tenant) + §1.7 lisensi **punya endpoint
+      ber-RBAC** (unit test hijau, `go test ./...` ok); **sisa**: halaman per sub-modul industri,
+      Settings tenant, dan Personal §2 (B2C).
+- [x] Tabel baru normalisasi + audit + soft delete; migrasi idempoten.
+      → company `027` (11 tabel; prefix `tm_`/`td_`, kolom audit + soft delete; resource log
+      append-only) & master `023`/`024`; semua `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT
+      EXISTS` / `ON CONFLICT`, diverifikasi idempoten dengan apply+ROLLBACK di PostgreSQL dev nyata
+      (guard prefix tetap lolos `internal/normalization_test.go`).
 
 ---
 

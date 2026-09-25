@@ -40,19 +40,25 @@ type ErrorEnvelope struct {
 
 // Vehicle is the fleet master row (company `tm_vehicles`).
 type Vehicle struct {
-	ID           int64    `json:"id"`
-	IMEI         string   `json:"imei"`
-	PlateNumber  string   `json:"plate_number"`
-	Make         *string  `json:"make,omitempty"`
-	Model        *string  `json:"model,omitempty"`
-	Year         *int     `json:"year_of_manufacture,omitempty"`
-	Color        *string  `json:"color,omitempty"`
-	FuelType     *string  `json:"fuel_type,omitempty"`
-	CategoryCode *string  `json:"vehicle_category_code,omitempty"`
-	TypeCode     *string  `json:"vehicle_type_code,omitempty"`
-	DriverUserID *int64   `json:"driver_user_id,omitempty"`
-	DriverName   *string  `json:"driver_name,omitempty"`
-	DeviceModel  *string  `json:"device_model,omitempty"`
+	ID           int64   `json:"id"`
+	IMEI         string  `json:"imei"`
+	PlateNumber  string  `json:"plate_number"`
+	Make         *string `json:"make,omitempty"`
+	Model        *string `json:"model,omitempty"`
+	Year         *int    `json:"year_of_manufacture,omitempty"`
+	Color        *string `json:"color,omitempty"`
+	FuelType     *string `json:"fuel_type,omitempty"`
+	CategoryCode *string `json:"vehicle_category_code,omitempty"`
+	TypeCode     *string `json:"vehicle_type_code,omitempty"`
+	DriverUserID *int64  `json:"driver_user_id,omitempty"`
+	DriverName   *string `json:"driver_name,omitempty"`
+	DeviceModel  *string `json:"device_model,omitempty"`
+	// Protocol is the universal brand/protocol code (PRD Module 1c, B11): the
+	// registry key that routes the device to its ingestion decoder. Nil means
+	// "unknown" (the listener port remains the fallback discriminator).
+	Protocol     *string  `json:"protocol,omitempty"`
+	ProtocolPort *int     `json:"protocol_port,omitempty"`
+	Brand        *string  `json:"brand,omitempty"`
 	Status       string   `json:"status"`
 	LastSeenAt   *string  `json:"last_seen_at,omitempty"`
 	CurrentLat   *float64 `json:"current_lat,omitempty"`
@@ -115,7 +121,11 @@ type UpsertVehicleRequest struct {
 	DriverUserID *int64  `json:"driver_user_id" binding:"omitempty,min=1"`
 	DriverName   *string `json:"driver_name" binding:"omitempty,max=100"`
 	DeviceModel  *string `json:"device_model" binding:"omitempty,max=50"`
-	Status       *string `json:"status" binding:"omitempty,oneof=active inactive maintenance"`
+	// Protocol is validated against the universal registry (`internal/protocol`)
+	// by the handler — an unknown brand is rejected 400 (PRD Module 1c).
+	Protocol *string `json:"protocol" binding:"omitempty,max=40"`
+	Brand    *string `json:"brand" binding:"omitempty,max=80"`
+	Status   *string `json:"status" binding:"omitempty,oneof=active inactive maintenance"`
 }
 
 // Geofence is one zone (company `tm_geofences`, PRD §5.9.1).

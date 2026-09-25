@@ -113,8 +113,8 @@ WHERE user_id = $1 AND deleted_at IS NULL`, userID)
 // vehicleColumns is the projection shared by the vehicle read paths.
 const vehicleColumns = `id, imei, plate_number, make, model, year_of_manufacture,
 color, fuel_type, vehicle_category_code, vehicle_type_code, driver_user_id,
-driver_name, device_model, status, last_seen_at, current_lat, current_lon,
-current_speed, created_at, updated_at, deleted_at`
+driver_name, device_model, protocol, protocol_port, brand, status, last_seen_at,
+current_lat, current_lon, current_speed, created_at, updated_at, deleted_at`
 
 // scanVehicle scans one tm_vehicles row into the DTO.
 func scanVehicle(row interface{ Scan(...any) error }) (models.Vehicle, error) {
@@ -127,7 +127,8 @@ func scanVehicle(row interface{ Scan(...any) error }) (models.Vehicle, error) {
 	)
 	err := row.Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Year,
 		&v.Color, &v.FuelType, &v.CategoryCode, &v.TypeCode, &v.DriverUserID,
-		&v.DriverName, &v.DeviceModel, &v.Status, &lastSeen, &v.CurrentLat,
+		&v.DriverName, &v.DeviceModel, &v.Protocol, &v.ProtocolPort, &v.Brand,
+		&v.Status, &lastSeen, &v.CurrentLat,
 		&v.CurrentLon, &v.CurrentSpeed, &createdAt, &updatedAt, &deletedAt)
 	if err != nil {
 		return v, err
@@ -258,18 +259,19 @@ func (s *PostgresStore) CreateVehicle(ctx context.Context, company string, v *mo
 	err = pool.DB.QueryRowContext(ctx, `
 INSERT INTO tm_vehicles (imei, plate_number, make, model, year_of_manufacture,
 color, fuel_type, vehicle_category_code, vehicle_type_code,
-driver_user_id, driver_name, device_model, status, created_by)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-COALESCE($13, 'active'), $14)
+driver_user_id, driver_name, device_model, protocol, protocol_port, brand,
+status, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+COALESCE($16, 'active'), $17)
 RETURNING id`,
 		v.IMEI, v.PlateNumber, v.Make, v.Model, v.Year, v.Color, v.FuelType,
 		v.CategoryCode, v.TypeCode, v.DriverUserID, v.DriverName, v.DeviceModel,
-		nullableString(v.Status), createdBy).Scan(&id)
+		v.Protocol, v.ProtocolPort, v.Brand, nullableString(v.Status), createdBy).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("store: create vehicle: %w", err)
 	}
 	v.ID = id
-	if err := s.SyncIMEIMap(ctx, v.IMEI, company, id); err != nil {
+	if err := s.SyncIMEIMap(ctx, v.IMEI, company, id, deref(v.Protocol)); err != nil {
 		return 0, err
 	}
 	return id, nil
@@ -302,8 +304,9 @@ SELECT imei FROM tm_vehicles WHERE id = $1 AND deleted_at IS NULL`, v.ID).Scan(&
 UPDATE tm_vehicles SET plate_number = $2, make = $3, model = $4,
 year_of_manufacture = $5, color = $6, fuel_type = $7,
 vehicle_category_code = $8, vehicle_type_code = $9, driver_user_id = $10,
-driver_name = $11, device_model = $12, status = $13, updated_by = $14,
-imei = CASE WHEN $15 = '' THEN imei ELSE $15 END,
+driver_name = $11, device_model = $12, protocol = $13, protocol_port = $14,
+brand = $15, status = $16, updated_by = $17,
+imei = CASE WHEN $18 = '' THEN imei ELSE $18 END,
 updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND deleted_at IS NULL`
 
@@ -315,7 +318,7 @@ WHERE id = $1 AND deleted_at IS NULL`
 	tag, err := pool.DB.ExecContext(ctx, updateSQL,
 		v.ID, v.PlateNumber, v.Make, v.Model, v.Year, v.Color, v.FuelType,
 		v.CategoryCode, v.TypeCode, v.DriverUserID, v.DriverName, v.DeviceModel,
-		nullableString(v.Status), updatedBy, newIMEI)
+		v.Protocol, v.ProtocolPort, v.Brand, nullableString(v.Status), updatedBy, newIMEI)
 	if err != nil {
 		return fmt.Errorf("store: update vehicle: %w", err)
 	}
@@ -329,7 +332,7 @@ WHERE id = $1 AND deleted_at IS NULL`
 			return err
 		}
 	}
-	return s.SyncIMEIMap(ctx, v.IMEI, company, v.ID)
+	return s.SyncIMEIMap(ctx, v.IMEI, company, v.ID, deref(v.Protocol))
 }
 
 // SoftDeleteVehicle implements §6.0.1: rows are flagged, never removed; the
@@ -360,33 +363,39 @@ func (s *PostgresStore) RestoreVehicle(ctx context.Context, company string, id i
 	if err != nil {
 		return err
 	}
-	var imei string
+	var (
+		imei     string
+		protocol *string
+	)
 	err = pool.DB.QueryRowContext(ctx, `
 UPDATE tm_vehicles SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL,
 updated_at = CURRENT_TIMESTAMP
 WHERE id = $1 AND deleted_at IS NOT NULL
-RETURNING imei`, id).Scan(&imei)
+RETURNING imei, protocol`, id).Scan(&imei, &protocol)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("store: restore vehicle: %w", err)
 	}
-	return s.SyncIMEIMap(ctx, imei, company, id)
+	return s.SyncIMEIMap(ctx, imei, company, id, deref(protocol))
 }
 
 // SyncIMEIMap upserts the master anti-spoofing mapping (FR-1.4) — the ONLY
-// authority that resolves an IMEI to a tenant + vehicle.
-func (s *PostgresStore) SyncIMEIMap(ctx context.Context, imei, company string, vehicleID int64) error {
+// authority that resolves an IMEI to a tenant + vehicle. The device protocol
+// (B11, Module 1c) travels with the mapping so the ingestion tier can route the
+// frames to the right decoder; an empty protocol keeps the previous value.
+func (s *PostgresStore) SyncIMEIMap(ctx context.Context, imei, company string, vehicleID int64, protocol string) error {
 	_, err := s.tenants.Master().DB.ExecContext(ctx, `
-INSERT INTO tm_vehicle_imei_map (imei, company_code, vehicle_id, is_active)
-VALUES ($1, $2, $3, TRUE)
+INSERT INTO tm_vehicle_imei_map (imei, company_code, vehicle_id, protocol, is_active)
+VALUES ($1, $2, $3, $4, TRUE)
 ON CONFLICT (imei) DO UPDATE
 SET company_code = EXCLUDED.company_code,
 vehicle_id = EXCLUDED.vehicle_id,
+protocol = COALESCE(EXCLUDED.protocol, tm_vehicle_imei_map.protocol),
 is_active = TRUE,
 deleted_at = NULL,
-updated_at = CURRENT_TIMESTAMP`, imei, company, vehicleID)
+updated_at = CURRENT_TIMESTAMP`, imei, company, vehicleID, nullableString(protocol))
 	if err != nil {
 		return fmt.Errorf("store: sync imei map: %w", err)
 	}

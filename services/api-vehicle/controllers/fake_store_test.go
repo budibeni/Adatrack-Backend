@@ -73,6 +73,13 @@ type fakeStore struct {
 	tenantAccess    map[string]tenantAccessRow
 	assigned        map[int64][]int64
 	restoredVehicle bool
+
+	// --- B11 audit trail (PRD §9.4) ------------------------------------------
+	// Method bodies live in audit_test.go.
+	auditRows      []AuditRow
+	auditList      []models.AuditLog
+	auditListTotal int64
+	auditListQuery AuditLogQuery
 }
 
 // tenantAccessRow is one tm_user_company_access row as the fake returns it.
@@ -149,7 +156,7 @@ func (f *fakeStore) SoftDeleteVehicle(_ context.Context, _ string, id, _ int64, 
 	return nil
 }
 
-func (f *fakeStore) SyncIMEIMap(_ context.Context, _, _ string, _ int64) error { return nil }
+func (f *fakeStore) SyncIMEIMap(_ context.Context, _, _ string, _ int64, _ string) error { return nil }
 
 func (f *fakeStore) SoftDeleteIMEIMap(_ context.Context, _, _ string) error { return nil }
 

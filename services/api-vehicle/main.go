@@ -85,13 +85,17 @@ func main() {
 		}
 	}
 
+	pgStore := controllers.NewPostgresStore(tm)
 	service := controllers.NewService(controllers.Deps{
 		Settings: settings,
-		Store:    controllers.NewPostgresStore(tm),
+		Store:    pgStore,
 		KV:       controllers.NewRedisKVWithPrefix(red.Client(), cfg.Redis.KeyPrefix),
 		Tenants:  tm,
 		Registry: registry,
 		Commands: commandPublisher{cfg: cfg, nats: nac},
+		// B11: the mandatory audit trail (PRD §9.4) shares the NATS client for
+		// dead-lettering a failed write (never silently dropped).
+		Auditor: controllers.NewAuditor(pgStore, nac, settings.AuditEnabled),
 	})
 
 	server := &http.Server{

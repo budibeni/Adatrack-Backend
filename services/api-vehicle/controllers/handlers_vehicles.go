@@ -1,9 +1,12 @@
 package controllers
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 
 	"adatrack_gps/api-vehicle/models"
+	protocolreg "adatrack_gps/internal/protocol"
 	"adatrack_gps/internal/validate"
 )
 
@@ -117,6 +120,12 @@ func (s *Service) handleCreateVehicle(c *gin.Context) {
 		respondError(c, errConflict("a vehicle with this IMEI already exists"))
 		return
 	}
+	// B11 universal brand support: the protocol/brand must be in the registry.
+	proto, port, brand, perr := resolveProtocol(req.Protocol, req.Brand)
+	if perr != nil {
+		respondError(c, perr)
+		return
+	}
 	v := &models.Vehicle{
 		IMEI:         req.IMEI,
 		PlateNumber:  req.PlateNumber,
@@ -130,6 +139,9 @@ func (s *Service) handleCreateVehicle(c *gin.Context) {
 		DriverUserID: req.DriverUserID,
 		DriverName:   req.DriverName,
 		DeviceModel:  req.DeviceModel,
+		Protocol:     proto,
+		ProtocolPort: port,
+		Brand:        brand,
 		Status:       deref(req.Status),
 	}
 	if v.Status == "" {
@@ -145,4 +157,34 @@ func (s *Service) handleCreateVehicle(c *gin.Context) {
 		return
 	}
 	respondCreated(c, created)
+}
+
+// resolveProtocol validates an optional protocol/brand pair against the universal
+// registry (PRD Module 1c, B11). The listener port is derived SERVER-SIDE so a
+// client can never point a device at an arbitrary port; an unsupported brand is a
+// 400 instead of a device registered on a listener that does not exist.
+func resolveProtocol(code, brand *string) (*string, *int, *string, *APIError) {
+	trimmedCode := ""
+	if code != nil {
+		trimmedCode = strings.TrimSpace(*code)
+	}
+	if trimmedCode == "" {
+		if brand != nil && strings.TrimSpace(*brand) != "" {
+			return nil, nil, nil, errValidation("protocol is required when brand is set",
+				map[string]string{"protocol": "required, one of: " + strings.Join(protocolreg.Codes(), ", ")})
+		}
+		return nil, nil, nil, nil
+	}
+	p, ok := protocolreg.Lookup(trimmedCode)
+	if !ok {
+		return nil, nil, nil, errValidation("unsupported device protocol",
+			map[string]string{"protocol": "must be one of: " + strings.Join(protocolreg.Codes(), ", ")})
+	}
+	normalized := p.Code
+	port := p.DefaultPort
+	resolvedBrand := p.Brand
+	if brand != nil && strings.TrimSpace(*brand) != "" {
+		resolvedBrand = strings.TrimSpace(*brand)
+	}
+	return &normalized, &port, &resolvedBrand, nil
 }

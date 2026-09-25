@@ -21,6 +21,9 @@ type Deps struct {
 	// Commands publishes B8 downlink requests to the ingestion tier. When nil the
 	// command endpoints report 503 instead of silently dropping the request.
 	Commands CommandPublisher
+	// Auditor writes the mandatory tm_audit_logs trail (PRD §9.4, B11). When nil
+	// the service falls back to a disabled auditor derived from Store.
+	Auditor *Auditor
 }
 
 // Service owns the HTTP engine and every handler of api-vehicle (PRD §8.2
@@ -33,6 +36,10 @@ type Service struct {
 	tenants  *tenant.Manager
 	registry *prometheus.Registry
 	commands CommandPublisher
+	auditor  *Auditor
+	// enterprise is the table-driven B12 CRUD surface (nil when the store does not
+	// implement it — handlers then answer 503 instead of panicking).
+	enterprise EnterpriseStore
 
 	auth   *AuthService
 	engine *gin.Engine
@@ -52,10 +59,24 @@ func NewService(deps Deps) *Service {
 	if s.live == nil && deps.KV != nil {
 		s.live = deps.KV
 	}
+	s.auditor = deps.Auditor
+	if s.auditor == nil {
+		// Fall back to a disabled auditor backed by the store when it can persist
+		// audit rows, so a nil Deps.Auditor is harmless (unit tests, embeddings).
+		if store, ok := deps.Store.(AuditStore); ok {
+			s.auditor = NewAuditor(store, nil, false)
+		}
+	}
+	if enterprise, ok := deps.Store.(EnterpriseStore); ok {
+		s.enterprise = enterprise
+	}
 	s.auth = NewAuthService(deps.Settings, deps.KV)
 	s.engine = s.buildRouter()
 	return s
 }
+
+// Auditor exposes the audit writer (tests assert on it).
+func (s *Service) Auditor() *Auditor { return s.auditor }
 
 // Handler returns the HTTP engine (tests use it with httptest).
 func (s *Service) Handler() *gin.Engine { return s.engine }
