@@ -589,7 +589,9 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       → flag device (GT06 alarm `0x29`/`0x30`, Teltonika IO 253/254/240) diteruskan di
       `telemetry.raw`, episode speeding diukur (buka/tutup, `duration_seconds`),
       `td_driver_events` + `th_driver_scores` + alert `driver_event` (migrasi `022`),
-      `scoreFromCounts` (10/10/5/5, grade A..E). Bukti: §1.2.
+      **skor harian dinormalisasi per jarak** (migrasi `025`: `distance_km`,
+      `events_per_100km`, `score_by_counts`; bobot 10/10/5/5 dibagi jarak trip B7.2,
+      fallback rumus jumlah di bawah `DRIVER_SCORE_MIN_DISTANCE_KM`). Bukti: §1.2 + §2.6.
 - [x] Maintenance scheduling: jadwal servis + reminder odometer/engine-hours (menyambung modul Maintenance B12).
       → `tm_maintenance_schedules` + `td_maintenance_logs` (migrasi `023`), evaluasi
       tiga dimensi (km/engine hours/kalender) + margin + cooldown di worker-alert,
@@ -599,7 +601,7 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 - [x] Perintah downlink terkirim & ACK device tercatat.
       → test `TestDispatchWritesFrameToRegisteredDevice` (byte `0x80 … "DYD#"` ke socket),
       `TestAckCapturesDeviceReply` (`DYD=Success!` → status `acked` + `ack_content`),
-      `TestSweepExpiredMarksPendingAsTimeout`, `TestTK103CommandEncoding`,
+      `TestSweepExpiredMarksPendingAsTimeout`, `TestTK103CommandEncoding` (7 perintah),
       `TestCommandTransitionTimes`, endpoint REST + baris audit PASS.
       **E2E device nyata (simulator GT06): `scripts/e2e-commands.sh` 5/5 PASS** —
       login → frame `0x80` diterima device → balasan `0x21 DYD=Success!` →
@@ -607,14 +609,17 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
       service mati. Gap tersisa: encoder selain GT06/TK103 melaporkan
       `failed: unsupported` (eksplisit).
 - [x] Skor mengemudi terhitung dari event nyata; reminder maintenance terpicu sesuai threshold.
-      → `TestScoreFromCounts`, `TestDetectDriverRecordsDevicePulses`,
+      → `TestScoreFromCounts`, `TestScoreFromDistance`,
+      `TestRefreshDriverScoreUsesDistance`, `TestDetectDriverRecordsDevicePulses`,
       `TestSpeedingEpisodeIsMeasuredAndClosedOnce`, `TestMaintenanceDueThresholds`,
       `TestSweepMaintenanceRaisesReminderAndStampsCooldown` PASS; tabel/constraint
-      diverifikasi pada PostgreSQL nyata (§5).
+      diverifikasi pada PostgreSQL nyata (§5); **E2E alarm device + trip 200 km → skor
+      100/A dengan `events_per_100km=5`** (§2.6).
 
-> Bukti lengkap: `docs/B8-B10-VERIFICATION.md`. Gap tersisa: skor belum dinormalisasi
-> per jarak (butuh agregat trip B7.2 → modul Safety B12) dan encoder keluarga selain
-> GT06/TK103 (Meiligao/Xexun/Totem/… masih `failed: unsupported`).
+> Bukti lengkap: `docs/B8-B10-VERIFICATION.md`. Gap tersisa: encoder keluarga selain
+> GT06/TK103 (Meiligao/Xexun/Totem/… masih `failed: unsupported`) dan atribusi skor
+> mengemudi ke `driver_id` (penugasan driver↔trip = modul B12). Skor sudah
+> dinormalisasi per jarak (migrasi `025`).
 
 ---
 
@@ -623,13 +628,14 @@ WS `MEDIA_EVENT` → retensi. **Live streaming video out-of-scope** fase ini.
 ### Tasks
 - [x] Port & decoding protokol tambahan per referensi Traccar: Meiligao, Xexun, Suntech, H02, Totem, GT02, Navigil, Castel; validasi TK103.
       → 9 decoder baru (`proto_*.go`) + listener per keluarga (env `*_TCP_PORT`,
-      `0` = nonaktif). **Ingest penuh:** TK103 (subset posisi), Meiligao, Xexun,
+      `0` = nonaktif). **Ingest penuh:** TK103 (7 perintah downlink), Meiligao, Xexun,
       H02 (teks V3), Totem (PATTERN_1), GT02 (+heartbeat), **Navigil (MSG 8 unit
       report + MSG 18 tracking sejak audit lanjutan, dengan peta `NAVIGIL_DEVICE_MAP`
-      karena identitasnya device id 4 byte)**. **Framing+identitas+respons**
-      (payload posisi belum terdokumentasi in-repo → dihitung
-      `ingestion_unsupported_frames_total`): Suntech, **Castel (framing `Length` =
-      seluruh frame diperbaiki + balasan login/heartbeat 0x9001/0x9003)**.
+      karena identitasnya device id 4 byte)**, **Suntech teks universal klasik
+      (ST215/ST300STT) sejak audit GAP**. **Framing+identitas+respons** (payload
+      posisi belum terdokumentasi in-repo → dihitung
+      `ingestion_unsupported_frames_total`): **Castel (framing `Length` = seluruh frame
+      diperbaiki + balasan login/heartbeat 0x9001/0x9003)**.
       Bukti: `docs/B8-B10-VERIFICATION.md` §2.
 - [x] Arsitektur decoder pluggable (registrasi protokol tanpa menyentuh pipeline).
       → `controllers/decoder.go` (interface `Decoder` + registry); `main.go`

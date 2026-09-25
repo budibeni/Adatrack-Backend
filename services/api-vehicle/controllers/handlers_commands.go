@@ -161,9 +161,11 @@ func newCommandRequestID() string {
 func validateCommandRequest(req *models.CommandRequest) (map[string]any, *APIError) {
 	if err := validate.OneOf("command", req.Command,
 		models.CommandEngineCut, models.CommandEngineRestore, models.CommandSetInterval,
-		models.CommandReboot, models.CommandLocate); err != nil {
+		models.CommandReboot, models.CommandLocate, models.CommandDeviceVersion,
+		models.CommandPositionStop); err != nil {
 		return nil, errValidation("unsupported command",
-			map[string]string{"command": "must be one of: engine_cut engine_restore set_interval reboot locate"})
+			map[string]string{"command": "must be one of: engine_cut engine_restore set_interval " +
+				"reboot locate device_version position_stop"})
 	}
 	if req.Command == models.CommandSetInterval {
 		if err := validate.IntRange("interval_seconds", req.IntervalSeconds, 5, 86400); err != nil {

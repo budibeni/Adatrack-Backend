@@ -7,13 +7,17 @@ package models
 
 import "time"
 
-// Command kinds (closed whitelist — th/td_device_commands CHECK constraint).
+// Command kinds (closed whitelist — td_device_commands CHECK constraint).
 const (
 	CommandEngineCut     = "engine_cut"
 	CommandEngineRestore = "engine_restore"
 	CommandSetInterval   = "set_interval"
 	CommandReboot        = "reboot"
 	CommandLocate        = "locate"
+	// CommandDeviceVersion asks for the firmware/hardware version (TK103 `AP07`).
+	CommandDeviceVersion = "device_version"
+	// CommandPositionStop stops periodic position reporting (TK103 `AR0000000000`).
+	CommandPositionStop = "position_stop"
 )
 
 // CommandStatuses tracks the delivery life-cycle of one command.

@@ -56,6 +56,14 @@ var (
 		Help: "Last computed daily driver score per grade bucket",
 	}, []string{"grade"})
 
+	// driverScoreMode counts how the daily score was derived: `per_distance` (the
+	// day's trips gave enough distance to normalise, migration 025) or `per_counts`
+	// (fallback). It makes the normalisation auditable from /metrics alone.
+	driverScoreMode = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "driver_score_normalisation_total",
+		Help: "Daily driver-score computations per normalisation mode",
+	}, []string{"mode"})
+
 	speedingEpisodesOpen = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "driver_speeding_episodes_open",
 		Help: "Overspeed episodes currently open (started, not yet closed)",
@@ -74,5 +82,5 @@ func RegisterMetrics(reg prometheus.Registerer) {
 	}
 	reg.MustRegister(alertsRaised, alertsDeduped, alertsResolved, notificationsSent,
 		sosEscalations, alertPersistErrors, alertEngineLatency, fuelReads,
-		driverEvents, driverScore, speedingEpisodesOpen, maintenanceReminders)
+		driverEvents, driverScore, driverScoreMode, speedingEpisodesOpen, maintenanceReminders)
 }

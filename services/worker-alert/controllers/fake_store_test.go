@@ -77,8 +77,12 @@ type fakeAlertStore struct {
 	// (defaults to counting the events collected in this fake).
 	counts    models.DriverEventCounts
 	countsErr error
-	scores    []*models.DriverScore
-	scoreErr  error
+	// distanceKM is the canned B7.2 trip distance of the day (defaults to 0, which
+	// forces the count-based fallback path).
+	distanceKM  float64
+	distanceErr error
+	scores      []*models.DriverScore
+	scoreErr    error
 
 	schedules   []models.MaintenanceSchedule
 	scheduleErr error
@@ -214,6 +218,12 @@ func (f *fakeAlertStore) DailyDriverEventCounts(_ context.Context, _ string, veh
 		}
 	}
 	return c, nil
+}
+
+// DailyDriverDistanceKM returns the canned trip distance of the day (migration
+// 025 normaliser). Zero by default → the count-based score is used.
+func (f *fakeAlertStore) DailyDriverDistanceKM(context.Context, string, int64, time.Time) (float64, error) {
+	return f.distanceKM, f.distanceErr
 }
 
 func (f *fakeAlertStore) UpsertDriverScore(_ context.Context, _ string, sc *models.DriverScore) error {

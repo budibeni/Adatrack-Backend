@@ -62,6 +62,10 @@ type Config struct {
 		// SpeedingMinSeconds is the shortest above-limit episode that becomes a
 		// `speeding` driver event (DRIVER_SPEEDING_MIN_SECONDS, default 10).
 		SpeedingMinSeconds int
+		// SpeedingMinDistanceKM is the travelled distance below which the daily
+		// driver score is NOT normalised per 100 km
+		// (DRIVER_SCORE_MIN_DISTANCE_KM, default 5).
+		SpeedingMinDistanceKM float64
 		// MaintenanceSweepInterval is the maintenance reminder cadence
 		// (MAINTENANCE_SWEEP_SECONDS, default 300).
 		MaintenanceSweepInterval time.Duration
@@ -316,6 +320,9 @@ func (c *Config) Validate() error {
 	// B8: driver behaviour / maintenance thresholds must be positive.
 	if c.Driver.SpeedingMinSeconds <= 0 {
 		errs = append(errs, errors.New("DRIVER_SPEEDING_MIN_SECONDS must be > 0"))
+	}
+	if c.Driver.SpeedingMinDistanceKM <= 0 {
+		errs = append(errs, errors.New("DRIVER_SCORE_MIN_DISTANCE_KM must be > 0"))
 	}
 	if c.Driver.MaintenanceSweepInterval <= 0 {
 		errs = append(errs, errors.New("MAINTENANCE_SWEEP_SECONDS must be > 0"))

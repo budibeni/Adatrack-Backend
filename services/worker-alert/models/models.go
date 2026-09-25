@@ -130,17 +130,26 @@ type DriverEvent struct {
 
 // DriverScore is one th_driver_scores row (daily aggregate per vehicle).
 type DriverScore struct {
-	VehicleID              int64   `json:"vehicle_id"`
-	DriverID               int64   `json:"driver_id,omitempty"`
-	PeriodStart            string  `json:"period_start"`
-	PeriodEnd              string  `json:"period_end"`
-	HarshAccelerationCount int     `json:"harsh_acceleration_count"`
-	HarshBrakingCount      int     `json:"harsh_braking_count"`
-	HarshCorneringCount    int     `json:"harsh_cornering_count"`
-	SpeedingCount          int     `json:"speeding_count"`
-	SpeedingSeconds        int     `json:"speeding_seconds"`
-	Score                  float64 `json:"score"`
-	Grade                  string  `json:"grade"`
+	VehicleID              int64  `json:"vehicle_id"`
+	DriverID               int64  `json:"driver_id,omitempty"`
+	PeriodStart            string `json:"period_start"`
+	PeriodEnd              string `json:"period_end"`
+	HarshAccelerationCount int    `json:"harsh_acceleration_count"`
+	HarshBrakingCount      int    `json:"harsh_braking_count"`
+	HarshCorneringCount    int    `json:"harsh_cornering_count"`
+	SpeedingCount          int    `json:"speeding_count"`
+	SpeedingSeconds        int    `json:"speeding_seconds"`
+	// DistanceKM is the travelled distance of the scored period, summed from the
+	// B7.2 trips (migration 025). It is what makes two identical event counts
+	// comparable: 4 events in 10 km is not the same driving as 4 events in 400 km.
+	DistanceKM float64 `json:"distance_km"`
+	// EventsPer100KM is the weighted penalty per 100 km. Nil when the distance is
+	// too small to normalise (worker-alert then scores by counts).
+	EventsPer100KM *float64 `json:"events_per_100km,omitempty"`
+	// ScoreByCounts keeps the un-normalised score for audit.
+	ScoreByCounts *float64 `json:"score_by_counts,omitempty"`
+	Score         float64  `json:"score"`
+	Grade         string   `json:"grade"`
 }
 
 // MaintenanceSchedule is one tm_maintenance_schedules row (B8 reminder engine).

@@ -68,6 +68,32 @@ WHERE vehicle_id = $1 AND "timestamp" >= $2 AND "timestamp" < $3`,
 	return c, nil
 }
 
+// DailyDriverDistanceKM sums the B7.2 trip distance of one vehicle for one day.
+//
+// Trips are attributed to the day of their `start_time` (UTC) so a trip that ends
+// after midnight is never counted on two days; soft-deleted trips are excluded
+// exactly like the B7.2 endpoints do.
+func (s *PostgresStore) DailyDriverDistanceKM(ctx context.Context, company string, vehicleID int64, day time.Time) (float64, error) {
+	pool, err := s.tenantPool(company)
+	if err != nil {
+		return 0, err
+	}
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 0, 1)
+
+	var km float64
+	row := pool.DB.QueryRowContext(ctx, `
+SELECT COALESCE(SUM(distance_km), 0)::float8
+FROM th_vehicle_trips
+WHERE vehicle_id = $1 AND deleted_at IS NULL
+  AND start_time >= $2 AND start_time < $3`,
+		vehicleID, start, end)
+	if err := row.Scan(&km); err != nil {
+		return 0, fmt.Errorf("store: driver distance: %w", err)
+	}
+	return km, nil
+}
+
 // UpsertDriverScore writes/refreshes the daily th_driver_scores row.
 func (s *PostgresStore) UpsertDriverScore(ctx context.Context, company string, sc *models.DriverScore) error {
 	pool, err := s.tenantPool(company)
@@ -78,8 +104,9 @@ func (s *PostgresStore) UpsertDriverScore(ctx context.Context, company string, s
 INSERT INTO th_driver_scores
 	(company_code, vehicle_id, period_start, period_end,
 	 harsh_acceleration_count, harsh_braking_count, harsh_cornering_count,
-	 speeding_count, speeding_seconds, score, grade, computed_at)
-VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+	 speeding_count, speeding_seconds, distance_km, events_per_100km, score_by_counts,
+	 score, grade, computed_at)
+VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
 ON CONFLICT (vehicle_id, period_start) DO UPDATE SET
 	period_end               = EXCLUDED.period_end,
 	harsh_acceleration_count = EXCLUDED.harsh_acceleration_count,
@@ -87,13 +114,17 @@ ON CONFLICT (vehicle_id, period_start) DO UPDATE SET
 	harsh_cornering_count    = EXCLUDED.harsh_cornering_count,
 	speeding_count           = EXCLUDED.speeding_count,
 	speeding_seconds         = EXCLUDED.speeding_seconds,
+	distance_km              = EXCLUDED.distance_km,
+	events_per_100km         = EXCLUDED.events_per_100km,
+	score_by_counts          = EXCLUDED.score_by_counts,
 	score                    = EXCLUDED.score,
 	grade                    = EXCLUDED.grade,
 	computed_at              = CURRENT_TIMESTAMP,
 	updated_at               = CURRENT_TIMESTAMP`,
 		company, sc.VehicleID, sc.PeriodStart, sc.PeriodEnd,
 		sc.HarshAccelerationCount, sc.HarshBrakingCount, sc.HarshCorneringCount,
-		sc.SpeedingCount, sc.SpeedingSeconds, sc.Score, sc.Grade)
+		sc.SpeedingCount, sc.SpeedingSeconds, sc.DistanceKM, sc.EventsPer100KM,
+		sc.ScoreByCounts, sc.Score, sc.Grade)
 	if err != nil {
 		return fmt.Errorf("store: upsert driver score: %w", err)
 	}

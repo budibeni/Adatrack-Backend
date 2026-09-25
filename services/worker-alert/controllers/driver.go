@@ -17,6 +17,7 @@ package controllers
 import (
 	"context"
 	"log/slog"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -181,7 +182,19 @@ func (w *Worker) refreshDriverScore(ctx context.Context, ev *models.DriverEvent)
 			"company", ev.CompanyCode, "vehicle_id", ev.VehicleID, "error", err)
 		return
 	}
-	score, grade := scoreFromCounts(counts)
+	// Distance normalisation (migration 025): the same event count means very
+	// different driving in 10 km and in 400 km. When the B7.2 trips of the day give
+	// enough distance the score becomes a rate; otherwise (or when the trips are not
+	// available yet) the documented count-based formula is used.
+	distance, derr := w.store.DailyDriverDistanceKM(ctx, ev.CompanyCode, ev.VehicleID, day)
+	if derr != nil {
+		slog.Warn("worker-alert: driver distance lookup failed (scoring by counts)",
+			"company", ev.CompanyCode, "vehicle_id", ev.VehicleID, "error", derr)
+		distance = 0
+	}
+	byCounts, _ := scoreFromCounts(counts)
+	score, grade, rate := scoreFromDistance(counts, distance, w.driverMinDistanceKM)
+
 	sc := &models.DriverScore{
 		VehicleID:              ev.VehicleID,
 		PeriodStart:            day.Format("2006-01-02"),
@@ -191,6 +204,9 @@ func (w *Worker) refreshDriverScore(ctx context.Context, ev *models.DriverEvent)
 		HarshCorneringCount:    counts.HarshCornering,
 		SpeedingCount:          counts.Speeding,
 		SpeedingSeconds:        counts.SpeedingSeconds,
+		DistanceKM:             distance,
+		EventsPer100KM:         rate,
+		ScoreByCounts:          &byCounts,
 		Score:                  score,
 		Grade:                  grade,
 	}
@@ -199,34 +215,106 @@ func (w *Worker) refreshDriverScore(ctx context.Context, ev *models.DriverEvent)
 			"company", ev.CompanyCode, "vehicle_id", ev.VehicleID, "error", err)
 		return
 	}
+	mode := "per_distance"
+	if rate == nil {
+		mode = "per_counts"
+	}
+	driverScoreMode.WithLabelValues(mode).Inc()
 	driverScore.WithLabelValues(grade).Set(score)
+}
+
+// Penalty weights per event (points). They are the same numbers the count formula
+// used, so the two modes stay comparable.
+const (
+	driverPenaltyHarshAccel = 10.0
+	driverPenaltyHarshBrake = 10.0
+	driverPenaltyCornering  = 5.0
+	driverPenaltySpeeding   = 5.0
+)
+
+// driverPenaltyPoints is the weighted penalty of one day of events.
+func driverPenaltyPoints(c models.DriverEventCounts) float64 {
+	return driverPenaltyHarshAccel*float64(c.HarshAcceleration) +
+		driverPenaltyHarshBrake*float64(c.HarshBraking) +
+		driverPenaltyCornering*float64(c.HarshCornering) +
+		driverPenaltySpeeding*float64(c.Speeding)
+}
+
+// scoreFromDistance normalises the day's events per 100 km when the vehicle drove
+// at least `minKM`; below that threshold (or without distance) it falls back to the
+// count-based formula. The returned rate is nil when the fallback was used, which
+// is what the caller records in `events_per_100km`.
+//
+// Buckets are chosen so the score lands in the matching grade:
+//
+//	≤5 points/100 km  → 100 (A)     a conservative fleet driver
+//	≤15               →  85 (B)
+//	≤25               →  75 (C)
+//	≤40               →  65 (D)
+//	>40               → 65 − (rate−40)·0.5 (floored at 0, E)
+//
+// A day without events scores 100 regardless of distance.
+func scoreFromDistance(c models.DriverEventCounts, distanceKM, minKM float64) (score float64, grade string, rate *float64) {
+	if minKM <= 0 {
+		minKM = defaultDriverMinDistanceKM
+	}
+	if distanceKM < minKM {
+		s, g := scoreFromCounts(c)
+		return s, g, nil
+	}
+	per100 := driverPenaltyPoints(c) / distanceKM * 100
+	switch {
+	case per100 <= 5:
+		score = 100
+	case per100 <= 15:
+		score = 85
+	case per100 <= 25:
+		score = 75
+	case per100 <= 40:
+		score = 65
+	default:
+		// Beyond the last bucket the score keeps falling linearly so a very bad day
+		// is distinguishable from a barely-bad one.
+		score = 65 - (per100-40)*0.5
+		if score < 0 {
+			score = 0
+		}
+	}
+	score = math.Round(score*100) / 100
+	rate = &per100
+	return score, gradeFor(score), rate
+}
+
+// defaultDriverMinDistanceKM is the distance below which normalising per distance
+// would amplify noise (also the fallback when the env override is absent).
+const defaultDriverMinDistanceKM = 5.0
+
+// gradeFromScore is kept for callers that only have the final score.
+func gradeFor(score float64) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 80:
+		return "B"
+	case score >= 70:
+		return "C"
+	case score >= 60:
+		return "D"
+	default:
+		return "E"
+	}
 }
 
 // scoreFromCounts maps the day's event counts to a 0..100 score and a grade.
 //
 // Weights: harsh acceleration/braking = 10 points each, harsh cornering = 5, each
-// speeding episode = 5. The formula is intentionally simple and auditable;
-// normalising per 100 km needs the B7.2 trip aggregates and belongs to the Safety
-// module of B12 (documented in docs/B8-B10-VERIFICATION.md).
+// speeding episode = 5 (see driverPenaltyPoints). It is the fallback used when the
+// day's distance is too small to normalise per 100 km (scoreFromDistance) — both
+// modes share the weights so their numbers stay comparable.
 func scoreFromCounts(c models.DriverEventCounts) (float64, string) {
-	score := 100.0 -
-		10*float64(c.HarshAcceleration) -
-		10*float64(c.HarshBraking) -
-		5*float64(c.HarshCornering) -
-		5*float64(c.Speeding)
+	score := 100.0 - driverPenaltyPoints(c)
 	if score < 0 {
 		score = 0
 	}
-	switch {
-	case score >= 90:
-		return score, "A"
-	case score >= 80:
-		return score, "B"
-	case score >= 70:
-		return score, "C"
-	case score >= 60:
-		return score, "D"
-	default:
-		return score, "E"
-	}
+	return score, gradeFor(score)
 }

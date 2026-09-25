@@ -497,6 +497,58 @@ func TestNavigilDeviceMap(t *testing.T) {
 	}
 }
 
+func TestParseSuntechTextLine(t *testing.T) {
+	// Classic universal sentence (upstream `universal` pattern). Note the sign on
+	// BOTH coordinates: the reference requires `[-+]` for latitude and longitude.
+	line := "ST300STT;" + testIMEI + ";1;20260924;06:35:19;ABCD;-06.20;+106.80;041.000;084.00;0000;1"
+
+	tele, ok := parseSuntechTextLine(line)
+	if !ok {
+		t.Fatalf("parseSuntechTextLine rejected %q", line)
+	}
+	if !approx(tele.Lat, -6.2, 1e-9) || !approx(tele.Lon, 106.8, 1e-9) {
+		t.Fatalf("suntech position = (%v,%v), want (-6.2,106.8)", tele.Lat, tele.Lon)
+	}
+	if !approx(tele.Speed, 41, 1e-9) {
+		t.Fatalf("suntech speed = %v km/h, want 41 (wire unit is already km/h)", tele.Speed)
+	}
+	if tele.Heading != 84 || !tele.Fix {
+		t.Fatalf("suntech heading/fix = %d/%v, want 84/true", tele.Heading, tele.Fix)
+	}
+	want := time.Date(2026, 9, 24, 6, 35, 19, 0, time.UTC).Unix()
+	if tele.Timestamp != want {
+		t.Fatalf("suntech timestamp = %d, want %d", tele.Timestamp, want)
+	}
+
+	// The version field is REQUIRED by the reference pattern (only the extra field
+	// before it is optional), so a sentence without it stays unsupported rather than
+	// being matched with shifted groups.
+	noVersion := "ST215;" + testIMEI + ";20260924;06:35:19;-06.20;+106.80;041.000;084.00;"
+	if _, ok := parseSuntechTextLine(noVersion); ok {
+		t.Fatalf("parseSuntechTextLine accepted a sentence without the version field: %q", noVersion)
+	}
+
+	// A legacy 6-digit device id cannot be authenticated against the IMEI allowlist
+	// (FR-1.4) → counted as unsupported instead of attributed to a device.
+	legacy := "ST215;123456;1;20260924;06:35:19;-06.20;+106.80;041.000;084.00;"
+	if _, ok := parseSuntechTextLine(legacy); ok {
+		t.Fatal("a 6-digit legacy id was accepted as an IMEI")
+	}
+	// Out-of-range coordinates and malformed values are rejected, never published.
+	for _, bad := range []string{
+		"ST215;" + testIMEI + ";1;20260924;06:35:19;-99.20;+106.80;041.000;084.00;",
+		"ST215;" + testIMEI + ";1;20260924;06:35:19;-06.20;+999.80;041.000;084.00;",
+		"ST215;" + testIMEI + ";1;20261324;06:35:19;-06.20;+106.80;041.000;084.00;",
+		"ST215;" + testIMEI + ";1;20260924;25:35:19;-06.20;+106.80;041.000;084.00;",
+		"ST215;" + testIMEI + ";1;20260924;06:35:19;-6.2;+106.8;41.0;84.0;",
+		"ST215;" + testIMEI + ";1;20260924;06:35:19;-06.20;106.80;041.000;084.00;", // unsigned longitude
+	} {
+		if _, ok := parseSuntechTextLine(bad); ok {
+			t.Fatalf("parseSuntechTextLine accepted an invalid sentence: %q", bad)
+		}
+	}
+}
+
 func TestCastelFrameAndIdentity(t *testing.T) {
 	id := testIMEI + "ABCDE" // 20-char ASCII id carrying the IMEI
 

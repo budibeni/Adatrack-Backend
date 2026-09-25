@@ -111,6 +111,9 @@ func TestTK103CommandEncoding(t *testing.T) {
 		{models.DeviceCommand{IMEI: imei, Kind: models.CommandEngineRestore}, "(" + imei + "AV011)"},
 		{models.DeviceCommand{IMEI: imei, Kind: models.CommandReboot}, "(" + imei + "AT00)"},
 		{models.DeviceCommand{IMEI: imei, Kind: models.CommandLocate}, "(" + imei + "AP00)"},
+		// Two commands added from the upstream encoder matrix (migration 024).
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandDeviceVersion}, "(" + imei + "AP07)"},
+		{models.DeviceCommand{IMEI: imei, Kind: models.CommandPositionStop}, "(" + imei + "AR0000000000)"},
 		{models.DeviceCommand{IMEI: imei, Kind: models.CommandSetInterval, IntervalSeconds: 20}, "(" + imei + "AR0000140000)"},
 	}
 	for _, tc := range cases {

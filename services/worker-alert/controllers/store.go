@@ -87,6 +87,11 @@ type Store interface {
 	// (the input of the score formula).
 	DailyDriverEventCounts(ctx context.Context, company string, vehicleID int64, day time.Time) (models.DriverEventCounts, error)
 
+	// DailyDriverDistanceKM sums the B7.2 trip distance of one vehicle for one day
+	// (migration 025): the normaliser of the driver score. Trips are matched by
+	// start_time so a trip never counts on two days.
+	DailyDriverDistanceKM(ctx context.Context, company string, vehicleID int64, day time.Time) (float64, error)
+
 	// UpsertDriverScore writes/refreshes the daily th_driver_scores row.
 	UpsertDriverScore(ctx context.Context, company string, sc *models.DriverScore) error
 

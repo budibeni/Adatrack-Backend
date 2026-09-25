@@ -29,6 +29,88 @@ func newDriverWorker(t *testing.T, store Store) *Worker {
 	return w
 }
 
+// TestScoreFromDistance covers the distance-normalised score (migration 025): the
+// same event count must score differently for 10 km and for 400 km.
+func TestScoreFromDistance(t *testing.T) {
+	counts := models.DriverEventCounts{HarshAcceleration: 1, HarshBraking: 1} // 20 points
+
+	// Below the minimum distance → count-based fallback, rate stays nil so the
+	// caller records `events_per_100km = NULL`.
+	score, grade, rate := scoreFromDistance(counts, 2.0, 5)
+	if rate != nil {
+		t.Fatalf("short day returned a rate %v, want nil (count fallback)", *rate)
+	}
+	if score != 80 || grade != "B" {
+		t.Fatalf("short day = %v/%s, want 80/B (count formula)", score, grade)
+	}
+
+	// 20 points in 400 km = 5 points/100 km → A/100.
+	score, grade, rate = scoreFromDistance(counts, 400, 5)
+	if rate == nil || !approxFloat(*rate, 5, 1e-9) {
+		t.Fatalf("400 km rate = %v, want 5", rate)
+	}
+	if score != 100 || grade != "A" {
+		t.Fatalf("400 km = %v/%s, want 100/A", score, grade)
+	}
+
+	// 20 points in 40 km = 50 points/100 km → beyond the last bucket: linear drop.
+	score, grade, _ = scoreFromDistance(counts, 40, 5)
+	if score != 60 || grade != "D" {
+		t.Fatalf("40 km = %v/%s, want 60/D", score, grade)
+	}
+
+	// An extremely bad rate floors at 0 rather than going negative.
+	bad := models.DriverEventCounts{HarshAcceleration: 40}
+	score, grade, _ = scoreFromDistance(bad, 10, 5)
+	if score != 0 || grade != "E" {
+		t.Fatalf("extreme day = %v/%s, want 0/E", score, grade)
+	}
+
+	// Without distance information the documented count formula still applies.
+	score, grade, rate = scoreFromDistance(counts, 0, 5)
+	if rate != nil || score != 80 || grade != "B" {
+		t.Fatalf("no-distance day = %v/%s/%v, want 80/B/nil", score, grade, rate)
+	}
+}
+
+// TestRefreshDriverScoreUsesDistance proves the worker passes the trip distance of
+// the day into the score row (the B7.2 normaliser, migration 025).
+func TestRefreshDriverScoreUsesDistance(t *testing.T) {
+	store := newFakeAlertStore()
+	store.counts = models.DriverEventCounts{HarshBraking: 2} // 20 points
+	store.distanceKM = 200                                   // → 10 points/100 km → B/90
+	w := newDriverWorker(t, store)
+	w.driverMinDistanceKM = 5
+
+	ev := &models.DriverEvent{CompanyCode: "DEV001", VehicleID: 7,
+		EventType: models.DriverHarshBraking, Severity: models.SeverityHigh,
+		Timestamp: time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)}
+	w.refreshDriverScore(context.Background(), ev)
+
+	if len(store.scores) != 1 {
+		t.Fatalf("scores written = %d, want 1", len(store.scores))
+	}
+	sc := store.scores[0]
+	if !approxFloat(sc.DistanceKM, 200, 1e-9) {
+		t.Fatalf("distance_km = %v, want 200", sc.DistanceKM)
+	}
+	if sc.EventsPer100KM == nil || !approxFloat(*sc.EventsPer100KM, 10, 1e-9) {
+		t.Fatalf("events_per_100km = %v, want 10", sc.EventsPer100KM)
+	}
+	if sc.Score != 85 || sc.Grade != "B" {
+		t.Fatalf("score = %v/%s, want 85/B (rate mode)", sc.Score, sc.Grade)
+	}
+	if sc.ScoreByCounts == nil || *sc.ScoreByCounts != 80 {
+		t.Fatalf("score_by_counts = %v, want 80 (audit of the count formula)", sc.ScoreByCounts)
+	}
+}
+
+// approxFloat compares two floats with a tolerance.
+func approxFloat(got, want, tol float64) bool {
+	d := got - want
+	return d <= tol && d >= -tol
+}
+
 func TestScoreFromCounts(t *testing.T) {
 	cases := []struct {
 		name      string

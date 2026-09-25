@@ -134,6 +134,7 @@ func loadPipelineConfig(c *Config) {
 
 	// B8: driver behaviour + maintenance reminder thresholds.
 	c.Driver.SpeedingMinSeconds = envInt("DRIVER_SPEEDING_MIN_SECONDS", 10)
+	c.Driver.SpeedingMinDistanceKM = envFloat("DRIVER_SCORE_MIN_DISTANCE_KM", 5)
 	c.Driver.MaintenanceSweepInterval = time.Duration(envInt("MAINTENANCE_SWEEP_SECONDS", 300)) * time.Second
 	c.Driver.MaintenanceCooldown = time.Duration(envInt("MAINTENANCE_REMINDER_COOLDOWN_HOURS", 24)) * time.Hour
 

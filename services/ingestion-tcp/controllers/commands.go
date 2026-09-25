@@ -70,7 +70,12 @@ func envBoolLocal(key string, def bool) bool {
 //	(<IMEI>AV011)            engine resume
 //	(<IMEI>AT00)             reboot
 //	(<IMEI>AP00)             single position request
+//	(<IMEI>AP07)             firmware/hardware version request
 //	(<IMEI>AR00<FREQ4HEX>0000) periodic position (FREQ = seconds, 4 uppercase hex)
+//	(<IMEI>AR0000000000)     stop periodic position reporting
+//
+// The destructive upstream command `AX01` (reset the odometer) is deliberately NOT
+// exposed: it would silently corrupt the B7.1 odometer history.
 func (tk103Decoder) EncodeCommand(cmd models.DeviceCommand) ([]byte, error) {
 	id := cmd.IMEI
 	if id == "" {
@@ -85,6 +90,10 @@ func (tk103Decoder) EncodeCommand(cmd models.DeviceCommand) ([]byte, error) {
 		return []byte("(" + id + "AT00)"), nil
 	case models.CommandLocate:
 		return []byte("(" + id + "AP00)"), nil
+	case models.CommandDeviceVersion:
+		return []byte("(" + id + "AP07)"), nil
+	case models.CommandPositionStop:
+		return []byte("(" + id + "AR0000000000)"), nil
 	case models.CommandSetInterval:
 		if cmd.IntervalSeconds < 5 || cmd.IntervalSeconds > 86400 {
 			return nil, &models.CommandError{Field: "interval_seconds",

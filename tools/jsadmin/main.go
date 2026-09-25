@@ -226,10 +226,10 @@ func publishCommand(js nats.JetStreamContext, company, imei string, vehicleID in
 	}
 	valid := map[string]bool{
 		"engine_cut": true, "engine_restore": true, "set_interval": true,
-		"reboot": true, "locate": true,
+		"reboot": true, "locate": true, "device_version": true, "position_stop": true,
 	}
 	if !valid[kind] {
-		return "", fmt.Errorf("unknown command %q (engine_cut|engine_restore|set_interval|reboot|locate)", kind)
+		return "", fmt.Errorf("unknown command %q (engine_cut|engine_restore|set_interval|reboot|locate|device_version|position_stop)", kind)
 	}
 	reqID, err := randomRequestID()
 	if err != nil {

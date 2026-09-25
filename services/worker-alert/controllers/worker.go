@@ -39,9 +39,12 @@ type Worker struct {
 
 	// --- B8 driver behaviour + maintenance -------------------------------
 	// driver tracks the open speeding episodes; driverMinSpeeding is the
-	// shortest episode that becomes an event (DRIVER_SPEEDING_MIN_SECONDS).
-	driver            *driverTracker
-	driverMinSpeeding int
+	// shortest episode that becomes an event (DRIVER_SPEEDING_MIN_SECONDS);
+	// driverMinDistanceKM is the travelled distance below which the score is NOT
+	// normalised per distance (DRIVER_SCORE_MIN_DISTANCE_KM).
+	driver              *driverTracker
+	driverMinSpeeding   int
+	driverMinDistanceKM float64
 }
 
 // fuelStash is the per-device fuel window used by the B5a detector.
@@ -75,11 +78,15 @@ func New(cfg *internal.Config, red *internal.RedisClient, nats *internal.NATSCli
 
 // WithDriverConfig sets the B8 driver-behaviour thresholds (called by main so the
 // worker keeps a dependency-free constructor for the tests).
-func (w *Worker) WithDriverConfig(minSpeedingSeconds int) *Worker {
+func (w *Worker) WithDriverConfig(minSpeedingSeconds int, minDistanceKM float64) *Worker {
 	if minSpeedingSeconds <= 0 {
 		minSpeedingSeconds = 10
 	}
+	if minDistanceKM <= 0 {
+		minDistanceKM = defaultDriverMinDistanceKM
+	}
 	w.driverMinSpeeding = minSpeedingSeconds
+	w.driverMinDistanceKM = minDistanceKM
 	return w
 }
 

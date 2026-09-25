@@ -23,11 +23,19 @@ const (
 	CommandReboot CommandKind = "reboot"
 	// CommandLocate asks for an immediate position — GT06 `DWXX#`.
 	CommandLocate CommandKind = "locate"
+	// CommandDeviceVersion asks the terminal for its firmware/hardware version —
+	// TK103 `AP07` (upstream TYPE_GET_VERSION). Useful for support without a
+	// maintenance window.
+	CommandDeviceVersion CommandKind = "device_version"
+	// CommandPositionStop stops periodic position reporting — TK103
+	// `AR0000000000` (upstream TYPE_POSITION_STOP). Reversible with set_interval.
+	CommandPositionStop CommandKind = "position_stop"
 )
 
 // CommandKinds is the whitelist used by validation (API + dispatcher).
 var CommandKinds = []CommandKind{
 	CommandEngineCut, CommandEngineRestore, CommandSetInterval, CommandReboot, CommandLocate,
+	CommandDeviceVersion, CommandPositionStop,
 }
 
 // ValidCommandKind reports whether kind is whitelisted.
