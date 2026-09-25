@@ -1273,3 +1273,84 @@ func (h *Handler) GetFuelHistory(w http.ResponseWriter, r *http.Request) {
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": logs})
 }
+
+// GetVehicleHistory handles GET /vehicles/{id}/history to fetch playback tracking data.
+func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.Atoi(idStr)
+
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+
+	if startStr == "" || endStr == "" {
+		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "start and end query parameters are required")
+		return
+	}
+
+	start, err := time.Parse(time.RFC3339, startStr)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid start time format")
+		return
+	}
+
+	end, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid end time format")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+
+	query := fmt.Sprintf(`
+		SELECT latitude, longitude, speed, heading, timestamp, COALESCE(odometer_km, 0)
+		FROM %s.th_telemetry_logs
+		WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3
+		ORDER BY timestamp ASC
+	`, schema)
+
+	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, id, start, end)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query telemetry logs")
+		return
+	}
+	defer rows.Close()
+
+	type point struct {
+		Lat       float64 `json:"lat"`
+		Lng       float64 `json:"lng"`
+		Speed     float64 `json:"speed"`
+		Heading   float64 `json:"heading"`
+		Timestamp string  `json:"timestamp"`
+		Odometer  float64 `json:"odometer"`
+	}
+
+	var points []point
+	for rows.Next() {
+		var p point
+		var ts time.Time
+		if err := rows.Scan(&p.Lat, &p.Lng, &p.Speed, &p.Heading, &ts, &p.Odometer); err == nil {
+			p.Timestamp = ts.Format(time.RFC3339)
+			points = append(points, p)
+		}
+	}
+
+	var totalDurationSecs float64
+	if len(points) > 1 {
+		firstTime, _ := time.Parse(time.RFC3339, points[0].Timestamp)
+		lastTime, _ := time.Parse(time.RFC3339, points[len(points)-1].Timestamp)
+		totalDurationSecs = lastTime.Sub(firstTime).Seconds()
+	}
+
+	response := map[string]interface{}{
+		"vehicleId":         idStr,
+		"points":            points,
+		"totalDurationSecs": int(totalDurationSecs),
+	}
+
+	h.writeJSON(w, http.StatusOK, response)
+}
