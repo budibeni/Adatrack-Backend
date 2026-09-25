@@ -169,9 +169,12 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	query := fmt.Sprintf(`
-		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0), current_lat, current_lon, last_seen_at
-		FROM %s.tm_vehicles WHERE deleted_at IS NULL ORDER BY id ASC
-	`, schema)
+		SELECT v.id, v.imei, COALESCE(v.plate_number, ''), COALESCE(v.make, ''), COALESCE(v.model, ''), v.status, COALESCE(v.odometer_km, 0), COALESCE(v.engine_hours, 0), v.current_lat, v.current_lon, v.last_seen_at, gv.group_id, g.name
+		FROM %s.tm_vehicles v
+		LEFT JOIN %s.tm_group_vehicles gv ON v.id = gv.vehicle_id
+		LEFT JOIN %s.tm_groups g ON gv.group_id = g.id
+		WHERE v.deleted_at IS NULL ORDER BY v.id ASC
+	`, schema, schema, schema)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
 	if err != nil {
@@ -187,7 +190,9 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		var odo, hrs float64
 		var lat, lon *float64
 		var lastSeen *time.Time
-		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs, &lat, &lon, &lastSeen); err == nil {
+		var groupId *int
+		var groupName *string
+		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs, &lat, &lon, &lastSeen, &groupId, &groupName); err == nil {
 			vData := map[string]interface{}{
 				"id":           id,
 				"imei":         imei,
@@ -203,6 +208,12 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 			}
 			if lon != nil {
 				vData["lon"] = *lon
+			}
+			if groupId != nil {
+				vData["group_id"] = *groupId
+			}
+			if groupName != nil {
+				vData["group_name"] = *groupName
 			}
 			if lastSeen != nil {
 				vData["timestamp"] = lastSeen.Format(time.RFC3339)
