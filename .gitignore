@@ -31,3 +31,14 @@ services/ingestion-tcp/ingestion-tcp
 .env
 .env.*
 *.pem
+
+# Security & Audit Fixes
+.env.local
+.env.coolify
+*.bak
+*.diff
+*.py
+*.js
+main
+api-vehicle
+
