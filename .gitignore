@@ -14,13 +14,23 @@
 
 # Compiled module binaries — `go build .` inside a module drops the binary next
 # to its sources; canonical builds write to bin/ via `make build`. Never commit.
+# Daftar LENGKAP 8 service + semua tool harness: kalau tidak didaftarkan, binary
+# hasil `go build .` muncul sebagai untracked dan pernah tidak sengaja ter-commit
+# (lihat pembersihan 2026-09-26: tools/e2e-fuel & tools/e2e-media dihapus dari git).
 /services/foundation-check/foundation-check
 /services/ingestion-tcp/ingestion-tcp
 /services/worker-live/worker-live
 /services/worker-persistence/worker-persistence
+/services/worker-alert/worker-alert
+/services/service-websocket/service-websocket
+/services/service-media/service-media
+/services/api-vehicle/api-vehicle
 /tools/e2e/e2e
 /tools/e2ews/e2ews
 /tools/e2e-fleet/e2e-fleet
+/tools/e2e-fuel/e2e-fuel
+/tools/e2e-media/e2e-media
+/tools/querybench/querybench
 
 # Go
 vendor/
