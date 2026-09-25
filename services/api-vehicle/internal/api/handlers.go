@@ -85,6 +85,7 @@ type VehicleRequest struct {
 	Make        string  `json:"make"`
 	Model       string  `json:"model"`
 	DriverID    *int    `json:"driver_id,omitempty"`
+	GroupID     *int    `json:"group_id,omitempty"`
 }
 
 func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +143,16 @@ func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to sync vehicle IMEI map")
 		return
+	}
+
+	if req.GroupID != nil {
+		_, err = tx.Exec(r.Context(), fmt.Sprintf(`
+			INSERT INTO %s.tm_group_vehicles (group_id, vehicle_id) VALUES ($1, $2)
+		`, schema), *req.GroupID, vehicleID)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to map vehicle to group")
+			return
+		}
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
@@ -358,6 +369,21 @@ func (h *Handler) UpdateVehicle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update vehicle")
 		return
+	}
+
+	if req.GroupID != nil {
+		_, err = dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+			DELETE FROM %s.tm_group_vehicles WHERE vehicle_id = $1;
+			INSERT INTO %s.tm_group_vehicles (group_id, vehicle_id) VALUES ($2, $1);
+		`, schema, schema), id, *req.GroupID)
+		if err != nil {
+			logger.Log.Warn("Failed to update vehicle group mapping", "err", err)
+		}
+	} else {
+		// If group_id is explicitly sent as null (unassigned)
+		// but since it's omitempty, we might not want to delete it if not provided.
+		// For now, if the frontend always sends group_id (even if null), we could delete.
+		// If it's omitempty, we'll assume a missing GroupID means no change to avoid wiping it.
 	}
 
 	h.auditLog(r.Context(), claims.CompanyCode, "VEHICLE_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Vehicle %d updated", id))
