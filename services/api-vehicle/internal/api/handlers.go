@@ -211,8 +211,12 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 			if val, err := redclient.Client.Get(r.Context(), redisKey).Result(); err == nil && val != "" {
 				var state models.TelemetryPayload
 				if err := json.Unmarshal([]byte(val), &state); err == nil {
-					vData["lat"] = state.Latitude
-					vData["lon"] = state.Longitude
+					if state.Latitude != 0 {
+						vData["lat"] = state.Latitude
+					}
+					if state.Longitude != 0 {
+						vData["lon"] = state.Longitude
+					}
 					vData["speed"] = state.Speed
 					vData["acc_status"] = state.ACCStatus
 					vData["fuel_level"] = state.FuelLevel
@@ -282,8 +286,12 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 	if val, err := redclient.Client.Get(r.Context(), redisKey).Result(); err == nil && val != "" {
 		var state models.TelemetryPayload
 		if err := json.Unmarshal([]byte(val), &state); err == nil {
-			v.Lat = &state.Latitude
-			v.Lon = &state.Longitude
+			if state.Latitude != 0 {
+				v.Lat = &state.Latitude
+			}
+			if state.Longitude != 0 {
+				v.Lon = &state.Longitude
+			}
 			v.Speed = &state.Speed
 			v.ACCStatus = &state.ACCStatus
 			v.FuelLevel = state.FuelLevel
