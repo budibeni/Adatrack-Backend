@@ -236,9 +236,97 @@ services:
     - nats
     restart: unless-stopped
 
+  service-monitor:
+    build:
+      context: .
+      dockerfile: ./services/service-monitor/Dockerfile
+    container_name: adatrack_service_monitor_local
+    env_file:
+    - .env.local
+    ports:
+    - 8085:8085
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+    - postgres
+    - redis
+    restart: unless-stopped
+
+
+  foundation-check:
+    build:
+      context: .
+      dockerfile: ./services/foundation-check/Dockerfile
+    container_name: adatrack_foundation_check_local
+    env_file:
+    - .env.local
+    ports:
+    - 8086:8080
+    depends_on:
+    - postgres
+    - redis
+    - nats
+    restart: unless-stopped
+
+  ingestion-tcp:
+    build:
+      context: .
+      dockerfile: ./services/ingestion-tcp/Dockerfile
+    container_name: adatrack_ingestion_tcp_local
+    env_file:
+    - .env.local
+    ports:
+    - 5023:5023
+    - 9011:9011
+    depends_on:
+    - postgres
+    - redis
+    - nats
+    restart: unless-stopped
+
+  worker-alert:
+    build:
+      context: .
+      dockerfile: ./services/worker-alert/Dockerfile
+    container_name: adatrack_worker_alert_local
+    env_file:
+    - .env.local
+    depends_on:
+    - postgres
+    - redis
+    - nats
+    restart: unless-stopped
+
+  worker-live:
+    build:
+      context: .
+      dockerfile: ./services/worker-live/Dockerfile
+    container_name: adatrack_worker_live_local
+    env_file:
+    - .env.local
+    depends_on:
+    - postgres
+    - redis
+    - nats
+    restart: unless-stopped
+
+  worker-persistence:
+    build:
+      context: .
+      dockerfile: ./services/worker-persistence/Dockerfile
+    container_name: adatrack_worker_persistence_local
+    env_file:
+    - .env.local
+    depends_on:
+    - postgres
+    - redis
+    - nats
+    restart: unless-stopped
+
 volumes:
   pgdata: null
   redisdata: null
   natsdata: null
   miniodata: null
+
 
