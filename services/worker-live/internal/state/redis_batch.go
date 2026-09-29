@@ -44,16 +44,22 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 	for i, p := range payloads {
 		if prevStatesInter[i] == nil {
 			schema := fmt.Sprintf("adatrack_gps_%s", p.CompanyCode)
-			query := fmt.Sprintf("SELECT odometer_km, engine_hours FROM %s.tm_vehicles WHERE id = $1", schema)
+			query := fmt.Sprintf("SELECT odometer_km, engine_hours, current_lat, current_lon FROM %s.tm_vehicles WHERE id = $1", schema)
 			var odom, engine float64
-			err := dbclient.Pool.QueryRow(ctx, query, p.VehicleID).Scan(&odom, &engine)
+				var clat, clon *float64
+			err := dbclient.Pool.QueryRow(ctx, query, p.VehicleID).Scan(&odom, &engine, &clat, &clon)
 			if err == nil {
+				latVal, lonVal := 0.0, 0.0
+				if clat != nil { latVal = *clat }
+				if clon != nil { lonVal = *clon }
 				missingDBMap[p.IMEI] = models.TelemetryPayload{
 					IMEI: p.IMEI,
 					OdometerKM: odom,
 					EngineHours: engine,
 					ACCStatus: p.ACCStatus,
 					Timestamp: p.Timestamp,
+						Latitude: latVal,
+						Longitude: lonVal,
 				}
 			}
 		}
