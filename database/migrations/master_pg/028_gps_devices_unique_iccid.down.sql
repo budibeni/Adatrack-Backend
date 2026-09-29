@@ -1,0 +1,1 @@
+ALTER TABLE adatrack_gps_master.tm_gps_devices DROP CONSTRAINT tm_gps_devices_iccid_key;

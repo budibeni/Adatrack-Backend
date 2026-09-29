@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"backend/internal/dbclient"
+	"github.com/go-chi/chi/v5"
 )
 
 // -------------------------------------------------------------------------
@@ -197,4 +198,41 @@ func (h *Handler) GetGlobalAuditLogs(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": logs})
+}
+
+func (h *Handler) UpdateSimCard(w http.ResponseWriter, r *http.Request) {
+	idParam := chi.URLParam(r, "id")
+	var req struct {
+		ICCID       string `json:"iccid"`
+		PhoneNumber string `json:"phone_number"`
+		Provider    string `json:"provider"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
+		return
+	}
+
+	if !strings.HasPrefix(req.PhoneNumber, "+") {
+		h.writeError(w, http.StatusBadRequest, "INVALID_FORMAT", "Phone number must include country code (e.g. +62)")
+		return
+	}
+
+	if req.ICCID == "" {
+		req.ICCID = "AUTO-" + req.PhoneNumber
+	}
+
+	_, err := dbclient.Pool.Exec(r.Context(), `
+		UPDATE adatrack_gps_master.tm_sim_cards 
+		SET iccid = $1, phone_number = $2, provider = $3
+		WHERE id = $4
+	`, req.ICCID, req.PhoneNumber, req.Provider, idParam)
+	if err != nil {
+		if strings.Contains(err.Error(), "tm_sim_cards_phone_number_key") || strings.Contains(err.Error(), "duplicate key value") {
+			h.writeError(w, http.StatusConflict, "DUPLICATE_PHONE", "Phone number already exists in another SIM Card")
+			return
+		}
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update SIM Card")
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
 }

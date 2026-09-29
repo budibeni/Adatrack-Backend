@@ -49,6 +49,7 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/sim-cards", h.GetSimCards)
 
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/sim-cards", h.CreateSimCard)
+			r.With(auth.EnsurePlatformAdminMiddleware).Put("/admin/sim-cards/{id}", h.UpdateSimCard)
 
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/broadcasts", h.GetBroadcasts)
 
