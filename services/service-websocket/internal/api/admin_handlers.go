@@ -559,6 +559,10 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
 		return
 	}
+	if req.SimNumber != "" && !strings.HasPrefix(req.SimNumber, "+") {
+		http.Error(w, "SIM Number must include country code (e.g. +62)", http.StatusBadRequest)
+		return
+	}
 
 	_, err := dbclient.Pool.Exec(ctx, `
 		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, device_brand, device_model, sim_number, protocol, iccid, status)
@@ -588,6 +592,10 @@ func (h *Handler) UpdateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+	if req.SimNumber != "" && !strings.HasPrefix(req.SimNumber, "+") {
+		http.Error(w, "SIM Number must include country code (e.g. +62)", http.StatusBadRequest)
 		return
 	}
 
