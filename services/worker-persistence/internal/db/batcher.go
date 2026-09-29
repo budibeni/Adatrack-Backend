@@ -41,6 +41,16 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 			ON CONFLICT DO NOTHING
 		`, schema)
 
+		updateVehicleQuery := fmt.Sprintf(`
+			UPDATE %s.tm_vehicles
+			SET 
+				current_lat = CASE WHEN $1 != 0 THEN $1 ELSE current_lat END,
+				current_lon = CASE WHEN $2 != 0 THEN $2 ELSE current_lon END,
+				current_speed = $3,
+				last_seen_at = $4
+			WHERE id = $5 AND (last_seen_at IS NULL OR last_seen_at <= $4)
+		`, schema)
+
 		var expectedExecs int
 		for _, item := range items {
 			batch.Queue(query, 
@@ -48,6 +58,11 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 				item.Latitude, item.Longitude, item.Speed, 
 				item.Heading, item.Altitude, item.ACCStatus, 
 				item.Battery, item.Satellites, item.GSMSignal, item.Timestamp,
+			)
+			expectedExecs++
+			
+			batch.Queue(updateVehicleQuery,
+				item.Latitude, item.Longitude, item.Speed, item.Timestamp, item.VehicleID,
 			)
 			expectedExecs++
 			
