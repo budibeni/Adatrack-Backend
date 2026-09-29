@@ -219,16 +219,31 @@ func (g *commandGateway) dispatch(cmd models.DeviceCommand) models.CommandResult
 		slog.Error("downlink: encode failed", "imei", cmd.IMEI, "protocol", protoName, "error", err)
 		return res
 	}
+	// Register BEFORE the write: the reply travels back on the same socket and the
+	// connection's reader goroutine can hand it to Ack() the instant the frame
+	// leaves the process. Registering afterwards loses that race — Ack() finds an
+	// empty pending set, discards the reply as "unsolicited", and the row stays
+	// `sent` until the sweeper marks it `timeout` (observed as a flaky
+	// e2e-commands run on loopback, where the round trip is sub-millisecond).
+	entry := &pendingCommand{cmd: cmd, sentAt: time.Now().UTC(), proto: dc.Protocol}
+	g.mu.Lock()
+	g.pending[cmd.RequestID] = entry
+	commandsPending.Set(float64(len(g.pending)))
+	g.mu.Unlock()
+
 	if err := dc.Write(frame); err != nil {
+		g.mu.Lock()
+		// Only remove our own entry: an ACK may legitimately have consumed it
+		// already (in which case the outcome is final and must not be undone).
+		if cur, ok := g.pending[cmd.RequestID]; ok && cur == entry {
+			delete(g.pending, cmd.RequestID)
+		}
+		commandsPending.Set(float64(len(g.pending)))
+		g.mu.Unlock()
 		res.Status, res.Detail = models.CommandStatusFailed, "write: "+err.Error()
 		slog.Error("downlink: write failed", "imei", cmd.IMEI, "protocol", protoName, "error", err)
 		return res
 	}
-
-	g.mu.Lock()
-	g.pending[cmd.RequestID] = &pendingCommand{cmd: cmd, sentAt: time.Now().UTC(), proto: dc.Protocol}
-	commandsPending.Set(float64(len(g.pending)))
-	g.mu.Unlock()
 
 	res.Status = models.CommandStatusSent
 	res.Detail = "frame written to " + protoName + " device"

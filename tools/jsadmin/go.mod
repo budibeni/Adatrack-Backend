@@ -2,6 +2,8 @@ module adatrack_gps/tools/jsadmin
 
 go 1.25.0
 
+toolchain go1.26.6
+
 require github.com/nats-io/nats.go v1.53.1
 
 require (

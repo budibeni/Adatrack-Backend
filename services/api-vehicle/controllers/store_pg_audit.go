@@ -99,24 +99,48 @@ LIMIT $%d OFFSET $%d`, clause, len(args)-1, len(args))
 
 	var out []models.AuditLog
 	for rows.Next() {
+		// Every free-text column of tm_audit_logs is NULLABLE (an unauthenticated
+		// actor has no email/ip, a login row has no entity id, ...). Scanning them
+		// straight into string made the FIRST row with a NULL column abort the whole
+		// read ("converting NULL to string is unsupported") → GET /audit-logs 503.
+		// Scanning into *string and mapping NULL → "" is the correct contract.
 		var (
-			item       models.AuditLog
-			actorID    *int64
-			beforeJSON *string
-			afterJSON  *string
+			item                              models.AuditLog
+			actorID                           *int64
+			actorEmail, actorRole, actorIP    *string
+			companyCode, entityType, entityID *string
+			reason, requestID                 *string
+			beforeJSON, afterJSON             *string
 		)
 		if err := rows.Scan(&item.AuditID, &item.Action, &item.Outcome, &actorID,
-			&item.ActorEmail, &item.ActorRole, &item.ActorIP, &item.CompanyCode,
-			&item.EntityType, &item.EntityID, &beforeJSON, &afterJSON,
-			&item.Reason, &item.RequestID, &item.CreatedAt); err != nil {
+			&actorEmail, &actorRole, &actorIP, &companyCode,
+			&entityType, &entityID, &beforeJSON, &afterJSON,
+			&reason, &requestID, &item.CreatedAt); err != nil {
 			return nil, 0, fmt.Errorf("store: scan audit log: %w", err)
 		}
 		item.ActorID = actorID
+		item.ActorEmail = derefString(actorEmail)
+		item.ActorRole = derefString(actorRole)
+		item.ActorIP = derefString(actorIP)
+		item.CompanyCode = derefString(companyCode)
+		item.EntityType = derefString(entityType)
+		item.EntityID = derefString(entityID)
+		item.Reason = derefString(reason)
+		item.RequestID = derefString(requestID)
 		item.BeforeState = decodeAuditState(beforeJSON)
 		item.AfterState = decodeAuditState(afterJSON)
 		out = append(out, item)
 	}
 	return out, total, rows.Err()
+}
+
+// derefString maps a nullable text column to "" (the API contract keeps these
+// fields as plain strings: a NULL degrades to empty, never to a 503).
+func derefString(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 // decodeAuditState unmarshals a JSONB audit snapshot (nil/empty stays nil).

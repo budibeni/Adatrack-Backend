@@ -10,7 +10,7 @@
 # lalu restart tanpa henti. Fail-fast itu disengaja (jangan pernah jalan dengan
 # schema lama) — yang perlu diperbaiki adalah artefak migrasinya ikut ke image.
 # ============================================================================
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.6-alpine AS build
 
 WORKDIR /src
 

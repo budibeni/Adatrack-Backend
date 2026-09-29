@@ -36,6 +36,21 @@ export NATS_URL="nats://127.0.0.1:${HOST_NATS_PORT:-4222}"
 build_and_start() {
   mkdir -p "$PID_DIR" "$(dirname "$TARGETS_FILE")"
 
+  # Migrations FIRST (PRD §14.5 — "no service ever runs against a stale schema").
+  # Akar insiden 2026-09-29: service di-build dari commit terbaru sementara DB dev
+  # masih tertinggal di ledger lama (master 020 / company 025), sehingga endpoint
+  # B11/B12 menjawab 404 dan integration test gagal karena kolom `protocol` belum
+  # ada. scripts/migrate.sh bersifat idempotent (skip yang sudah applied) + memverifikasi
+  # ledger, jadi menjalankannya setiap `up` hampir tanpa biaya dan menutup celah ini
+  # untuk alur host-run (Coolify sudah tertutup oleh pre-deploy hook-nya sendiri).
+  # Lewati secara sengaja dengan SKIP_MIGRATE=1 (mis. infra memang sedang mati).
+  if [[ "${SKIP_MIGRATE:-0}" == "1" ]]; then
+    echo "start-services: SKIP_MIGRATE=1 — migrasi dilewati (schema TIDAK diverifikasi)"
+  else
+    echo "start-services: applying migrations (scripts/migrate.sh ${COMPOSE_VARIANT:-local})"
+    "$ROOT/scripts/migrate.sh" "${COMPOSE_VARIANT:-local}"
+  fi
+
   # Stop leftovers from a previous run first: a stale process would hold the
   # listeners and the "new" service would silently fail to bind (idempotent up).
   stop_all

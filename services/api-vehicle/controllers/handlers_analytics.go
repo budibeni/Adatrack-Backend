@@ -14,7 +14,9 @@ import (
 //	GET  /api/v1/heatmap                 (cached density cells)
 //	POST /api/v1/heatmap/rebuild          (Admin: recompute from history)
 //	GET  /api/v1/reports/trips            (trip summary of a window)
+//	GET  /api/v1/reports/trips/export     (same summary as a CSV attachment)
 //	GET  /api/v1/reports/violations       (B8 violations per type/severity)
+//	GET  /api/v1/reports/violations/export (violations as a CSV attachment)
 //	GET  /api/v1/safety/scores            (B8 driver scores)
 func (s *Service) registerAnalyticsRoutes(group *gin.RouterGroup) {
 	heatmap := group.Group("/heatmap")
@@ -24,6 +26,9 @@ func (s *Service) registerAnalyticsRoutes(group *gin.RouterGroup) {
 	reports := group.Group("/reports")
 	reports.GET("/trips", s.handleTripReport)
 	reports.GET("/violations", s.handleViolationReport)
+	// CSV exports (gap C3): same data, attachment form.
+	reports.GET("/trips/export", s.handleTripReportExport)
+	reports.GET("/violations/export", s.handleViolationReportExport)
 
 	safety := group.Group("/safety")
 	safety.GET("/scores", s.handleSafetyScores)

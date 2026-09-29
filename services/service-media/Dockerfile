@@ -8,7 +8,7 @@
 # PRD §14.5 step 1: database/ (migrasi + seed) WAJIB ikut ke dalam image supaya
 # MIGRATE_ON_BOOT bisa meng-apply migrasi master dari repo (bukan volume manual).
 # ============================================================================
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.6-alpine AS build
 
 WORKDIR /src
 

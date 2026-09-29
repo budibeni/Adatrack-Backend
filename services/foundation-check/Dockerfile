@@ -4,7 +4,7 @@
 # Diagnostic service that proves the B0 wiring (PostgreSQL + Redis + NATS +
 # tenant routing). Useful in CI/deploy smoke tests: `docker run ... -once`.
 # ============================================================================
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.6-alpine AS build
 
 WORKDIR /src
 

@@ -51,8 +51,24 @@ func (g *commandGateway) persist(ctx context.Context, cmd models.DeviceCommand, 
 			 status, detail, ack_content, created_by, sent_at, acked_at)
 		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, NULLIF($10, 0), $11, $12)
 		ON CONFLICT (request_id) DO UPDATE SET
-			status      = EXCLUDED.status,
-			detail      = EXCLUDED.detail,
+			-- A "sent" transition must NEVER overwrite a terminal outcome: the
+			-- device's reply can race the dispatch (it is captured while we are
+			-- still recording "sent"), and the durable consumer redelivers a
+			-- command whose ACK was already processed (JetStream re-create /
+			-- restart). Without this guard the row regresses to "sent" and the
+			-- command looks unanswered (observed as a flaky e2e-commands run).
+			status      = CASE
+				WHEN EXCLUDED.status = 'sent'
+				 AND td_device_commands.status IN ('acked', 'failed', 'timeout')
+				THEN td_device_commands.status
+				ELSE EXCLUDED.status
+			END,
+			detail      = CASE
+				WHEN EXCLUDED.status = 'sent'
+				 AND td_device_commands.status IN ('acked', 'failed', 'timeout')
+				THEN td_device_commands.detail
+				ELSE EXCLUDED.detail
+			END,
 			ack_content = COALESCE(NULLIF(EXCLUDED.ack_content, ''), td_device_commands.ack_content),
 			sent_at     = COALESCE(td_device_commands.sent_at, EXCLUDED.sent_at),
 			acked_at    = COALESCE(td_device_commands.acked_at, EXCLUDED.acked_at),

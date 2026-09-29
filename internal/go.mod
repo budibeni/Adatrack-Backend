@@ -2,8 +2,10 @@ module adatrack_gps/internal
 
 go 1.25.0
 
+toolchain go1.26.6
+
 require (
-	github.com/jackc/pgx/v5 v5.7.5
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/nats-io/nats.go v1.53.1
 	github.com/prometheus/client_golang v1.20.0
 	github.com/redis/go-redis/v9 v9.22.0
@@ -24,8 +26,8 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.49.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 )

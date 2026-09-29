@@ -158,10 +158,120 @@ B12 verification: OK (rolled back)
 5. **B11 · audit asinkron** — api-vehicle menulis audit sinkron (retry + dead-letter, pola
    service-media) alih-alih buffer `AUDIT_BUFFER_SIZE`/`AUDIT_FLUSH_INTERVAL_MS` seperti
    service-websocket. Aman (tanpa drop), tetapi menambah sedikit latensi mutasi.
-6. **E2E harness** — belum ada `scripts/e2e-enterprise.sh`; verifikasi B12 saat ini = unit test +
-   SQL nyata (§3). E2E HTTP penuh (login → CRUD → share publik → audit) disarankan menyusul.
+6. ~~**E2E harness**~~ — ✅ **SELESAI 2026-09-29**: `scripts/e2e-enterprise.sh` (`make e2e-enterprise`)
+   menjalankan E2E HTTP penuh (login → CRUD → share publik → audit) → **31/31 PASS**, dan
+   langsung menemukan + menutup 3 bug store Postgres (§4c).
+
+## 4b. Verifikasi runtime & perbaikan jalur deploy (2026-09-29)
+
+Audit runtime menemukan **dua defect jalur deploy** (bukan bug fitur): kode sudah sampai B12
+sementara schema DB dev belum menerima migrasinya, dan skrip migrasi tidak menjangkau seluruh
+tenant. Keduanya diperbaiki & diverifikasi live.
+
+### 4b.1 Temuan: schema drift (kode ∥ DB)
+- Sebelum: ledger dev **master 020 / company 025** → migrasi `021`–`024` & `026`–`027` belum
+  di-apply. Dampak nyata: `GET /api/v1/audit-logs` & `GET /api/v1/access/menu` → **404**, dan
+  `ADATRACK_IT=1 go test` api-vehicle **10/10 FAIL** (kolom `protocol` absen di `tm_vehicles`).
+- Koreksi klaim lama: "`scripts/test.sh` (ADATRACK_IT=1) 0 FAIL" **tidak akurat** — `test.sh`
+  tidak men-set `ADATRACK_IT=1`, jadi IT test selalu di-skip (mode hermetic).
+
+### 4b.2 Fix #1 — `start-services.sh` mewajibkan migrasi sebelum boot
+`make services-up` (alur host dev) tidak pernah memanggil `scripts/migrate.sh`, padahal Coolify
+punya pre-deploy hook. Kini `build_and_start()` menjalankan `scripts/migrate.sh <variant>` lebih
+dulu (idempotent, ledger-verified) dengan escape-hatch `SKIP_MIGRATE=1`. Service tidak bisa lagi
+boot melawan schema basi.
+
+### 4b.3 Fix #2 — `migrate.sh` memigrasi **SEMUA** tenant (bukan hanya default+dev001)
+Ditemukan tenant ketiga `adatrack_gps_loadt2` tertinggal **10 migrasi** (max `017`, seharusnya
+`027`). `migrate.sh` dulu hard-code `default`+`dev001`. Kini langkah `[7/8] all existing tenant
+schemas` meng-enumerasi `pg_namespace` (`adatrack_gps_*` kecuali master) dan meng-apply migrasi
+company ke setiap schema (idempotent, hanya schema yang sudah ada → tak mungkin "resurrect"
+tenant yang di-drop). Pasca-fix: `loadt2` → **10 migrasi diterapkan**; semua tenant `applied=28`.
+
+### 4b.4 Bukti runtime pasca-fix
+| Pemeriksaan | Hasil |
+|---|---|
+| Ledger master / company (dev001) | `024_share_links` / `027_create_enterprise_modules` ✅ |
+| Ledger per tenant | default=027 · dev001=027 · loadt2=027 (0 failure) ✅ |
+| Tabel B11/B12 | `tm_protocols`, `tm_company_modules`, `tm_share_links`, `tm_heatmap_cells`, `tm_groups`, `tm_access_logs`, `tm_assets` ≠ NULL ✅ |
+| `ADATRACK_IT=1 go test ./...` (api-vehicle) | **ok / 0 FAIL** (sebelumnya 10/10 FAIL) ✅ |
+| `scripts/test.sh` (hermetic, 9 modul) | **0 FAIL · 14 paket `ok`** ✅ |
+| Endpoint B11/B12 (17 rute) | **401** semua (terdaftar & ber-gate auth); publik `/share/:token` → 404 token tak dikenal (benar) ✅ |
+| `/healthz` 7 service | **200** semua (ingestion 8090 · api-vehicle 8081 · websocket 8082 · worker-alert 8084 · worker-live 8091 · worker-persistence 8092 · service-media 8095) ✅ |
+| JetStream | 7 stream (MaxAge 48 h / MaxBytes 16 GiB), 5 durable consumer ✅ |
+
+> **Koreksi laporan sementara:** "5 endpoint B11/B12 → 404" **SALAH** — probe memakai path
+> tebakan (`/enterprises`, `/share/{token}`). Path sebenarnya: `/api/v1/drivers|groups|assets|…`,
+> `/api/v1/share-links`, `/api/v1/modules`, publik `/api/v1/share/:token`. Dengan path benar:
+> **17/17 = 401**. Rute B11/B12 memang selalu ada di kode; 404 sebelumnya murni karena binary
+> yang berjalan masih build lama (pra-redeploy).
+
+
+## 4c. Harness E2E B12 + 3 bug runtime yang ditemukannya (2026-09-29)
+
+Gap §4.6 ("belum ada `scripts/e2e-enterprise.sh`") ditutup. Harness baru
+(`make e2e-enterprise`) menjalankan **HTTP nyata** terhadap PostgreSQL nyata: login →
+menu/modul → CRUD enterprise (soft delete + restore) → share link (+ resolve **publik**
+tanpa auth) → analytics → audit → RBAC negatif. **Hasil akhir: 31/31 PASS.**
+
+Harness itu langsung membuktikan nilainya: ia menemukan **3 bug nyata** yang tidak
+terlihat oleh unit test (fake store) maupun verifikasi §3 (SQL langsung, bukan API).
+
+### 4c.1 `GET /audit-logs` & `POST /share-links` selalu 503 (A6)
+- `ListAuditLogs`: kolom nullable (`entity_id`, `actor_email`, …) di-`Scan` ke `string`
+  → `converting NULL to string is unsupported` pada baris pertama yang NULL.
+- `scanShareLink`: `vehicle_ids` bertipe `bigint[]`; driver pgx mengembalikannya sebagai
+  teks `{1,2}`, tidak bisa di-`Scan` ke `[]int64`.
+- **Fix:** scan ke pointer + `derefString`; `vehicle_ids::text` + `parseInt64Array`.
+- **Bukti:** `it_share_audit_test.go` (`TestITStoreListAuditLogs`, `TestITStoreShareLinkRoundTrip`).
+
+### 4c.2 `vehicleStoreErr` menelan error (A7 — pelanggaran “no silent drop”)
+```go
+func vehicleStoreErr(err error) error { _ = err; return errUnavailable("data source unavailable") }
+```
+Semua kegagalan store menjadi 503 generik **tanpa jejak di log** — inilah sebabnya 503 di
+atas tidak bisa didiagnosa dari log service. Kini error asli di-log (`slog.Error`), dan
+langsung mengungkap A8 di bawah.
+
+### 4c.3 `GET /api/v1/share/{token}` publik 503 (A8)
+Log (setelah fix A7) menunjukkan: `store: shared vehicles: column "company_code" does not
+exist (SQLSTATE 42703)`. `SharedVehicles` memfilter `WHERE company_code = $1` padahal
+`tm_vehicles` **tidak punya** kolom itu pada tata letak schema-per-tenant (tenant = schema).
+**Fix:** predikat dihapus (pool perusahaan sudah ter-scope schema).
+**Bukti:** `TestITStoreSharedVehicles`.
+
+> **Pelajaran (dicatat jujur):** tiga bug ini adalah **kelas yang sama** — kode jalur
+> Postgres yang tidak pernah dieksekusi end-to-end. Verifikasi berbasis SQL langsung dan
+> unit test fake-store **tidak** menggantikan E2E HTTP nyata. Itulah alasan harness ini
+> dibuat, dan hasilnya membenarkan pembuatannya.
+
+### 4c.4 Regression yang ditambahkan
+- `scripts/e2e-enterprise.sh` + target `make e2e-enterprise` (31 check).
+- `controllers/it_share_audit_test.go` (3 test IT) — jalan pada `ADATRACK_IT=1`.
+- Keduanya membersihkan fixture-nya sendiri; sisa fixture dari run yang gagal sudah dibersihkan.
+
+
+## 4d. Export laporan CSV (gap C3) — 2026-09-29
+
+`GET /api/v1/reports/trips/export` dan `GET /api/v1/reports/violations/export`
+mengembalikan **CSV** (`text/csv`, `Content-Disposition: attachment`) dengan data
+yang **identik** dengan endpoint JSON-nya (memakai panggilan store yang sama,
+sehingga kedua format tak mungkin berbeda).
+
+- BOM UTF-8 disertakan agar Excel membuka karakter Indonesia dengan benar.
+- Penulisan memakai `encoding/csv` → quoting/escaping benar (nilai ber-koma atau
+  ber-tanda-kutip aman).
+- Nama berkas berpola `trips_<from>_<to>.csv` (mis. `trips_20260901_20260929.csv`).
+
+**Bukti:** `handlers_reports_export_test.go` (3 test: nama berkas, format angka,
+header/attachment/BOM/quoting) dan **3 check live** di `make e2e-enterprise`
+(total harness kini **38/38 PASS**).
+
+**Sisa:** PDF dan laporan terjadwal (scheduled report) belum dibuat.
 
 ## 5. Perintah reproduksi
+
+
 
 ```bash
 # unit test (tanpa infra)

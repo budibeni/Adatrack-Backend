@@ -10,7 +10,7 @@ VARIANT ?= local
 MODULES := internal services/ingestion-tcp services/worker-live services/worker-persistence services/service-websocket services/api-vehicle services/service-media services/worker-alert services/foundation-check tools/e2e tools/e2ews tools/e2e-media tools/e2e-fuel tools/e2e-fleet tools/querybench
 
 .DEFAULT_GOAL := help
-.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel e2e-fleet e2e-commands clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard js-publish-cmd
+.PHONY: help up down ps logs build test test-race fmt vet reset-db migrate provision-tenant seed services-up services-down e2e e2e-ws e2e-media e2e-fuel e2e-fleet e2e-commands e2e-enterprise clean monitoring-up monitoring-down prom-targets b4-verify backup-db restore-db backup-redis retention-purge querybench cover js-status js-purge js-guard js-publish-cmd vuln
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -45,6 +45,9 @@ build: ## Build every Go module
 
 test: ## Run unit + integration tests (all modules)
 	@scripts/test.sh
+
+vuln: ## Security gate: govulncheck across every module (PRD §4.2)
+	@scripts/vuln-scan.sh
 
 test-race: ## Run tests with the race detector
 	@scripts/test.sh --race
@@ -81,6 +84,9 @@ e2e-fleet: ## End-to-end fleet core test (odometer/engine hours + trip/stop + pl
 
 e2e-commands: ## End-to-end downlink test (login → 0x80 DYD# → 0x21 ACK → td_device_commands, B8)
 	@scripts/e2e-commands.sh
+
+e2e-enterprise: ## End-to-end B11/B12 test (menu → enterprise CRUD → share publik → audit → RBAC)
+	@scripts/e2e-enterprise.sh
 
 clean: ## Remove build artifacts
 	@rm -rf bin logs/*.log logs/pids monitoring/targets/*.json

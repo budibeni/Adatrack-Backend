@@ -5,7 +5,7 @@
 # deploy always carries the migration artifacts of the same commit.
 # Multi-stage: static build (CGO disabled) → distroless-ish alpine runtime.
 # ============================================================================
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.6-alpine AS build
 
 WORKDIR /src
 

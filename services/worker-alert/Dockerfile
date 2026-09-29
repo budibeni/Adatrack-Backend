@@ -10,7 +10,7 @@
 #
 # Multi-stage: static build (CGO disabled) -> runtime alpine non-root.
 # ============================================================================
-FROM golang:1.25-alpine AS build
+FROM golang:1.26.6-alpine AS build
 
 WORKDIR /src
 

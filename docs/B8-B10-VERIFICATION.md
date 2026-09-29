@@ -407,6 +407,32 @@ Bukti runtime guard #11 (replay backlog nyata, `logs/ingestion-tcp.log`):
 11 entri backlog (dari sesi uji sebelumnya) ditolak dengan alasan, dan E2E kembali
 **5/5 PASS** sesudahnya.
 
+## 5b. Perbaikan lanjutan 2026-09-29 — race ACK vs registrasi pending (B8)
+
+`make e2e-commands` pernah flaky (4/5): device menerima command **dan** mengirim balasan
+`0x21`, tetapi baris `td_device_commands` tidak berubah menjadi `acked` dalam window poll.
+
+**Akar masalah (bukan flake murni):** `dispatch()` menulis frame ke socket **sebelum**
+mendaftarkan command di `pending`. Balasan device kembali lewat socket yang sama dan dibaca
+goroutine koneksi; pada loopback round-trip-nya sub-milidetik, sehingga `Ack()` dapat berjalan
+**sebelum** pendaftaran → entri tidak ditemukan → balasan dicap *"unsolicited device reply"*
+(log `Debug`) dan **dibuang** → baris tetap `sent` sampai sweeper menandainya `timeout`
+30 detik kemudian.
+
+**Perbaikan:**
+1. `commanddispatch.go` — daftarkan `pending` **sebelum** `dc.Write`; bila write gagal, entri
+   milik kita dihapus kembali (hanya entri kita — ACK bisa sudah memakainya).
+2. `commandstore.go` — upsert dibuat **monotonik**: transisi `sent` tidak boleh menimpa status
+   terminal (`acked`/`failed`/`timeout`). Ini sekaligus melindungi dari **redelivery consumer
+   durable JetStream** (perintah yang ACK-nya sudah diproses tidak "kembali" ke `sent`).
+
+**Bukti:** `controllers/commanddispatch_race_test.go` — fake device memanggil `Ack()`
+**synchronous di dalam `Write`** (interleaving persis). Test **GAGAL** dengan urutan lama
+(`reply sent during Write was not matched (onResult=[])`) dan **PASS** dengan perbaikan —
+dibuktikan lewat revert sementara, bukan asumsi. Verifikasi live: `make e2e-commands`
+dijalankan 3× berturut-turut.
+
+
 ## 6. Perintah verifikasi lengkap
 
 ```bash

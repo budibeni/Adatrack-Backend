@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -283,21 +284,67 @@ ON CONFLICT (company_code, module_code) DO UPDATE SET
 
 // --- §1.8 Integrations (API key + webhook) ---------------------------------
 
-// integrationColumns is the shared projection of tm_integrations.
-const integrationColumns = `id, name, kind, endpoint_url, key_prefix, events, status,
+// integrationColumns is the shared projection of tm_integrations. events is cast
+// to text for the same reason as tm_share_links.vehicle_ids: the pgx stdlib driver
+// returns text[] in its literal form, which cannot be scanned into []string.
+const integrationColumns = `id, name, kind, endpoint_url, key_prefix, events::text, status,
 last_used_at, notes, to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SSOF')`
+
+// parseStringArray parses a Postgres text[] literal ("{a,b}") into []string.
+// Postgres quotes an element that itself contains a comma, brace, quote or
+// backslash, so the parser honours double quotes and backslash escapes; NULL,
+// an empty array and a non-array payload all degrade to nil instead of failing.
+func parseStringArray(raw *string) []string {
+	if raw == nil {
+		return nil
+	}
+	s := strings.TrimSpace(*raw)
+	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+		return nil
+	}
+	body := s[1 : len(s)-1]
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	var (
+		out     []string
+		cur     strings.Builder
+		quoted  bool
+		escaped bool
+	)
+	for i := 0; i < len(body); i++ {
+		ch := body[i]
+		switch {
+		case escaped:
+			cur.WriteByte(ch)
+			escaped = false
+		case ch == '\\':
+			escaped = true
+		case ch == '"':
+			quoted = !quoted
+		case ch == ',' && !quoted:
+			out = append(out, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteByte(ch)
+		}
+	}
+	return append(out, cur.String())
+}
 
 // scanIntegration scans one tm_integrations row.
 func scanIntegration(row interface{ Scan(...any) error }) (models.Integration, error) {
 	var (
 		item       models.Integration
+		rawEvents  *string
 		lastUsedAt *time.Time
 	)
 	err := row.Scan(&item.ID, &item.Name, &item.Kind, &item.EndpointURL, &item.KeyPrefix,
-		&item.Events, &item.Status, &lastUsedAt, &item.Notes, &item.CreatedAt)
+		&rawEvents, &item.Status, &lastUsedAt, &item.Notes, &item.CreatedAt)
 	if err != nil {
 		return item, err
 	}
+	item.Events = parseStringArray(rawEvents)
 	if lastUsedAt != nil {
 		formatted := lastUsedAt.UTC().Format(time.RFC3339)
 		item.LastUsedAt = &formatted
@@ -430,22 +477,57 @@ func hashSecret(secret string) string {
 
 // shareColumns is the shared projection of tm_share_links (company_code included
 // for the internal owner lookup; it is never serialised — see models.ShareLink).
-const shareColumns = `company_code, id, token, label, scope, vehicle_ids, expires_at,
+//
+// vehicle_ids is cast to text on purpose: the pgx stdlib driver hands a bigint[]
+// back in its text form ("{1,2}"), which database/sql cannot scan into []int64 —
+// that mismatch returned HTTP 503 from every share-link endpoint. Casting makes
+// the conversion explicit and driver-agnostic (see parseInt64Array).
+const shareColumns = `company_code, id, token, label, scope, vehicle_ids::text, expires_at,
 revoked_at, view_count, last_viewed_at, to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SSOF')`
+
+// parseInt64Array parses a Postgres array literal ("{1,2,3}") into []int64.
+// NULL, an empty array and malformed entries are tolerated (skipped) instead of
+// failing the whole row: a share link without vehicles is legal and must never
+// turn a read into a 503.
+func parseInt64Array(raw *string) []int64 {
+	if raw == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*raw)
+	trimmed = strings.TrimPrefix(trimmed, "{")
+	trimmed = strings.TrimSuffix(trimmed, "}")
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	out := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		part = strings.Trim(strings.TrimSpace(part), `"`)
+		if part == "" {
+			continue
+		}
+		if n, err := strconv.ParseInt(part, 10, 64); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
 
 // scanShareLink scans one tm_share_links row.
 func scanShareLink(row interface{ Scan(...any) error }) (models.ShareLink, error) {
 	var (
 		link         models.ShareLink
+		rawIDs       *string
 		expiresAt    time.Time
 		revokedAt    *time.Time
 		lastViewedAt *time.Time
 	)
 	err := row.Scan(&link.CompanyCode, &link.ID, &link.Token, &link.Label, &link.Scope,
-		&link.VehicleIDs, &expiresAt, &revokedAt, &link.ViewCount, &lastViewedAt, &link.CreatedAt)
+		&rawIDs, &expiresAt, &revokedAt, &link.ViewCount, &lastViewedAt, &link.CreatedAt)
 	if err != nil {
 		return link, err
 	}
+	link.VehicleIDs = parseInt64Array(rawIDs)
 	link.ExpiresAt = expiresAt.UTC().Format(time.RFC3339)
 	if revokedAt != nil {
 		formatted := revokedAt.UTC().Format(time.RFC3339)
@@ -531,12 +613,16 @@ func (s *PostgresStore) SharedVehicles(ctx context.Context, company string, ids 
 	if len(ids) == 0 {
 		return []models.SharedVehicle{}, nil
 	}
+	// The company pool is already scoped to `company`'s schema, and tm_vehicles has
+	// NO company_code column in the schema-per-tenant layout. Filtering on it made
+	// the public share read fail with SQLSTATE 42703 → HTTP 503 (found by the B12
+	// E2E on 2026-09-29; the error had been swallowed by vehicleStoreErr).
 	pool, err := s.tenantPool(company)
 	if err != nil {
 		return nil, err
 	}
-	placeholders := make([]string, 0, len(ids)+1)
-	args := []any{company}
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
 	for _, id := range ids {
 		args = append(args, id)
 		placeholders = append(placeholders, "$"+itoa(len(args)))
@@ -545,7 +631,7 @@ func (s *PostgresStore) SharedVehicles(ctx context.Context, company string, ids 
 SELECT id, plate_number, current_lat, current_lon, current_speed,
        to_char(last_seen_at, 'YYYY-MM-DD"T"HH24:MI:SSOF')
 FROM tm_vehicles
-WHERE company_code = $1 AND deleted_at IS NULL AND id IN (%s)`,
+WHERE deleted_at IS NULL AND id IN (%s)`,
 		strings.Join(placeholders, ", "))
 
 	rows, err := pool.DB.QueryContext(ctx, query, args...)

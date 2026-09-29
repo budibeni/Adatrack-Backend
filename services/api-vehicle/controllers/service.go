@@ -1,6 +1,8 @@
 package controllers
 
 import (
+	"log/slog"
+
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -89,8 +91,14 @@ func (s *Service) PostgresStore() (*PostgresStore, bool) {
 
 // vehicleStoreErr maps a persistence failure onto the generic 503 the PRD §8.1
 // contract prescribes (internal details are never leaked to the client).
+// vehicleStoreErr maps a persistence failure to a 503 while still RECORDING the
+// underlying error. The previous version discarded it (`_ = err`), which violated
+// the project rule "never silent drop" and made the 2026-09-29 share-link/audit
+// 503s impossible to diagnose from the logs.
 func vehicleStoreErr(err error) error {
-	_ = err
+	if err != nil {
+		slog.Error("store error", "error", err)
+	}
 	return errUnavailable("data source unavailable")
 }
 

@@ -272,13 +272,8 @@ func ptrInt64(v int64) *int64       { return &v }
 func ptrFloat64(v float64) *float64 { return &v }
 func ptrBool(v bool) *bool          { return &v }
 
-// derefString is a helper for assertions on nullable scans.
-func derefString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
+// derefString untuk assertion nullable hidup di store_pg_audit.go (dipakai juga
+// oleh kode produksi), jadi tidak diduplikasi di sini.
 
 // ---------------------------------------------------------------------------
 // vehicles + master IMEI map (CreateVehicle, VehicleByID, IMEIExists, Update,
