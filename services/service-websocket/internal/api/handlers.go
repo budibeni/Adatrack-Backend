@@ -751,12 +751,12 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 		endTime, err2 := time.Parse(time.RFC3339, endStr)
 		if err1 == nil && err2 == nil {
 			args = append(args, startTime, endTime)
-			countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.th_telemetry_logs WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3", schema)
+			countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.th_telemetry_logs WHERE vehicle_id = $1 AND \"timestamp\" >= $2 AND \"timestamp\" <= $3", schema)
 			query = fmt.Sprintf(`
-				SELECT id, vehicle_id, imei, latitude, longitude, speed, heading, altitude, acc_status, battery_level, timestamp
+				SELECT id, vehicle_id, imei, latitude, longitude, speed, heading, altitude, acc_status, battery_level, "timestamp"
 				FROM %s.th_telemetry_logs
-				WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3
-				ORDER BY timestamp DESC
+				WHERE vehicle_id = $1 AND "timestamp" >= $2 AND "timestamp" <= $3
+				ORDER BY "timestamp" DESC
 				LIMIT $%d OFFSET $%d
 			`, schema, len(args)+1, len(args)+2)
 			args = append(args, limit, offset)
@@ -766,10 +766,10 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.th_telemetry_logs WHERE vehicle_id = $1", schema)
 		query = fmt.Sprintf(`
-			SELECT id, vehicle_id, imei, latitude, longitude, speed, heading, altitude, acc_status, battery_level, timestamp
+			SELECT id, vehicle_id, imei, latitude, longitude, speed, heading, altitude, acc_status, battery_level, "timestamp"
 			FROM %s.th_telemetry_logs
 			WHERE vehicle_id = $1
-			ORDER BY timestamp DESC
+			ORDER BY "timestamp" DESC
 			LIMIT $2 OFFSET $3
 		`, schema)
 		args = []interface{}{vehicleID, limit, offset}

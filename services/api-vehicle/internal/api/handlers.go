@@ -1367,14 +1367,15 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	query := fmt.Sprintf(`
-		SELECT latitude, longitude, speed, heading, timestamp, 0.0::float8 as odometer_km
+		SELECT latitude, longitude, speed, heading, "timestamp", 0.0::float8 as odometer_km
 		FROM %s.th_telemetry_logs
-		WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3
-		ORDER BY timestamp ASC
+		WHERE vehicle_id = $1 AND "timestamp" >= $2 AND "timestamp" <= $3
+		ORDER BY "timestamp" ASC
 	`, schema)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, id, start, end)
 	if err != nil {
+		fmt.Printf("DB Query error in GetVehicleHistory: %v\n", err)
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query telemetry logs")
 		return
 	}
