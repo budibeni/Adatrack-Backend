@@ -116,19 +116,36 @@ func (c *NATSClient) ensureStreams() error {
 		}
 	}
 
-	// Durable consumers used by the B1 workers (load balanced queue groups).
-	for _, consumer := range []struct{ stream, name string }{
-		{StreamTelemetryRaw, "persistence"},
-		{StreamTelemetryRaw, "live"},
-		{StreamTelemetryRaw, "alert"},
-		{StreamTelemetryLive, "websocket"},
+	// Durable PULL consumers for the B1 workers + WebSocket bridges. They are
+	// created ONCE with DeliverNewPolicy and then PERSIST, which is what makes
+	// at-least-once work across restarts:
+	//   · DeliverNewPolicy → a brand-new durable never replays the 48 h stream
+	//     history (replaying it corrupts the odometer/trip accumulator);
+	//   · a pull consumer is NOT deleted when the client disconnects, so the next
+	//     start RESUMES from the acknowledged position and picks up everything
+	//     published during downtime.
+	// (A push consumer created by js.QueueSubscribe is deleted on unsubscribe —
+	// measured live 2026-09-29: the consumer was recreated at every service start
+	// and the downtime backlog was silently skipped.)
+	for _, consumer := range []struct{ stream, name, subject string }{
+		{StreamTelemetryRaw, "persistence", c.Subject("raw", ">")},
+		{StreamTelemetryRaw, "live", c.Subject("raw", ">")},
+		{StreamTelemetryRaw, "alert", c.Subject("raw", ">")},
+		{StreamTelemetryLive, "websocket-live", c.Subject("live", ">")},
+		// The filter must match the subscriber's subject EXACTLY: a pull bind with
+		// "notify.alert.>" against a "notify.>" consumer fails with
+		// "subject does not match consumer" (found live).
+		{StreamNotify, "websocket-notify", "notify.alert.>"},
+		{StreamMedia, "websocket-media", "media.event.>"},
+		{StreamCommand, "ingestion-command-dispatch", "command.request.>"},
 	} {
 		if _, err := c.js.AddConsumer(consumer.stream, &nats.ConsumerConfig{
 			Durable:       consumer.name,
+			FilterSubject: consumer.subject,
 			DeliverPolicy: nats.DeliverNewPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
 			AckWait:       30 * time.Second,
-			MaxAckPending: 100, // FR-4.1 MaxInflight per subscriber
+			MaxDeliver:    5,
 		}); err != nil && !strings.Contains(err.Error(), "already in use") {
 			slog.Warn("jetstream consumer not created", "stream", consumer.stream,
 				"consumer", consumer.name, "error", err)
@@ -250,36 +267,84 @@ func (c *NATSClient) QueueSubscribeDurable(
 	stream, subject, queueGroup, durable string,
 	handler func(*nats.Msg) error,
 ) (*nats.Subscription, error) {
-	sub, err := c.js.QueueSubscribe(subject, queueGroup, func(msg *nats.Msg) {
-		herr := handler(msg)
-		if herr != nil {
-			// NAK makes the message eligible for redelivery (with backoff) instead of
-			// silently dropping it; the error is logged either way (rule §8).
-			slog.Error("nats durable handler failed", "subject", msg.Subject,
-				"queue", queueGroup, "durable", durable, "error", herr)
-			_ = msg.Nak()
-		} else if aerr := msg.Ack(); aerr != nil {
-			slog.Warn("nats durable ack failed", "subject", msg.Subject,
-				"durable", durable, "error", aerr)
-		}
-		if c.consumed != nil {
-			c.consumed.WithLabelValues(subject, queueGroup).Inc()
-		}
-	},
-		nats.BindStream(stream),
-		nats.Durable(durable),
-		nats.ManualAck(),
-		nats.AckExplicit(),
-		// Deliver everything the durable has not acknowledged yet (first run: the
-		// backlog that accumulated while the service was down).
-		nats.DeliverAll(),
-		nats.MaxDeliver(5),
-		nats.AckWait(30*time.Second),
-	)
+	return c.queueSubscribeDurable(stream, subject, queueGroup, durable, handler)
+}
+
+// QueueSubscribeDurableNew is kept for call-site compatibility; both wrappers now
+// share the same (correct) delivery policy — see queueSubscribeDurable.
+func (c *NATSClient) QueueSubscribeDurableNew(
+	stream, subject, queueGroup, durable string,
+	handler func(*nats.Msg) error,
+) (*nats.Subscription, error) {
+	return c.queueSubscribeDurable(stream, subject, queueGroup, durable, handler)
+}
+
+// queueSubscribeDurable implements the FR-4.1 at-least-once contract by BINDING to
+// the pre-created durable PULL consumer and draining it with a fetch loop.
+//
+// Pull (not push) is load-bearing here. A push consumer created by the js helpers is
+// DELETED when the subscription closes, so every service restart silently started a
+// brand-new consumer (Deliver Policy: New) and skipped everything published during
+// downtime — measured live 2026-09-29: a 10-message backlog published while the
+// worker was stopped was never persisted (delta 0). The pull consumer lives in the
+// server, is created once with DeliverNewPolicy (no 48-hour history replay, which
+// would otherwise feed stale fixes into the odometer/trip accumulator), and RESUMES
+// from its acknowledged position on the next start.
+//
+// MaxAckPending/MaxDeliver/AckWait are owned by the stored consumer config: nats.go
+// rejects a requested value that differs from the stored one ("configuration
+// requests max ack pending to be 100, but consumer's value is 1000") and that
+// rejection silently downgraded the B8 command path to core NATS.
+func (c *NATSClient) queueSubscribeDurable(
+	stream, subject, queueGroup, durable string,
+	handler func(*nats.Msg) error,
+) (*nats.Subscription, error) {
+	sub, err := c.js.PullSubscribe(subject, durable, nats.BindStream(stream), nats.ManualAck())
 	if err != nil {
-		return nil, fmt.Errorf("durable subscribe %s (%s/%s): %w", subject, queueGroup, durable, err)
+		return nil, fmt.Errorf("durable pull subscribe %s (%s/%s): %w", subject, queueGroup, durable, err)
 	}
+	go c.drainPull(sub, subject, queueGroup, durable, handler)
 	return sub, nil
+}
+
+// drainPull consumes a pull subscription until it is unsubscribed. Every message is
+// Ack-ed on success and Nak-ed on failure (at-least-once, never silent-drop).
+func (c *NATSClient) drainPull(
+	sub *nats.Subscription, subject, queueGroup, durable string,
+	handler func(*nats.Msg) error,
+) {
+	const batchSize = 64
+	for {
+		msgs, err := sub.Fetch(batchSize, nats.MaxWait(2*time.Second))
+		if err != nil {
+			switch {
+			case errors.Is(err, nats.ErrTimeout):
+				continue // idle: nothing pending right now
+			case errors.Is(err, nats.ErrBadSubscription), errors.Is(err, nats.ErrConnectionClosed):
+				return // shutdown: the caller unsubscribed / the connection is gone
+			default:
+				slog.Warn("nats pull fetch failed", "subject", subject,
+					"durable", durable, "error", err)
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+		}
+		for _, msg := range msgs {
+			if herr := handler(msg); herr != nil {
+				// NAK makes the message eligible for redelivery instead of silently
+				// dropping it; the error is logged either way (rule §8).
+				slog.Error("nats durable handler failed", "subject", msg.Subject,
+					"queue", queueGroup, "durable", durable, "error", herr)
+				_ = msg.Nak()
+			} else if aerr := msg.Ack(); aerr != nil {
+				slog.Warn("nats durable ack failed", "subject", msg.Subject,
+					"durable", durable, "error", aerr)
+			}
+			if c.consumed != nil {
+				c.consumed.WithLabelValues(subject, queueGroup).Inc()
+			}
+		}
+	}
 }
 
 // Pending returns the backlog of a JetStream stream (used for backpressure

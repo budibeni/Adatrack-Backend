@@ -111,7 +111,12 @@ func New(cfg *internal.Config, tenants *tenant.Manager, nats *internal.NATSClien
 // the batch flush loop.
 func (p *Persister) Start() (*nats.Subscription, error) {
 	go p.flusher()
-	return p.nats.Subscribe(p.nats.Subject("raw", ">"), "persistence", p.handleMessage)
+	// PRD FR-4.1: consume through an at-least-once DURABLE JetStream consumer, not a
+	// core subscription. A raw frame published while this worker is restarting is
+	// held by the stream and processed when it returns instead of being lost; a
+	// failed batch is NAKed and redelivered.
+	return p.nats.QueueSubscribeDurableNew(internal.StreamTelemetryRaw,
+		p.nats.Subject("raw", ">"), "persistence", "persistence", p.handleMessage)
 }
 
 // Stop drains the buffers: the final batch is written before returning so an

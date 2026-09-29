@@ -53,13 +53,17 @@ func RegisterBridgeMetrics(reg *prometheus.Registry) {
 // media-event bridges with the `websocket` queue group, so several replicas share
 // the stream without duplicating work (PRD §4.1 step 7).
 func (b *Bridge) Start() ([]*nats.Subscription, error) {
-	live, err := b.nats.Subscribe(b.cfg.Subject("live", ">"), "websocket", b.handleMessage)
+	// PRD FR-4.1: the WS fan-out is durable too — a client that connects right after
+	// a redeploy still receives the live updates published during the restart.
+	live, err := b.nats.QueueSubscribeDurableNew(internal.StreamTelemetryLive,
+		b.cfg.Subject("live", ">"), "websocket", "websocket-live", b.handleMessage)
 	if err != nil {
 		return nil, err
 	}
 	subs := []*nats.Subscription{live}
 
-	notify, nerr := b.nats.Subscribe(b.cfg.SubjectPlain("notify", "alert", ">"), "websocket", b.handleAlertNotify)
+	notify, nerr := b.nats.QueueSubscribeDurableNew(internal.StreamNotify,
+		b.cfg.SubjectPlain("notify", "alert", ">"), "websocket", "websocket-notify", b.handleAlertNotify)
 	if nerr != nil {
 		// Roll back the live subscription so a partial bridge is never left
 		// running without its siblings.
@@ -68,7 +72,8 @@ func (b *Bridge) Start() ([]*nats.Subscription, error) {
 	}
 	subs = append(subs, notify)
 
-	media, merr := b.nats.Subscribe(b.cfg.SubjectPlain("media", "event", ">"), "websocket", b.handleMediaEvent)
+	media, merr := b.nats.QueueSubscribeDurableNew(internal.StreamMedia,
+		b.cfg.SubjectPlain("media", "event", ">"), "websocket", "websocket-media", b.handleMediaEvent)
 	if merr != nil {
 		for _, sub := range subs {
 			b.nats.Unsubscribe(sub)

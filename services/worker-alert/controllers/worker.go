@@ -111,7 +111,11 @@ func (w *Worker) Start() (*nats.Subscription, error) {
 	// engine-hours / calendar thresholds, PRD §21.2 row 5).
 	w.launch(w.maintenanceLoop, w.cfg.Driver.MaintenanceSweepInterval)
 
-	return w.nats.Subscribe(w.nats.Subject("raw", ">"), "alert", w.handleMessage)
+	// PRD FR-4.1: durable consumption (at-least-once). Alert creation already has
+	// open-alert/dedup-window guards, so a redelivered frame does not duplicate an
+	// alert — while a core subscription would silently miss frames during a restart.
+	return w.nats.QueueSubscribeDurableNew(internal.StreamTelemetryRaw,
+		w.nats.Subject("raw", ">"), "alert", "alert", w.handleMessage)
 }
 
 // Stop cancels the background loops and waits for them to drain.

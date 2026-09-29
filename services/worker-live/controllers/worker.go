@@ -132,7 +132,11 @@ func (w *Worker) Start() (*nats.Subscription, error) {
 		defer w.fleetWg.Done()
 		w.fleetFlusher()
 	}()
-	return w.nats.Subscribe(w.nats.Subject("raw", ">"), "live", w.handleMessage)
+	// PRD FR-4.1: durable consumption (at-least-once). The live-state write is
+	// idempotent (a SET of the latest state), so redelivery is harmless, while a
+	// core subscription would silently drop frames published during a restart.
+	return w.nats.QueueSubscribeDurableNew(internal.StreamTelemetryRaw,
+		w.nats.Subject("raw", ">"), "live", "live", w.handleMessage)
 }
 
 // Stop cancels the background loops and drains the remaining buffers (graceful

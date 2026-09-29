@@ -26,7 +26,9 @@ Prioritas kedua. **Kerjakan HANYA setelah seluruh fase backend B0–B6 selesai**
 
 ### Acceptance Criteria
 - `npm run dev` jalan; peta render; bisa memanggil endpoint health backend.
-- Login flow terhubung ke `POST /api/v1/auth/login`.
+- Login flow terhubung ke `POST /api/v1/auth/login` **di service-websocket (:8082)** —
+  service-websocket adalah SATU-SATUNYA otoritas auth (login/refresh/logout); api-vehicle
+  tidak punya endpoint auth dan hanya memverifikasi JWT yang diterbitkan service-websocket.
 
 ---
 

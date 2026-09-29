@@ -493,6 +493,38 @@ JetStream retention: 48h / 4 GiB (DiscardOld) — env JETSTREAM_MAX_AGE_HOURS / 
 Queue Groups: persistence, live, websocket, alert, media (+ fuel subscribers in alert group)
 ```
 
+**FR-4.1a (Delivery semantics — WAJIB, standard enterprise): `at-least-once`**
+```
+PRODUCER  : ingestion-tcp mem-publish ke subject yang ditangkap stream JetStream
+            (core publish, non-blocking — menjaga latensi FR-1.3).
+CONSUMER  : SEMUA worker (persistence, live, alert) + bridge WebSocket
+            (live/notify/media) + dispatcher command memakai DURABLE PULL consumer
+            JetStream + AckExplicit: handler sukses → Ack, gagal → Nak (redeliver).
+            Kenapa PULL (bukan push): consumer push yang dibuat helper js.* DIHAPUS
+            saat subscription ditutup, sehingga setiap restart service dimulai dari
+            consumer baru → backlog downtime terlewat (terukur live 2026-09-29:
+            delta 0 dari 10 pesan). Consumer pull hidup di server dan PERSIST.
+BIND      : consumer dibuat SEKALI oleh ensureStreams dengan DeliverNewPolicy
+            (fresh durable tidak boleh memutar riwayat 48 jam — replay menyuntikkan
+            posisi lama ke akumulator odometer/trip dan merusak metering: e2e-fleet
+            membaca 2,206 km padahal rute 0,334 km), lalu worker BIND ke consumer itu
+            dan RESUME dari posisi ACK terakhir → pesan yang dipublikasikan SELAGI
+            SERVICE MATI tetap diproses (terbukti: 10/10 pesan dipulihkan; sebelumnya
+            0 = hilang).
+            FilterSubject consumer harus SAMA PERSIS dengan subjek langganan
+            (bind "notify.alert.>" ke consumer "notify.>" → "subject does not
+            match consumer").
+            MaxAckPending/MaxDeliver/AckWait dimiliki config consumer tersimpan —
+            meminta nilai berbeda DITOLAK nats.go dan dulu menurunkan jalur command
+            B8 ke core NATS secara diam-diam.
+IDEMPOTEN : konsekuensi at-least-once — konsumen HARUS idempoten:
+              · live-state  : SET state terbaru (idempoten secara alami)
+              · alert       : guard open-alert + dedup window (sudah ada)
+              · persistence: append-only; dedup opsional per (imei, timestamp)
+JALUR     : `command.request.>` juga durable (B8) — perintah yang dipublikasikan
+            saat ingestion-tcp mati tetap terkirim setelah restart.
+```
+
 **FR-4.2 (Backpressure Signaling):**
 ```
 Ingestion:    pending > 50% → warn; > 90% → drop telemetry + log error

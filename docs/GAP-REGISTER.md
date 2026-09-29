@@ -14,7 +14,7 @@
 
 | Kategori | Jumlah | Selesai | Terbuka |
 |---|---|---|---|
-| A. Defect (produksi) | 9 | 8 | 1 (A5 — butuh keputusan pemilik produk) |
+| A. Defect (produksi) | 9 | **9** | 0 |
 | B. Dokumentasi tidak akurat | 4 | 4 | 0 |
 | C. Scope/roadmap (bukan defect) | 10 | 0 | 10 (dijadwalkan) |
 
@@ -38,7 +38,7 @@ deploy path sudah dikunci anti-drift. **Belum lengkap** untuk klaim “semua fit
 | A8 | **`SharedVehicles` memfilter kolom yang tidak ada**: `WHERE company_code = $1` pada `tm_vehicles` (schema-per-tenant **tidak** punya kolom itu) → `SQLSTATE 42703` → `GET /share/{token}` publik **503** | share lokasi publik (FR-9.3) tidak berfungsi | ✅ **FIXED** | predikat dihapus (pool sudah ter-scope schema); IT regression `TestITStoreSharedVehicles` |
 | A9 | **`tm_integrations.events` (`text[]`) di-scan ke `[]string`** — kelas yang sama dengan A6; `GET /integrations` akan 503 begitu ada satu baris integrasi | integrasi API/Webhook mati saat dipakai | ✅ **FIXED** | `events::text` + `parseStringArray`; IT regression `TestITStoreIntegrationEventsArray` + cek live di `e2e-enterprise.sh` (35/35) |
 | A10 | **Race registrasi pending vs ACK** (jalur B8): `dispatch()` menulis frame ke socket **sebelum** mendaftarkan command di `pending`, sehingga balasan `0x21` yang tiba saat penulisan dicap *"unsolicited"* dan dibuang → baris tetap `sent` → 30 s kemudian `timeout`. Terlihat sebagai `e2e-commands` flaky. | command yang sudah di-ACK device tercatat gagal/timeout | ✅ **FIXED** | (1) daftarkan `pending` **sebelum** `Write` (bersihkan bila write gagal); (2) upsert status **monotonik** — `sent` tak boleh menimpa `acked/failed/timeout` (juga melindungi dari **redelivery durable**). Bukti: `commanddispatch_race_test.go` — **GAGAL dengan urutan lama, PASS dengan fix** (dibuktikan dengan revert sementara) |
-| A5 | **PRD FR-4.1 “delivery durable” vs pipeline telemetri *core NATS* (at-most-once)** | deskripsi PRD ≠ realita utk jalur telemetri (jalur **command** sudah durable JetStream) | ⏳ **TERBUKA — butuh keputusan** | `PRD-COMPLIANCE-AUDIT.md §2.2` |
+| A5 | **FR-4.1 delivery durable vs pipeline telemetri *core NATS* (at-most-once)** | pesan yang dipublikasikan saat worker mati **hilang** | ✅ **FIXED (standard enterprise, 2026-09-29)** | Semua worker + bridge WS + dispatcher command kini memakai **durable PULL consumer** (Ack/Nak, `ensureStreams` pre-create dengan `DeliverNewPolicy` → lalu **BIND**, sehingga backlog downtime diproses tanpa replay riwayat). Bukti live: **10/10 pesan saat downtime dipulihkan** (sebelumnya 0 = hilang) + `e2e-fleet` 10/10. 3 jebakan nyata ditemukan & didokumentasikan di PRD `FR-4.1a`: (1) consumer **push** dihapus saat unsubscribe → restart selalu membuat consumer baru (skip backlog); (2) meminta `MaxAckPending` berbeda DITOLAK → jalur B8 diam-diam turun ke core NATS; (3) `FilterSubject` harus sama persis dengan subjek langganan |
 
 ### A5 — detail & rekomendasi (jujur)
 - Jalur **downlink command** (B8) **sudah** memakai *durable JetStream consumer* (terbukti:
