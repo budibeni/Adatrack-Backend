@@ -522,6 +522,8 @@ type VehicleItem struct {
 	Status      string      `json:"status"`
 	OdometerKM  float64     `json:"odometer_km"`
 	EngineHours float64     `json:"engine_hours"`
+	Lat         *float64    `json:"lat,omitempty"`
+	Lon         *float64    `json:"lon,omitempty"`
 	LiveState   interface{} `json:"live_state"`
 }
 
@@ -552,7 +554,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	if claims.Role == "Admin" || claims.Role == "SuperAdmin" || claims.Role == "Manager" {
 		countQuery = fmt.Sprintf("SELECT COUNT(*) FROM %s.tm_vehicles WHERE deleted_at IS NULL", schema)
 		query = fmt.Sprintf(`
-			SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0)
+			SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0), current_lat, current_lon
 			FROM %s.tm_vehicles
 			WHERE deleted_at IS NULL
 			ORDER BY id ASC LIMIT $1 OFFSET $2
@@ -565,7 +567,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 			WHERE uv.user_id = $1 AND v.deleted_at IS NULL
 		`, schema, schema)
 		query = fmt.Sprintf(`
-			SELECT v.id, v.imei, COALESCE(v.plate_number, ''), COALESCE(v.make, ''), COALESCE(v.model, ''), v.status, COALESCE(v.odometer_km, 0), COALESCE(v.engine_hours, 0)
+			SELECT v.id, v.imei, COALESCE(v.plate_number, ''), COALESCE(v.make, ''), COALESCE(v.model, ''), v.status, COALESCE(v.odometer_km, 0), COALESCE(v.engine_hours, 0), v.current_lat, v.current_lon
 			FROM %s.tm_vehicles v
 			JOIN %s.tm_user_vehicles uv ON v.id = uv.vehicle_id
 			WHERE uv.user_id = $1 AND v.deleted_at IS NULL
@@ -592,7 +594,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	var vehicles []VehicleItem
 	for rows.Next() {
 		var v VehicleItem
-		if err := rows.Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours); err == nil {
+		if err := rows.Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours, &v.Lat, &v.Lon); err == nil {
 			vehicles = append(vehicles, v)
 		}
 	}
