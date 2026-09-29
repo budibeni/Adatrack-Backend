@@ -118,7 +118,10 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 		schema := fmt.Sprintf("adatrack_gps_%s", p.CompanyCode)
 		updateQuery := fmt.Sprintf(`
 			UPDATE %s.tm_vehicles 
-			SET last_seen_at = $1, current_lat = $2, current_lon = $3, current_speed = $4, odometer_km = $5, engine_hours = $6, status = $7
+			SET last_seen_at = $1, 
+			    current_lat = CASE WHEN $2 = 0 AND $3 = 0 THEN current_lat ELSE $2 END, 
+			    current_lon = CASE WHEN $2 = 0 AND $3 = 0 THEN current_lon ELSE $3 END, 
+			    current_speed = $4, odometer_km = $5, engine_hours = $6, status = $7
 			WHERE id = $8 AND (last_seen_at IS NULL OR last_seen_at <= $1)
 		`, schema)
 		dbBatch.Queue(updateQuery, p.Timestamp, p.Latitude, p.Longitude, p.Speed, p.OdometerKM, p.EngineHours, p.Status, p.VehicleID)
