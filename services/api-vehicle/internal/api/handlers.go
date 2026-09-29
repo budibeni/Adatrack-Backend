@@ -1367,7 +1367,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	query := fmt.Sprintf(`
-		SELECT lat, lon, speed, heading, timestamp, 0 as odometer_km
+		SELECT latitude, longitude, speed, heading, timestamp, 0.0::float8 as odometer_km
 		FROM %s.th_telemetry_logs
 		WHERE vehicle_id = $1 AND timestamp >= $2 AND timestamp <= $3
 		ORDER BY timestamp ASC
@@ -1389,13 +1389,15 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 		Odometer  float64 `json:"odometer"`
 	}
 
-	var points []point
+	points := make([]point, 0)
 	for rows.Next() {
 		var p point
 		var ts time.Time
 		if err := rows.Scan(&p.Lat, &p.Lng, &p.Speed, &p.Heading, &ts, &p.Odometer); err == nil {
 			p.Timestamp = ts.Format(time.RFC3339)
 			points = append(points, p)
+		} else {
+			fmt.Printf("Scan error in GetVehicleHistory: %v\n", err)
 		}
 	}
 
