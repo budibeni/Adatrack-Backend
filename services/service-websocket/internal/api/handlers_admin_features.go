@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"backend/internal/dbclient"
 )
@@ -92,11 +93,24 @@ func (h *Handler) CreateSimCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !strings.HasPrefix(req.PhoneNumber, "+") {
+		h.writeError(w, http.StatusBadRequest, "INVALID_FORMAT", "Phone number must include country code (e.g. +62)")
+		return
+	}
+
+	if req.ICCID == "" {
+		req.ICCID = "AUTO-" + req.PhoneNumber
+	}
+
 	var id int
 	err := dbclient.Pool.QueryRow(r.Context(), `
 		INSERT INTO adatrack_gps_master.tm_sim_cards (iccid, phone_number, provider) VALUES ($1, $2, $3) RETURNING id
 	`, req.ICCID, req.PhoneNumber, req.Provider).Scan(&id)
 	if err != nil {
+		if strings.Contains(err.Error(), "tm_sim_cards_phone_number_key") || strings.Contains(err.Error(), "duplicate key value") {
+			h.writeError(w, http.StatusConflict, "DUPLICATE_PHONE", "Phone number already exists in another SIM Card")
+			return
+		}
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create SIM Card")
 		return
 	}
