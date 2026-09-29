@@ -23,6 +23,10 @@ type TelemetryPayload struct {
 	OdometerKM  float64   `json:"odometer_km,omitempty"`
 	EngineHours float64   `json:"engine_hours,omitempty"`
 
+	Address      string `json:"address,omitempty"`
+	GeofenceName string `json:"geofence_name,omitempty"`
+	GeofenceArea string `json:"geofence_area,omitempty"`
+
 	// Fuel sensor data
 	FuelLevel  *float64 `json:"fuel_level,omitempty"`
 	FuelVolume *float64 `json:"fuel_volume,omitempty"`

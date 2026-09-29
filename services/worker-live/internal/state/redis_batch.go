@@ -11,6 +11,8 @@ import (
 	"backend/internal/natsclient"
 	"backend/internal/redclient"
 	"backend/internal/utils"
+	"backend/internal/geocoder"
+	"backend/internal/geofence"
 	"backend/internal/dbclient"
 	"github.com/redis/go-redis/v9"
 	"github.com/jackc/pgx/v5"
@@ -97,6 +99,25 @@ func ProcessBatch(ctx context.Context, payloads []models.TelemetryPayload) error
 				}
 			} else {
 				p.EngineHours = prev.EngineHours
+			}
+		}
+
+		
+		if p.Latitude != 0 && p.Longitude != 0 {
+			addr, err := geocoder.ReverseGeocode(ctx, p.Latitude, p.Longitude)
+			if err == nil && addr != "" {
+				p.Address = addr
+			} else {
+				p.Address = prev.Address
+			}
+			
+			geoName, geoArea := geofence.CheckGeofence(ctx, p.CompanyCode, p.Latitude, p.Longitude)
+			if geoName != "" {
+				p.GeofenceName = geoName
+				p.GeofenceArea = geoArea
+			} else {
+				p.GeofenceName = "-"
+				p.GeofenceArea = "-"
 			}
 		}
 

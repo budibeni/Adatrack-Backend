@@ -247,6 +247,18 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 					vData["satellites"] = state.Satellites
 					vData["altitude"] = state.Altitude
 					vData["gsm_signal"] = state.GSMSignal
+					if state.Address != "" {
+						vData["address"] = state.Address
+					}
+					if state.GeofenceName != "" {
+						vData["geofence_name"] = state.GeofenceName
+					}
+					if state.GeofenceArea != "" {
+						vData["geofence_area"] = state.GeofenceArea
+					}
+					if state.EventCode != 0 {
+						vData["alarm_event"] = fmt.Sprintf("%d", state.EventCode)
+					}
 				}
 			}
 			vehicles = append(vehicles, vData)

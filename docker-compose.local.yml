@@ -191,7 +191,6 @@ services:
     build:
       context: ../admin
       dockerfile: Dockerfile
-      network: host
     container_name: adatrack_admin_local
     ports:
     - "3000:3000"
