@@ -60,6 +60,7 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/users", h.ListUsers)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/gps-devices", h.GetGPSDevices)
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/gps-devices", h.CreateGPSDevice)
+			r.With(auth.EnsurePlatformAdminMiddleware).Put("/admin/gps-devices/{imei}", h.UpdateGPSDevice)
 			r.With(auth.EnsurePlatformAdminMiddleware).Put("/admin/gps-devices/{imei}/assign", h.AssignGPSDevice)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/companies/{code}/modules", h.AdminGetTenantModules)
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/companies/{code}/modules", h.AdminUpdateTenantModules)

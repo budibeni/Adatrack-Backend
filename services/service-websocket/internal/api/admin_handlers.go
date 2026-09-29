@@ -507,6 +507,7 @@ type GPSDevice struct {
 	Protocol        string    `json:"protocol"`
 	AssignedCompany *string   `json:"assigned_company"`
 	Status          string    `json:"status"`
+	Iccid           *string   `json:"iccid"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -516,7 +517,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	rows, err := dbclient.Pool.Query(ctx, `
-		SELECT imei, COALESCE(device_brand, ''), COALESCE(device_model, ''), COALESCE(sim_number, ''), COALESCE(protocol, ''), assigned_company, status, created_at, updated_at
+		SELECT imei, COALESCE(device_brand, ''), COALESCE(device_model, ''), COALESCE(sim_number, ''), COALESCE(protocol, ''), assigned_company, status, iccid, created_at, updated_at
 		FROM adatrack_gps_master.tm_gps_devices
 		ORDER BY created_at DESC
 	`)
@@ -529,7 +530,7 @@ func (h *Handler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	var devices []GPSDevice
 	for rows.Next() {
 		var d GPSDevice
-		if err := rows.Scan(&d.IMEI, &d.DeviceBrand, &d.DeviceModel, &d.SimNumber, &d.Protocol, &d.AssignedCompany, &d.Status, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.IMEI, &d.DeviceBrand, &d.DeviceModel, &d.SimNumber, &d.Protocol, &d.AssignedCompany, &d.Status, &d.Iccid, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			continue
 		}
 		devices = append(devices, d)
@@ -547,11 +548,12 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var req struct {
-		IMEI        string `json:"imei"`
-		DeviceBrand string `json:"device_brand"`
-		DeviceModel string `json:"device_model"`
-		SimNumber   string `json:"sim_number"`
-		Protocol    string `json:"protocol"`
+		IMEI        string  `json:"imei"`
+		DeviceBrand string  `json:"device_brand"`
+		DeviceModel string  `json:"device_model"`
+		SimNumber   string  `json:"sim_number"`
+		Protocol    string  `json:"protocol"`
+		Iccid       *string `json:"iccid"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
@@ -559,9 +561,9 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := dbclient.Pool.Exec(ctx, `
-		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, device_brand, device_model, sim_number, protocol, status)
-		VALUES ($1, $2, $3, $4, $5, 'idle')
-	`, req.IMEI, req.DeviceBrand, req.DeviceModel, req.SimNumber, req.Protocol)
+		INSERT INTO adatrack_gps_master.tm_gps_devices (imei, device_brand, device_model, sim_number, protocol, iccid, status)
+		VALUES ($1, $2, $3, $4, $5, $6, 'idle')
+	`, req.IMEI, req.DeviceBrand, req.DeviceModel, req.SimNumber, req.Protocol, req.Iccid)
 	if err != nil {
 		http.Error(w, "Failed to create GPS device", http.StatusInternalServerError)
 		return
@@ -571,6 +573,38 @@ func (h *Handler) CreateGPSDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"message": "GPS device created successfully"})
 }
+
+func (h *Handler) UpdateGPSDevice(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	imei := chi.URLParam(r, "imei")
+	var req struct {
+		DeviceBrand string  `json:"device_brand"`
+		DeviceModel string  `json:"device_model"`
+		SimNumber   string  `json:"sim_number"`
+		Protocol    string  `json:"protocol"`
+		Iccid       *string `json:"iccid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	_, err := dbclient.Pool.Exec(ctx, `
+		UPDATE adatrack_gps_master.tm_gps_devices
+		SET device_brand = $1, device_model = $2, sim_number = $3, protocol = $4, iccid = $5, updated_at = CURRENT_TIMESTAMP
+		WHERE imei = $6
+	`, req.DeviceBrand, req.DeviceModel, req.SimNumber, req.Protocol, req.Iccid, imei)
+	if err != nil {
+		http.Error(w, "Failed to update GPS device", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "GPS device updated successfully"})
+}
+
 
 func (h *Handler) AssignGPSDevice(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
