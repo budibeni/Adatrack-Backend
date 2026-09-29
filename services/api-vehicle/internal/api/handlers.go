@@ -1367,7 +1367,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	query := fmt.Sprintf(`
-		SELECT latitude, longitude, speed, heading, "timestamp", 0.0::float8 as odometer_km
+		SELECT lat, lon, speed, heading, "timestamp", 0.0::float8 as odometer_km
 		FROM %s.th_telemetry_logs
 		WHERE vehicle_id = $1 AND "timestamp" >= $2 AND "timestamp" <= $3
 		ORDER BY "timestamp" ASC
