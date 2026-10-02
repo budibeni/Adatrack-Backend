@@ -6,5 +6,9 @@ CREATE TABLE IF NOT EXISTS tm_routes (
     vehicle_id INT REFERENCES tm_vehicles(id),
     status VARCHAR(20) DEFAULT 'active',
     deviation_threshold_meters FLOAT DEFAULT 100,
+    group_id INT,
+    description TEXT,
+    planned_distance FLOAT,
+    estimated_duration FLOAT,
     deleted_at TIMESTAMP WITH TIME ZONE
 );

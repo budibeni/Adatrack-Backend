@@ -5,6 +5,9 @@ CREATE TABLE IF NOT EXISTS tm_geofences (
     coordinates JSONB NOT NULL,
     radius_meters FLOAT,
     boundary_points JSONB,
+    group_id INT,
+    description TEXT,
+    status VARCHAR(20) DEFAULT 'active',
     created_by INT,
     deleted_at TIMESTAMP WITH TIME ZONE
 );

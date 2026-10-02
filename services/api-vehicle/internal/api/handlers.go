@@ -505,6 +505,9 @@ type GeofenceRequest struct {
 	RadiusMeters   *float64        `json:"radius_meters,omitempty"`
 	BoundaryPoints json.RawMessage `json:"boundary_points,omitempty"`
 	VehicleIDs     []int           `json:"vehicle_ids,omitempty"`
+	GroupID        *int            `json:"group_id,omitempty"`
+	Description    *string         `json:"description,omitempty"`
+	Status         *string         `json:"status,omitempty"`
 }
 
 func (h *Handler) CreateGeofence(w http.ResponseWriter, r *http.Request) {
@@ -535,9 +538,9 @@ func (h *Handler) CreateGeofence(w http.ResponseWriter, r *http.Request) {
 
 	var id int
 	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_geofences (name, area_type, coordinates, radius_meters, boundary_points, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-	`, schema), req.Name, req.AreaType, req.Coordinates, req.RadiusMeters, req.BoundaryPoints, claims.UserID).Scan(&id)
+		INSERT INTO %s.tm_geofences (name, area_type, coordinates, radius_meters, boundary_points, created_by, group_id, description, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'active')) RETURNING id
+	`, schema), req.Name, req.AreaType, req.Coordinates, req.RadiusMeters, req.BoundaryPoints, claims.UserID, req.GroupID, req.Description, req.Status).Scan(&id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create geofence")
 		return
@@ -660,9 +663,12 @@ func (h *Handler) UpdateGeofence(w http.ResponseWriter, r *http.Request) {
 	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
 		UPDATE %s.tm_geofences
 		SET name = COALESCE(NULLIF($1, ''), name),
-		    radius_meters = COALESCE($2, radius_meters)
-		WHERE id = $3 AND deleted_at IS NULL
-	`, schema), req.Name, req.RadiusMeters, id)
+		    radius_meters = COALESCE($2, radius_meters),
+		    group_id = COALESCE($3, group_id),
+		    description = COALESCE($4, description),
+		    status = COALESCE($5, status)
+		WHERE id = $6 AND deleted_at IS NULL
+	`, schema), req.Name, req.RadiusMeters, req.GroupID, req.Description, req.Status, id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update geofence")
 		return
@@ -720,6 +726,11 @@ type RouteRequest struct {
 	DriverUserID             *int            `json:"driver_user_id,omitempty"`
 	VehicleID                *int            `json:"vehicle_id,omitempty"`
 	DeviationThresholdMeters float64         `json:"deviation_threshold_meters"`
+	GroupID                  *int            `json:"group_id,omitempty"`
+	Description              *string         `json:"description,omitempty"`
+	PlannedDistance          *float64        `json:"planned_distance,omitempty"`
+	EstimatedDuration        *float64        `json:"estimated_duration,omitempty"`
+	Status                   *string         `json:"status,omitempty"`
 }
 
 func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
