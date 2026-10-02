@@ -30,16 +30,26 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 		query := fmt.Sprintf(`
 			INSERT INTO %s.th_telemetry_logs 
 			(vehicle_id, imei, company_code, lat, lon, speed, heading, altitude, acc_status, battery_level, satellites, gsm_signal, timestamp) 
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			VALUES (
+				$1, $2, $3, 
+				CASE WHEN $4::double precision != 0 THEN $4::double precision ELSE COALESCE((SELECT current_lat FROM %s.tm_vehicles WHERE id = $1), 0) END,
+				CASE WHEN $5::double precision != 0 THEN $5::double precision ELSE COALESCE((SELECT current_lon FROM %s.tm_vehicles WHERE id = $1), 0) END,
+				$6, $7, $8, $9, $10, $11, $12, $13
+			)
 			ON CONFLICT DO NOTHING
-		`, schema)
+		`, schema, schema, schema)
 
 		fuelQuery := fmt.Sprintf(`
 			INSERT INTO %s.th_fuel_logs 
 			(vehicle_id, fuel_level, volume_liters, temperature_c, lat, lon, timestamp)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			VALUES (
+				$1, $2, $3, $4, 
+				CASE WHEN $5::double precision != 0 THEN $5::double precision ELSE COALESCE((SELECT current_lat FROM %s.tm_vehicles WHERE id = $1), 0) END,
+				CASE WHEN $6::double precision != 0 THEN $6::double precision ELSE COALESCE((SELECT current_lon FROM %s.tm_vehicles WHERE id = $1), 0) END,
+				$7
+			)
 			ON CONFLICT DO NOTHING
-		`, schema)
+		`, schema, schema, schema)
 
 		updateVehicleQuery := fmt.Sprintf(`
 			UPDATE %s.tm_vehicles
