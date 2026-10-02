@@ -23,6 +23,12 @@ type DriverItem struct {
 	LicenseNumber *string    `json:"license_number,omitempty"`
 	LicenseType   *string    `json:"license_type,omitempty"`
 	LicenseExpiry *string    `json:"license_expiry,omitempty"`
+	KTPNumber     *string    `json:"ktp_number,omitempty"`
+	PlaceOfBirth  *string    `json:"place_of_birth,omitempty"`
+	DateOfBirth   *string    `json:"date_of_birth,omitempty"`
+	Address       *string    `json:"address,omitempty"`
+	Placement     *string    `json:"placement,omitempty"`
+	JoinDate      *string    `json:"join_date,omitempty"`
 	RFIDTag       *string    `json:"rfid_tag,omitempty"`
 	GroupID       *int64     `json:"group_id,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -82,7 +88,7 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	var drivers []DriverItem
 	for rows.Next() {
 		var d DriverItem
-		if err := rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt); err == nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate); err == nil {
 			drivers = append(drivers, d)
 		} else {
 			logger.Log.Error("Scan error", "err", err)
@@ -164,9 +170,9 @@ func (h *Handler) CreateDriver(w http.ResponseWriter, r *http.Request) {
 
 	var newID int64
 	err := router.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, license_expiry, rfid_tag, group_id)
-		VALUES ($1, $2, $3, $4, $5, CAST($6 AS DATE), $7, $8) RETURNING id
-	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID).Scan(&newID)
+		INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, license_expiry, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth, address, placement, join_date)
+		VALUES ($1, $2, $3, $4, $5, CAST($6 AS DATE), $7, $8, $9, $10, CAST($11 AS DATE), $12, $13, CAST($14 AS DATE)) RETURNING id
+	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate).Scan(&newID)
 	
 	if err != nil {
 		logger.Log.Error("Failed to create driver", "err", err)
