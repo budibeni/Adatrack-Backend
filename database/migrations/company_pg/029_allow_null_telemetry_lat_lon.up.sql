@@ -1,0 +1,2 @@
+ALTER TABLE th_telemetry_logs ALTER COLUMN lat DROP NOT NULL;
+ALTER TABLE th_telemetry_logs ALTER COLUMN lon DROP NOT NULL;
