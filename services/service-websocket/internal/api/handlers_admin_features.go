@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"backend/internal/dbclient"
 	"github.com/go-chi/chi/v5"
@@ -188,13 +189,14 @@ func (h *Handler) GetGlobalAuditLogs(w http.ResponseWriter, r *http.Request) {
 	var logs []map[string]interface{}
 	for rows.Next() {
 		var id int
-		var companyCode, action, createdAt string
+		var companyCode, action string
 		var actorEmail, actorRole, detail *string
+		var createdAt time.Time
 		if err := rows.Scan(&id, &companyCode, &actorEmail, &actorRole, &action, &detail, &createdAt); err != nil {
 			continue
 		}
 		logs = append(logs, map[string]interface{}{
-			"id": id, "company_code": companyCode, "actor_email": actorEmail, "actor_role": actorRole, "action": action, "detail": detail, "created_at": createdAt,
+			"id": id, "company_code": companyCode, "actor_email": actorEmail, "actor_role": actorRole, "action": action, "detail": detail, "created_at": createdAt.Format(time.RFC3339),
 		})
 	}
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": logs})
