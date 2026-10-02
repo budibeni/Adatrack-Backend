@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
-	"regexp"
 )
 
 func getDockerClient() *http.Client {
@@ -21,14 +21,14 @@ func getDockerClient() *http.Client {
 }
 
 type DockerContainer struct {
-	Id     string   `json:"Id"`
-	Names  []string `json:"Names"`
-	State  string   `json:"State"`
-	Status string   `json:"Status"`
+	Id     string            `json:"Id"`
+	Names  []string          `json:"Names"`
+	State  string            `json:"State"`
+	Status string            `json:"Status"`
+	Labels map[string]string `json:"Labels"`
 }
 
 func GetContainers() ([]ServiceInfo, error) {
-	uuidRe := regexp.MustCompile(`-[a-z0-9]{24}(?:-\d+)?$`)
 	client := getDockerClient()
 	resp, err := client.Get("http://localhost/v1.41/containers/json?all=true")
 	if err != nil {
@@ -40,30 +40,58 @@ func GetContainers() ([]ServiceInfo, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&containers); err != nil {
 		return nil, err
 	}
+	
+	// Dynamically discover our own docker compose project
+	// Hostname inside docker is typically the short container ID
+	hostname, _ := os.Hostname()
+	myProject := ""
+	
+	for _, c := range containers {
+		if hostname != "" && strings.HasPrefix(c.Id, hostname) {
+			myProject = c.Labels["com.docker.compose.project"]
+			if myProject != "" {
+				break
+			}
+		}
+	}
+	
+	// Fallback if not found (e.g. running binary outside docker)
+	if myProject == "" {
+		for _, c := range containers {
+			svc := c.Labels["com.docker.compose.service"]
+			if svc == "service-monitor" || svc == "service-websocket" || svc == "ingestion-tcp" {
+				myProject = c.Labels["com.docker.compose.project"]
+				if myProject != "" {
+					break
+				}
+			}
+		}
+	}
 
 	var services []ServiceInfo
 	for _, c := range containers {
-		name := ""
-		if len(c.Names) > 0 {
-			name = strings.TrimPrefix(c.Names[0], "/")
-		}
+		proj := c.Labels["com.docker.compose.project"]
 		
-		if !strings.Contains(name, "adatrack") {
+		// If it doesn't belong to our project, hide it
+		if myProject != "" && proj != myProject {
 			continue
 		}
+		// If it's not a compose container at all, hide it
+		if proj == "" {
+			continue
+		}
+
+		// Use the clean compose service name instead of the messy Coolify container name
+		name := c.Labels["com.docker.compose.service"]
+		if name == "" {
+			if len(c.Names) > 0 {
+				name = strings.TrimPrefix(c.Names[0], "/")
+			}
+		}
+		
 		if strings.Contains(name, "migrate") || strings.Contains(name, "minio-setup") {
 			continue
 		}
-		// Strip Coolify UUID suffix (e.g. -emchckvfnd...)
-		name = uuidRe.ReplaceAllString(name, "")
-		
-		// Strip any preceding ID before adatrack_ if it exists
-		if idx := strings.Index(name, "adatrack_"); idx >= 0 {
-			name = name[idx:]
-		}
-		
-		// Strip the adatrack_ prefix to make the UI look cleaner
-		name = strings.TrimPrefix(name, "adatrack_")
 		
 		services = append(services, ServiceInfo{
 			ID:     c.Id[:12],
