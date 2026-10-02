@@ -194,7 +194,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(`
 		SELECT v.id, v.imei, COALESCE(v.plate_number, ''), COALESCE(v.make, ''), COALESCE(v.model, ''), v.status, COALESCE(v.odometer_km, 0), COALESCE(v.engine_hours, 0), v.current_lat, v.current_lon, v.last_seen_at, gv.group_id, g.name,
 		       v.vehicle_name, v.category, v.year, v.fuel_type, v.color, v.fuel_capacity, v.stnk_expiry, v.kir_expiry, v.notes, v.gps_install_date,
-		       dev.device_brand, dev.device_model, dev.sim_number
+		       dev.device_brand, dev.device_model, dev.sim_number, v.current_address
 		FROM %s.tm_vehicles v
 		LEFT JOIN %s.tm_group_vehicles gv ON v.id = gv.vehicle_id
 		LEFT JOIN %s.tm_groups g ON gv.group_id = g.id
@@ -217,11 +217,11 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		var lat, lon *float64
 		var lastSeen, stnkExpiry, kirExpiry, gpsInstallDate *time.Time
 		var groupId, year *int
-		var groupName, vehicleName, category, fuelType, color, notes, deviceBrand, deviceModel, simNumber *string
+		var groupName, vehicleName, category, fuelType, color, notes, deviceBrand, deviceModel, simNumber, currentAddress *string
 		var fuelCapacity *float64
 		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs, &lat, &lon, &lastSeen, &groupId, &groupName,
 			&vehicleName, &category, &year, &fuelType, &color, &fuelCapacity, &stnkExpiry, &kirExpiry, &notes, &gpsInstallDate,
-			&deviceBrand, &deviceModel, &simNumber); err == nil {
+			&deviceBrand, &deviceModel, &simNumber, &currentAddress); err == nil {
 			vData := map[string]interface{}{
 				"id":           id,
 				"imei":         imei,
@@ -242,6 +242,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 				"device_type":  deviceModel,
 				"sim_number":   simNumber,
 			}
+			if currentAddress != nil { vData["address"] = *currentAddress }
 			if stnkExpiry != nil { vData["stnk_expiry"] = stnkExpiry.Format("2006-01-02") }
 			if kirExpiry != nil { vData["kir_expiry"] = kirExpiry.Format("2006-01-02") }
 			if gpsInstallDate != nil { vData["gps_install_date"] = gpsInstallDate.Format("2006-01-02") }
@@ -323,16 +324,21 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 		Satellites  *int     `json:"satellites,omitempty"`
 		Altitude    *float64 `json:"altitude,omitempty"`
 		GSMSignal   *int     `json:"gsm_signal,omitempty"`
+		Address     *string  `json:"address,omitempty"`
 	}
 
 	var lastSeen *time.Time
+	var currentAddress *string
 	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0), current_lat, current_lon, last_seen_at
+		SELECT id, imei, COALESCE(plate_number, ''), COALESCE(make, ''), COALESCE(model, ''), status, COALESCE(odometer_km, 0), COALESCE(engine_hours, 0), current_lat, current_lon, last_seen_at, current_address
 		FROM %s.tm_vehicles WHERE id = $1 AND deleted_at IS NULL
-	`, schema), id).Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours, &v.Lat, &v.Lon, &lastSeen)
+	`, schema), id).Scan(&v.ID, &v.IMEI, &v.PlateNumber, &v.Make, &v.Model, &v.Status, &v.OdometerKM, &v.EngineHours, &v.Lat, &v.Lon, &lastSeen, &currentAddress)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "VEHICLE_NOT_FOUND", fmt.Sprintf("Vehicle %d not found", id))
 		return
+	}
+	if currentAddress != nil {
+		v.Address = currentAddress
 	}
 	if lastSeen != nil {
 		// Just a placeholder since the struct doesn't have a Timestamp field, but let's assume if we need to return it we can.
@@ -357,6 +363,9 @@ func (h *Handler) GetVehicle(w http.ResponseWriter, r *http.Request) {
 			v.Satellites = &state.Satellites
 			v.Altitude = &state.Altitude
 			v.GSMSignal = &state.GSMSignal
+			if state.Address != "" {
+				v.Address = &state.Address
+			}
 		}
 	}
 
