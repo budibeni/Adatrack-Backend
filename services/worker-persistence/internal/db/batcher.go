@@ -44,8 +44,8 @@ func BatchInsert(ctx context.Context, payloads []models.TelemetryPayload) error 
 		updateVehicleQuery := fmt.Sprintf(`
 			UPDATE %s.tm_vehicles
 			SET 
-				current_lat = CASE WHEN $1 != 0 THEN $1 ELSE current_lat END,
-				current_lon = CASE WHEN $2 != 0 THEN $2 ELSE current_lon END,
+				current_lat = CASE WHEN $1::double precision != 0 THEN $1::double precision ELSE current_lat END,
+				current_lon = CASE WHEN $2::double precision != 0 THEN $2::double precision ELSE current_lon END,
 				current_speed = $3,
 				last_seen_at = $4
 			WHERE id = $5 AND (last_seen_at IS NULL OR last_seen_at <= $4)
