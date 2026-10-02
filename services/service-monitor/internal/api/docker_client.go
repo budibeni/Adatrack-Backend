@@ -48,14 +48,17 @@ func GetContainers() ([]ServiceInfo, error) {
 			name = strings.TrimPrefix(c.Names[0], "/")
 		}
 		
-		if strings.HasPrefix(name, "coolify") || strings.Contains(name, "migrate") || strings.Contains(name, "minio-setup") {
+		if !strings.Contains(name, "adatrack") {
+			continue
+		}
+		if strings.Contains(name, "migrate") || strings.Contains(name, "minio-setup") {
 			continue
 		}
 		// Strip Coolify UUID suffix (e.g. -emchckvfnd...)
 		name = uuidRe.ReplaceAllString(name, "")
 		
 		// Strip any preceding ID before adatrack_ if it exists
-		if idx := strings.Index(name, "adatrack_"); idx > 0 {
+		if idx := strings.Index(name, "adatrack_"); idx >= 0 {
 			name = name[idx:]
 		}
 		
