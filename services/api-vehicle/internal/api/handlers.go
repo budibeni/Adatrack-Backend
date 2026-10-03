@@ -85,18 +85,19 @@ type VehicleRequest struct {
 	PlateNumber    string   `json:"plate_number" validate:"required"`
 	Make           string   `json:"make"`
 	Model          string   `json:"model"`
-	DriverID       *int     `json:"driver_id,omitempty"`
-	GroupID        *int     `json:"group_id,omitempty"`
-	VehicleName    *string  `json:"vehicle_name,omitempty"`
-	Category       *string  `json:"category,omitempty"`
-	Year           *int     `json:"year,omitempty"`
-	FuelType       *string  `json:"fuel_type,omitempty"`
-	Color          *string  `json:"color,omitempty"`
-	FuelCapacity   *float64 `json:"fuel_capacity,omitempty"`
-	STNKExpiry     *string  `json:"stnk_expiry,omitempty"`
-	KIRExpiry      *string  `json:"kir_expiry,omitempty"`
-	Notes          *string  `json:"notes,omitempty"`
-	GPSInstallDate *string  `json:"gps_install_date,omitempty"`
+	DriverID       *int     `json:"driver_id"`
+	GroupID        *int     `json:"group_id"`
+	VehicleName    *string  `json:"vehicle_name"`
+	Category       *string  `json:"category"`
+	Year           *int     `json:"year"`
+	FuelType       *string  `json:"fuel_type"`
+	Color          *string  `json:"color"`
+	FuelCapacity   *float64 `json:"fuel_capacity"`
+	STNKExpiry     *string  `json:"stnk_expiry"`
+	KIRExpiry      *string  `json:"kir_expiry"`
+	Notes          *string  `json:"notes"`
+	GPSInstallDate *string  `json:"gps_install_date"`
+	InternalID     *string  `json:"internal_id"`
 }
 
 func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
@@ -138,9 +139,9 @@ func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
 
 	var vehicleID int
 	err = tx.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_vehicles (imei, plate_number, make, model, vehicle_name, category, year, fuel_type, color, fuel_capacity, stnk_expiry, kir_expiry, notes, gps_install_date, status) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11::text, '')::date, NULLIF($12::text, '')::date, $13, NULLIF($14::text, '')::date, 'active') RETURNING id`, schema), 
-		req.IMEI, req.PlateNumber, req.Make, req.Model, req.VehicleName, req.Category, req.Year, req.FuelType, req.Color, req.FuelCapacity, req.STNKExpiry, req.KIRExpiry, req.Notes, req.GPSInstallDate).Scan(&vehicleID)
+		INSERT INTO %s.tm_vehicles (imei, plate_number, make, model, vehicle_name, category, year, fuel_type, color, fuel_capacity, stnk_expiry, kir_expiry, notes, gps_install_date, internal_id, status) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11::text, '')::date, NULLIF($12::text, '')::date, $13, NULLIF($14::text, '')::date, $15, 'active') RETURNING id`, schema), 
+		req.IMEI, req.PlateNumber, req.Make, req.Model, req.VehicleName, req.Category, req.Year, req.FuelType, req.Color, req.FuelCapacity, req.STNKExpiry, req.KIRExpiry, req.Notes, req.GPSInstallDate, req.InternalID).Scan(&vehicleID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to insert vehicle")
 		return
@@ -163,6 +164,16 @@ func (h *Handler) CreateVehicle(w http.ResponseWriter, r *http.Request) {
 		`, schema), *req.GroupID, vehicleID)
 		if err != nil {
 			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to map vehicle to group")
+			return
+		}
+	}
+
+	if req.DriverID != nil {
+		_, err = tx.Exec(r.Context(), fmt.Sprintf(`
+			INSERT INTO %s.tm_driver_vehicles (driver_id, vehicle_id, assigned_at) VALUES ($1, $2, NOW())
+		`, schema), *req.DriverID, vehicleID)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to map vehicle to driver")
 			return
 		}
 	}
@@ -193,14 +204,16 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 
 	query := fmt.Sprintf(`
 		SELECT v.id, v.imei, COALESCE(v.plate_number, ''), COALESCE(v.make, ''), COALESCE(v.model, ''), v.status, COALESCE(v.odometer_km, 0), COALESCE(v.engine_hours, 0), v.current_lat, v.current_lon, v.last_seen_at, gv.group_id, g.name,
-		       v.vehicle_name, v.category, v.year, v.fuel_type, v.color, v.fuel_capacity, v.stnk_expiry, v.kir_expiry, v.notes, v.gps_install_date,
-		       dev.device_brand, dev.device_model, dev.sim_number, v.current_address
+		       v.vehicle_name, v.category, v.year, v.fuel_type, v.color, v.fuel_capacity, v.stnk_expiry::text, v.kir_expiry::text, v.notes, v.gps_install_date::text,
+		       dev.device_brand, dev.device_model, dev.sim_number, v.current_address, v.internal_id, dv.driver_id, dr.name
 		FROM %s.tm_vehicles v
 		LEFT JOIN %s.tm_group_vehicles gv ON v.id = gv.vehicle_id
 		LEFT JOIN %s.tm_groups g ON gv.group_id = g.id
 		LEFT JOIN adatrack_gps_master.tm_gps_devices dev ON v.imei = dev.imei
+		LEFT JOIN %s.tm_driver_vehicles dv ON v.id = dv.vehicle_id
+		LEFT JOIN %s.tm_drivers dr ON dv.driver_id = dr.id
 		WHERE v.deleted_at IS NULL ORDER BY v.id ASC
-	`, schema, schema, schema)
+	`, schema, schema, schema, schema, schema)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
 	if err != nil {
@@ -408,38 +421,35 @@ func (h *Handler) UpdateVehicle(w http.ResponseWriter, r *http.Request) {
 		    plate_number = COALESCE(NULLIF($2, ''), plate_number),
 		    make = COALESCE(NULLIF($3, ''), make),
 		    model = COALESCE(NULLIF($4, ''), model),
-		    vehicle_name = COALESCE($5, vehicle_name),
-		    category = COALESCE($6, category),
-		    year = COALESCE($7, year),
-		    fuel_type = COALESCE($8, fuel_type),
-		    color = COALESCE($9, color),
-		    fuel_capacity = COALESCE($10, fuel_capacity),
-		    stnk_expiry = COALESCE(NULLIF($11::text, '')::date, stnk_expiry),
-		    kir_expiry = COALESCE(NULLIF($12::text, '')::date, kir_expiry),
-		    notes = COALESCE($13, notes),
-		    gps_install_date = COALESCE(NULLIF($14::text, '')::date, gps_install_date)
-		WHERE id = $15 AND deleted_at IS NULL
+		    vehicle_name = $5,
+		    category = $6,
+		    year = $7,
+		    fuel_type = $8,
+		    color = $9,
+		    fuel_capacity = $10,
+		    stnk_expiry = NULLIF($11::text, '')::date,
+		    kir_expiry = NULLIF($12::text, '')::date,
+		    notes = $13,
+		    gps_install_date = NULLIF($14::text, '')::date,
+		    internal_id = $15
+		WHERE id = $16 AND deleted_at IS NULL
 	`, schema), req.IMEI, req.PlateNumber, req.Make, req.Model, 
 	req.VehicleName, req.Category, req.Year, req.FuelType, req.Color, 
-	req.FuelCapacity, req.STNKExpiry, req.KIRExpiry, req.Notes, req.GPSInstallDate, id)
+	req.FuelCapacity, req.STNKExpiry, req.KIRExpiry, req.Notes, req.GPSInstallDate, req.InternalID, id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update vehicle")
 		return
 	}
 
+	// Since we removed omitempty, nil means explicitly clear.
+	dbclient.Pool.Exec(r.Context(), fmt.Sprintf("DELETE FROM %s.tm_group_vehicles WHERE vehicle_id = $1", schema), id)
 	if req.GroupID != nil {
-		_, err = dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
-			DELETE FROM %s.tm_group_vehicles WHERE vehicle_id = $1;
-			INSERT INTO %s.tm_group_vehicles (group_id, vehicle_id) VALUES ($2, $1);
-		`, schema, schema), id, *req.GroupID)
-		if err != nil {
-			logger.Log.Warn("Failed to update vehicle group mapping", "err", err)
-		}
-	} else {
-		// If group_id is explicitly sent as null (unassigned)
-		// but since it's omitempty, we might not want to delete it if not provided.
-		// For now, if the frontend always sends group_id (even if null), we could delete.
-		// If it's omitempty, we'll assume a missing GroupID means no change to avoid wiping it.
+		dbclient.Pool.Exec(r.Context(), fmt.Sprintf("INSERT INTO %s.tm_group_vehicles (group_id, vehicle_id) VALUES ($2, $1)", schema), id, *req.GroupID)
+	}
+
+	dbclient.Pool.Exec(r.Context(), fmt.Sprintf("DELETE FROM %s.tm_driver_vehicles WHERE vehicle_id = $1", schema), id)
+	if req.DriverID != nil {
+		dbclient.Pool.Exec(r.Context(), fmt.Sprintf("INSERT INTO %s.tm_driver_vehicles (driver_id, vehicle_id, assigned_at) VALUES ($2, $1, NOW())", schema), id, *req.DriverID)
 	}
 
 	h.auditLog(r.Context(), claims.CompanyCode, "VEHICLE_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Vehicle %d updated", id))

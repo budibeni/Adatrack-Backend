@@ -134,51 +134,63 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if strings.ToUpper(req.CompanyCode) == "" {
-		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL ")
+		rows, err := dbclient.Pool.Query(r.Context(), "SELECT code, name FROM adatrack_gps_master.tm_companies WHERE deleted_at IS NULL")
 		if err != nil {
 			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to query companies")
 			return
 		}
 		
-		var codes []string
+		type CompanyInfo struct {
+			Code string `json:"code"`
+			Name string `json:"name"`
+		}
+		var allComps []CompanyInfo
 		for rows.Next() {
-			var code string
-			if err := rows.Scan(&code); err == nil {
-				codes = append(codes, code)
+			var comp CompanyInfo
+			if err := rows.Scan(&comp.Code, &comp.Name); err == nil {
+				allComps = append(allComps, comp)
 			}
 		}
 		rows.Close()
 
-		if len(codes) > 0 {
+		if len(allComps) > 0 {
 			var queryParts []string
-			for _, code := range codes {
-				schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(code))
-				queryParts = append(queryParts, fmt.Sprintf("SELECT '%s' as company_code FROM %s.tm_user_company_access WHERE user_id = $1 AND deleted_at IS NULL AND is_active = true", code, schema))
+			for _, comp := range allComps {
+				schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(comp.Code))
+				queryParts = append(queryParts, fmt.Sprintf("SELECT '%s' as company_code FROM %s.tm_user_company_access WHERE user_id = $1 AND deleted_at IS NULL AND is_active = true", comp.Code, schema))
 			}
 			
 			query := strings.Join(queryParts, " UNION ALL ")
 			rowsAccess, err := dbclient.Pool.Query(r.Context(), query, userID)
 			if err == nil {
-				var userCompanies []string
+				var userCompanies []CompanyInfo
 				for rowsAccess.Next() {
-					var comp string
-					if err := rowsAccess.Scan(&comp); err == nil {
+					var compCode string
+					if err := rowsAccess.Scan(&compCode); err == nil {
 						found := false
 						for _, c := range userCompanies {
-							if c == comp {
+							if c.Code == compCode {
 								found = true
 								break
 							}
 						}
 						if !found {
-							userCompanies = append(userCompanies, comp)
+							// Find the name
+							name := compCode
+							for _, c := range allComps {
+								if c.Code == compCode {
+									name = c.Name
+									break
+								}
+							}
+							userCompanies = append(userCompanies, CompanyInfo{Code: compCode, Name: name})
 						}
 					}
 				}
 				rowsAccess.Close()
 
 				if len(userCompanies) == 1 {
-					req.CompanyCode = strings.ToUpper(userCompanies[0])
+					req.CompanyCode = strings.ToUpper(userCompanies[0].Code)
 				} else if len(userCompanies) > 1 {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
