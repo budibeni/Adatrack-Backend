@@ -1,0 +1,3 @@
+ALTER TABLE tm_rfid_cards DROP COLUMN IF EXISTS type;
+ALTER TABLE tm_rfid_cards DROP COLUMN IF EXISTS name;
+DROP TABLE IF EXISTS tm_personel CASCADE;

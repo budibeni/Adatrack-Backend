@@ -93,6 +93,23 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Get("/vehicles/{id}/fuel/history", h.GetFuelHistory)
 		r.Get("/vehicles/{id}/media", h.ListMediaEvents)
 
+		
+			// Access (B12)
+						// Personel
+			r.Get("/personel", h.ListPersonel)
+			r.Post("/personel", h.CreatePersonel)
+			r.Put("/personel/{id}", h.UpdatePersonel)
+			r.Delete("/personel/{id}", h.DeletePersonel)
+
+			// Cards
+			r.Get("/cards", h.ListCards)
+			r.Post("/cards", h.CreateCard)
+			r.Put("/cards/{id}", h.UpdateCard)
+			r.Delete("/cards/{id}", h.DeleteCard)
+
+			// Access Logs
+			r.Get("/access-logs", h.ListAccessLogs)
+
 		// Media
 		r.Post("/media/events", h.CreateMediaEvent)
 		r.Post("/media/events/{id}/complete", h.CompleteMediaEvent)
@@ -104,7 +121,6 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRoleMiddleware("admin", "superadmin"))
 			
-			// Access (B12)
 			r.Get("/access/menu", h.GetAccessibleMenus)
 			r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
 			r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
