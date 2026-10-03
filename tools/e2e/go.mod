@@ -1,4 +1,4 @@
-module ajb_gps/tools/e2e
+module backend/tools/e2e
 
 go 1.25.0
 
