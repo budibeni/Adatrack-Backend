@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"backend/internal/dbclient"
+	"strconv"
 	"time"
 
 	"backend/internal/auth"
-	"backend/internal/dbclient"
 	"backend/internal/tenant"
 	"github.com/go-chi/chi/v5"
 )
@@ -273,4 +274,87 @@ func (h *Handler) ListIntegrations(w http.ResponseWriter, r *http.Request) {
 		items = append(items, i)
 	}
 	h.writeJSON(w, http.StatusOK, items)
+}
+
+func (h *Handler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	
+	var g Group
+	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_BODY", "Invalid JSON body")
+		return
+	}
+	
+	if g.Type == "" {
+		g.Type = "vehicle"
+	}
+	
+	query := fmt.Sprintf(`INSERT INTO %s.tm_groups (name, description, group_type, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id`, schema)
+	err := dbclient.Pool.QueryRow(r.Context(), query, g.Name, g.Description, g.Type).Scan(&g.ID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	
+	h.writeJSON(w, http.StatusCreated, g)
+}
+
+func (h *Handler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_ID", "Invalid group ID")
+		return
+	}
+	
+	var g Group
+	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_BODY", "Invalid JSON body")
+		return
+	}
+	
+	query := fmt.Sprintf(`UPDATE %s.tm_groups SET name = $1, description = $2, group_type = $3, updated_at = NOW() WHERE id = $4 AND deleted_at IS NULL`, schema)
+	res, err := dbclient.Pool.Exec(r.Context(), query, g.Name, g.Description, g.Type, id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	
+	rowsAffected := res.RowsAffected()
+	if rowsAffected == 0 {
+		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Group not found")
+		return
+	}
+	
+	g.ID = id
+	h.writeJSON(w, http.StatusOK, g)
+}
+
+func (h *Handler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_ID", "Invalid group ID")
+		return
+	}
+	
+	query := fmt.Sprintf(`UPDATE %s.tm_groups SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`, schema)
+	res, err := dbclient.Pool.Exec(r.Context(), query, id)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
+		return
+	}
+	
+	rowsAffected := res.RowsAffected()
+	if rowsAffected == 0 {
+		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Group not found")
+		return
+	}
+	
+	w.WriteHeader(http.StatusNoContent)
 }

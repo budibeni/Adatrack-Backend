@@ -123,6 +123,9 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 			
 			// Enterprise Modules Lists (B12)
 			r.Get("/groups", h.ListGroups)
+			r.Post("/groups", h.CreateGroup)
+			r.Put("/groups/{id}", h.UpdateGroup)
+			r.Delete("/groups/{id}", h.DeleteGroup)
 			r.Get("/assets", h.ListAssets)
 			r.Get("/organizations", h.ListOrganizations)
 			r.Get("/integrations", h.ListIntegrations)
