@@ -32,9 +32,15 @@ type Driver struct {
 	Email         string    `json:"email,omitempty"`
 	LicenseNumber string    `json:"license_number,omitempty"`
 	LicenseType   string    `json:"license_type,omitempty"`
-	LicenseExpiry time.Time `json:"license_expiry,omitempty"`
+	LicenseExpiry *string   `json:"license_expiry,omitempty"`
 	RFIDTag       string    `json:"rfid_tag,omitempty"`
 	GroupID       *int      `json:"group_id,omitempty"`
+	KTPNumber     *string   `json:"ktp_number,omitempty"`
+	PlaceOfBirth  *string   `json:"place_of_birth,omitempty"`
+	DateOfBirth   *string   `json:"date_of_birth,omitempty"`
+	Address       *string   `json:"address,omitempty"`
+	Placement     *string   `json:"placement,omitempty"`
+	JoinDate      *string   `json:"join_date,omitempty"`
 }
 
 type ShareLink struct {
@@ -95,7 +101,7 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	var items []Driver
 	for rows.Next() {
 		var d Driver
-		rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.RFIDTag)
+		rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.RFIDTag, &d.GroupID, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.LicenseExpiry)
 		items = append(items, d)
 	}
 	h.writeJSON(w, http.StatusOK, items)
@@ -109,8 +115,8 @@ func (h *Handler) CreateDriver(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		return
 	}
-	query := fmt.Sprintf(`INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, rfid_tag) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, schema)
-	err := dbclient.Pool.QueryRow(r.Context(), query, d.Name, d.Phone, d.Email, d.LicenseNumber, d.LicenseType, d.RFIDTag).Scan(&d.ID)
+	query := fmt.Sprintf(`INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth, address, placement, join_date, license_expiry) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::DATE, $11, $12, NULLIF($13, '')::DATE, NULLIF($14, '')::DATE) RETURNING id`, schema)
+	err := dbclient.Pool.QueryRow(r.Context(), query, d.Name, d.Phone, d.Email, d.LicenseNumber, d.LicenseType, d.RFIDTag, d.GroupID, d.KTPNumber, d.PlaceOfBirth, d.DateOfBirth, d.Address, d.Placement, d.JoinDate, d.LicenseExpiry).Scan(&d.ID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
 		return
