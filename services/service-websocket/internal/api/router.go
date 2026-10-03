@@ -69,6 +69,9 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/admin/users/{id}/reset-password", h.AdminResetPassword)
 			
 
+			// User endpoints
+			r.Get("/users/me/modules", h.GetMyModules)
+
 			// Tenant endpoints
 			r.Get("/gps/available", h.GetAvailableGPSDevices)
 			r.Get("/vehicles", h.ListVehicles)

@@ -117,12 +117,14 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Delete("/media/{id}", h.DeleteMediaEvent)
 		r.Post("/media/{id}/restore", h.RestoreMediaEvent)
 
+		// Menus for current user
+		r.Get("/access/menu", h.GetAccessibleMenus)
+
 		// Enterprise Modules Lists (B12) Admin Only
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRoleMiddleware("admin", "superadmin"))
 			
-			r.Get("/access/menu", h.GetAccessibleMenus)
-			r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
+						r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
 			r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
 
 			// Drivers (B12)

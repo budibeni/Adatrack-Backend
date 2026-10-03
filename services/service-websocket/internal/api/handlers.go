@@ -252,7 +252,27 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		redclient.Client.Set(r.Context(), "refresh_token:"+refreshToken, string(claimsData), 7*24*time.Hour)
 	}
 
-	h.auditLog(r.Context(), req.CompanyCode, "LOGIN_SUCCESS", "success", userID, req.Email, role, "Login successful")
+	
+	// Fetch tenant modules
+	var tenantModules []string
+	moduleQuery := fmt.Sprintf(`
+		SELECT m.code
+		FROM adatrack_gps_master.tm_modules m
+		JOIN %s.tm_module_access a ON m.id = a.module_id
+		WHERE a.enabled = true AND a.deleted_at IS NULL AND m.enabled = true
+	`, schema)
+	rowsMod, errMod := dbclient.Pool.Query(r.Context(), moduleQuery)
+	if errMod == nil {
+		for rowsMod.Next() {
+			var mCode string
+			if err := rowsMod.Scan(&mCode); err == nil {
+				tenantModules = append(tenantModules, mCode)
+			}
+		}
+		rowsMod.Close()
+	}
+
+h.auditLog(r.Context(), req.CompanyCode, "LOGIN_SUCCESS", "success", userID, req.Email, role, "Login successful")
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "success",
@@ -264,6 +284,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			"email":                req.Email,
 			"name":                 func() string { if fullName != nil { return *fullName }; return "" }(),
 			"company_code":         req.CompanyCode,
+			"modules":              tenantModules,
 		},
 	})
 }
@@ -893,4 +914,50 @@ func (h *Handler) GetAvailableGPSDevices(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(devices)
+}
+
+
+func (h *Handler) GetMyModules(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	query := fmt.Sprintf(`
+		SELECT m.code
+		FROM adatrack_gps_master.tm_modules m
+		JOIN %s.tm_module_access a ON m.id = a.module_id
+		WHERE a.enabled = true AND a.deleted_at IS NULL AND m.enabled = true
+	`, schema)
+
+	rows, err := dbclient.Pool.Query(ctx, query)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch tenant modules")
+		return
+	}
+	defer rows.Close()
+
+	var modules []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err == nil {
+			modules = append(modules, code)
+		}
+	}
+
+	// Always include 'main' and 'admin' by default as a fallback if not explicitly in db (or if desired)
+	// But let's just return what is in the db exactly.
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"modules": modules,
+		},
+	})
 }
