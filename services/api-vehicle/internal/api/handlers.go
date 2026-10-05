@@ -454,9 +454,24 @@ func (h *Handler) UpdateVehicle(w http.ResponseWriter, r *http.Request) {
 		dbclient.Pool.Exec(r.Context(), fmt.Sprintf("INSERT INTO %s.tm_group_vehicles (group_id, vehicle_id) VALUES ($2, $1)", schema), id, *req.GroupID)
 	}
 
-	dbclient.Pool.Exec(r.Context(), fmt.Sprintf("DELETE FROM %s.tm_driver_vehicles WHERE vehicle_id = $1", schema), id)
-	if req.DriverID != nil {
-		dbclient.Pool.Exec(r.Context(), fmt.Sprintf("INSERT INTO %s.tm_driver_vehicles (driver_id, vehicle_id, assigned_at) VALUES ($2, $1, NOW())", schema), id, *req.DriverID)
+	// Check current driver
+	var currentDriverID *int
+	dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf("SELECT driver_id FROM %s.tm_driver_vehicles WHERE vehicle_id = $1 AND unassigned_at IS NULL LIMIT 1", schema), id).Scan(&currentDriverID)
+
+	driverChanged := false
+	if currentDriverID == nil && req.DriverID != nil {
+		driverChanged = true
+	} else if currentDriverID != nil && req.DriverID == nil {
+		driverChanged = true
+	} else if currentDriverID != nil && req.DriverID != nil && *currentDriverID != *req.DriverID {
+		driverChanged = true
+	}
+
+	if driverChanged {
+		dbclient.Pool.Exec(r.Context(), fmt.Sprintf("UPDATE %s.tm_driver_vehicles SET unassigned_at = CURRENT_TIMESTAMP WHERE vehicle_id = $1 AND unassigned_at IS NULL", schema), id)
+		if req.DriverID != nil {
+			dbclient.Pool.Exec(r.Context(), fmt.Sprintf("INSERT INTO %s.tm_driver_vehicles (driver_id, vehicle_id, assigned_at) VALUES ($2, $1, CURRENT_TIMESTAMP)", schema), id, *req.DriverID)
+		}
 	}
 
 	h.auditLog(r.Context(), claims.CompanyCode, "VEHICLE_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Vehicle %d updated", id))
