@@ -44,6 +44,8 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			// Platform endpoints
 			r.With(auth.EnsurePlatformAdminMiddleware).Post("/companies", h.CreateCompany)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/dashboard", h.GetDashboardStats)
+			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/settings/smtp", h.GetGlobalSMTPSettings)
+			r.With(auth.EnsurePlatformAdminMiddleware).Put("/admin/settings/smtp", h.UpdateGlobalSMTPSettings)
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/global-devices", h.GetGlobalDevices)
 
 			r.With(auth.EnsurePlatformAdminMiddleware).Get("/admin/sim-cards", h.GetSimCards)

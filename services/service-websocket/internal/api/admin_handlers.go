@@ -647,3 +647,84 @@ func (h *Handler) AssignGPSDevice(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "GPS device assigned successfully"})
 }
+
+func (h *Handler) GetGlobalSMTPSettings(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+
+	if claims.Role != "SuperAdmin" {
+		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only SuperAdmin can view global settings")
+		return
+	}
+
+	var val []byte
+	err := dbclient.Pool.QueryRow(r.Context(), "SELECT setting_value FROM adatrack_gps_master.tm_global_settings WHERE setting_key = 'smtp_config'").Scan(&val)
+	if err != nil {
+		h.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "success",
+			"data": map[string]interface{}{
+				"host":       "",
+				"port":       587,
+				"username":   "",
+				"password":   "",
+				"from_email": "",
+				"from_name":  "Adatrack System",
+			},
+		})
+		return
+	}
+
+	var data map[string]interface{}
+	json.Unmarshal(val, &data)
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data":   data,
+	})
+}
+
+func (h *Handler) UpdateGlobalSMTPSettings(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+
+	if claims.Role != "SuperAdmin" {
+		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only SuperAdmin can update global settings")
+		return
+	}
+
+	var payload struct {
+		Host      string `json:"host"`
+		Port      int    `json:"port"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+		FromEmail string `json:"from_email"`
+		FromName  string `json:"from_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
+		return
+	}
+
+	valBytes, _ := json.Marshal(payload)
+
+	_, err := dbclient.Pool.Exec(r.Context(), `
+		INSERT INTO adatrack_gps_master.tm_global_settings (setting_key, setting_value, updated_at)
+		VALUES ('smtp_config', $1, NOW())
+		ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value, updated_at = NOW()
+	`, string(valBytes))
+
+	if err != nil {
+		logger.Log.Error("Failed to update global SMTP settings", "err", err)
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update global SMTP settings")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
+}

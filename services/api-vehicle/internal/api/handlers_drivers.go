@@ -1,6 +1,10 @@
 package api
 
 import (
+	"crypto/rand"
+	"golang.org/x/crypto/bcrypt"
+	"backend/internal/mailer"
+
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -34,6 +38,7 @@ type DriverItem struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	AssignedVehicle *int64   `json:"assigned_vehicle_id,omitempty"`
+	CreateUserAccount *bool  `json:"create_user_account,omitempty"`
 }
 
 func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +137,7 @@ func (h *Handler) GetDriver(w http.ResponseWriter, r *http.Request) {
 	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate)
 	
 	if err != nil {
-		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", fmt.Sprintf("Driver with ID %d not found", driverID))
+		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", fmt.Sprintf("Driver with ID %d not found: %v", driverID, err))
 		return
 	}
 	
@@ -182,6 +187,34 @@ func (h *Handler) CreateDriver(w http.ResponseWriter, r *http.Request) {
 	
 	req.ID = newID
 	h.auditLog(r.Context(), claims.CompanyCode, "CREATE_DRIVER", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Created driver %d", newID))
+
+	if req.CreateUserAccount != nil && *req.CreateUserAccount {
+		if req.Email != nil && *req.Email != "" {
+			b := make([]byte, 4)
+			rand.Read(b)
+			plainPwd := fmt.Sprintf("%x", b)
+			
+			hash, _ := bcrypt.GenerateFromPassword([]byte(plainPwd), 12)
+			
+			var newUserID int64
+			errAcc := dbclient.Pool.QueryRow(r.Context(), `
+				INSERT INTO adatrack_gps_master.tm_users (email, password_hash, full_name, is_active, must_change_password)
+				VALUES ($1, $2, $3, true, true)
+				RETURNING id
+			`, *req.Email, string(hash), req.Name).Scan(&newUserID)
+			
+			if errAcc == nil {
+				dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+					INSERT INTO %s.tm_user_company_access (user_id, role_code, is_active)
+					VALUES ($1, 'DRIVER', true)
+				`, schema), newUserID)
+				
+				mailer.SendEmail(r.Context(), []string{*req.Email}, "Informasi Akun Driver Adatrack", fmt.Sprintf("Halo %s,<br/><br/>Akun aplikasi driver Anda telah dibuat.<br/>Gunakan email ini dan password sementara berikut untuk login: <b>%s</b><br/><br/>Harap segera ubah password Anda saat login pertama.", req.Name, plainPwd))
+			} else {
+				logger.Log.Error("Failed to auto-create user account", "err", errAcc)
+			}
+		}
+	}
 
 	h.writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"status": "success",
