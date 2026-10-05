@@ -65,17 +65,17 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	
 	if search != "" {
 		args = append(args, "%"+search+"%")
-		queryWhere += fmt.Sprintf(" AND (name ILIKE $%d OR email ILIKE $%d OR phone ILIKE $%d)", len(args), len(args), len(args))
+		queryWhere += fmt.Sprintf(" AND (d.name ILIKE $%d OR d.email ILIKE $%d OR d.phone ILIKE $%d)", len(args), len(args), len(args))
 	}
 
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.tm_drivers %s", schema, queryWhere)
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.tm_drivers d d %s", schema, queryWhere)
 	
 	args = append(args, limit, offset)
 	query := fmt.Sprintf(`
-		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at, ktp_number, place_of_birth, CAST(date_of_birth AS TEXT), address, placement, CAST(join_date AS TEXT)
-		FROM %s.tm_drivers
+		SELECT d.id, d.name, d.phone, d.email, d.license_number, d.license_type, CAST(d.license_expiry AS TEXT), d.rfid_tag, d.group_id, d.created_at, d.updated_at, d.ktp_number, d.place_of_birth, CAST(d.date_of_birth AS TEXT), d.address, d.placement, CAST(d.join_date AS TEXT), (SELECT vehicle_id FROM %[1]s.tm_driver_vehicles v WHERE v.driver_id = d.id AND v.unassigned_at IS NULL ORDER BY v.assigned_at DESC LIMIT 1) as assigned_vehicle_id
+		FROM %[1]s.tm_drivers d
 		%s
-		ORDER BY id ASC LIMIT $%d OFFSET $%d
+		ORDER BY d.id ASC LIMIT $%d OFFSET $%d
 	`, schema, queryWhere, len(args)-1, len(args))
 
 	var total int
@@ -93,7 +93,7 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	var drivers []DriverItem
 	for rows.Next() {
 		var d DriverItem
-		if err := rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate); err == nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.AssignedVehicle); err == nil {
 			drivers = append(drivers, d)
 		} else {
 			logger.Log.Error("Scan error", "err", err)
@@ -131,10 +131,10 @@ func (h *Handler) GetDriver(w http.ResponseWriter, r *http.Request) {
 	router := tenant.NewReadRouter(claims.CompanyCode)
 	
 	err = router.QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at, ktp_number, place_of_birth, CAST(date_of_birth AS TEXT), address, placement, CAST(join_date AS TEXT)
-		FROM %s.tm_drivers
-		WHERE id = $1 AND deleted_at IS NULL
-	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate)
+		SELECT d.id, d.name, d.phone, d.email, d.license_number, d.license_type, CAST(d.license_expiry AS TEXT), d.rfid_tag, d.group_id, d.created_at, d.updated_at, d.ktp_number, d.place_of_birth, CAST(d.date_of_birth AS TEXT), d.address, d.placement, CAST(d.join_date AS TEXT), (SELECT vehicle_id FROM %[1]s.tm_driver_vehicles v WHERE v.driver_id = d.id AND v.unassigned_at IS NULL ORDER BY v.assigned_at DESC LIMIT 1) as assigned_vehicle_id
+		FROM %s.tm_drivers d
+		WHERE d.id = $1 AND deleted_at IS NULL
+	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.AssignedVehicle)
 	
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", fmt.Sprintf("Driver with ID %d not found: %v", driverID, err))
