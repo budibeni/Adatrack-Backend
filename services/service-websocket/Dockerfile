@@ -8,6 +8,9 @@ ENV CGO_ENABLED=0 GOOS=linux
 # Copy the entire backend monorepo to satisfy go.work and internal dependencies
 COPY . .
 
+# Build the migration tool
+RUN go build -o /app/bin/db-migrate ./tools/migrate/main.go
+
 # Build the specific service
 RUN go build -o /app/bin/service ./services/service-websocket/main.go
 
@@ -18,7 +21,9 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
-# Copy the compiled binary
+# Copy the compiled binary and migration tool
+COPY --from=builder /app/bin/db-migrate /app/db-migrate
+
 COPY --from=builder /app/bin/service /app/service
 
 # Copy database migrations and scripts (Required for Coolify pre-deploy hooks - PRD 14.5)
