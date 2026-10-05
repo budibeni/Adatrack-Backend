@@ -228,7 +228,8 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		var imei, plate, make, model, status string
 		var odo, hrs float64
 		var lat, lon *float64
-		var lastSeen, stnkExpiry, kirExpiry, gpsInstallDate *time.Time
+		var lastSeen *time.Time
+		var stnkExpiry, kirExpiry, gpsInstallDate *string
 		var groupId, year *int
 		var groupName, vehicleName, category, fuelType, color, notes, deviceBrand, deviceModel, simNumber, currentAddress *string
 		var fuelCapacity *float64
@@ -237,6 +238,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs, &lat, &lon, &lastSeen, &groupId, &groupName,
 			&vehicleName, &category, &year, &fuelType, &color, &fuelCapacity, &stnkExpiry, &kirExpiry, &notes, &gpsInstallDate,
 			&deviceBrand, &deviceModel, &simNumber, &currentAddress, &internalId, &driverId, &driverName); err == nil {
+			
 			vData := map[string]interface{}{
 				"id":           id,
 				"imei":         imei,
@@ -261,9 +263,9 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 				"driver_name":  driverName,
 			}
 			if currentAddress != nil { vData["address"] = *currentAddress }
-			if stnkExpiry != nil { vData["stnk_expiry"] = stnkExpiry.Format("2006-01-02") }
-			if kirExpiry != nil { vData["kir_expiry"] = kirExpiry.Format("2006-01-02") }
-			if gpsInstallDate != nil { vData["gps_install_date"] = gpsInstallDate.Format("2006-01-02") }
+			if stnkExpiry != nil { vData["stnk_expiry"] = *stnkExpiry }
+			if kirExpiry != nil { vData["kir_expiry"] = *kirExpiry }
+			if gpsInstallDate != nil { vData["gps_install_date"] = *gpsInstallDate }
 			if lat != nil { vData["lat"] = *lat }
 			if lon != nil { vData["lon"] = *lon }
 			if groupId != nil { vData["group_id"] = *groupId }
