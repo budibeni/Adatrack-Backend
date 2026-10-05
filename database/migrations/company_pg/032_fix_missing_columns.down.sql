@@ -1,0 +1,18 @@
+ALTER TABLE tm_drivers 
+DROP COLUMN IF EXISTS ktp_number,
+DROP COLUMN IF EXISTS place_of_birth,
+DROP COLUMN IF EXISTS date_of_birth,
+DROP COLUMN IF EXISTS address,
+DROP COLUMN IF EXISTS placement,
+DROP COLUMN IF EXISTS join_date;
+
+ALTER TABLE tm_geofences
+DROP COLUMN IF EXISTS group_id,
+DROP COLUMN IF EXISTS description,
+DROP COLUMN IF EXISTS status;
+
+ALTER TABLE tm_routes
+DROP COLUMN IF EXISTS group_id,
+DROP COLUMN IF EXISTS description,
+DROP COLUMN IF EXISTS planned_distance,
+DROP COLUMN IF EXISTS estimated_duration;
