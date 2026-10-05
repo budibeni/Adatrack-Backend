@@ -602,11 +602,11 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
-		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points, g.created_by, gg.group_id
+		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points, g.created_by, gg.group_id, (SELECT COALESCE(array_agg(vehicle_id), ARRAY[]::integer[]) FROM %s.tm_geofence_vehicles WHERE geofence_id = g.id) as vehicle_ids
 		FROM %s.tm_geofences g
 		LEFT JOIN %s.tm_group_geofences gg ON g.id = gg.geofence_id
 		WHERE g.deleted_at IS NULL ORDER BY g.id ASC
-	`, schema, schema))
+	`, schema, schema, schema))
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list geofences")
 		return
@@ -660,12 +660,13 @@ func (h *Handler) GetGeofence(w http.ResponseWriter, r *http.Request) {
 		RadiusMeters   *float64        `json:"radius_meters"`
 		BoundaryPoints json.RawMessage `json:"boundary_points"`
 		CreatedBy      int             `json:"created_by"`
+		VehicleIDs     []int32         `json:"vehicle_ids"`
 	}
 
 	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, name, area_type, coordinates, radius_meters, boundary_points, created_by 
-		FROM %s.tm_geofences WHERE id = $1 AND deleted_at IS NULL
-	`, schema), id).Scan(&g.ID, &g.Name, &g.AreaType, &g.Coordinates, &g.RadiusMeters, &g.BoundaryPoints, &g.CreatedBy)
+		SELECT id, name, area_type, coordinates, radius_meters, boundary_points, created_by, (SELECT COALESCE(array_agg(vehicle_id), ARRAY[]::integer[]) FROM %s.tm_geofence_vehicles WHERE geofence_id = g.id) as vehicle_ids 
+		FROM %s.tm_geofences g WHERE id = $1 AND deleted_at IS NULL
+	`, schema, schema), id).Scan(&g.ID, &g.Name, &g.AreaType, &g.Coordinates, &g.RadiusMeters, &g.BoundaryPoints, &g.CreatedBy, &g.VehicleIDs)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "GEOFENCE_NOT_FOUND", "Geofence not found")
 		return
@@ -705,6 +706,18 @@ func (h *Handler) UpdateGeofence(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update geofence")
 		return
 	}
+
+	// Update vehicle assignments if provided
+	if req.VehicleIDs != nil {
+		dbclient.Pool.Exec(r.Context(), fmt.Sprintf("DELETE FROM %s.tm_geofence_vehicles WHERE geofence_id = $1", schema), id)
+		for _, vid := range req.VehicleIDs {
+			dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+				INSERT INTO %s.tm_geofence_vehicles (geofence_id, vehicle_id)
+				VALUES ($1, $2) ON CONFLICT DO NOTHING
+			`, schema), id, vid)
+		}
+	}
+
 
 	h.auditLog(r.Context(), claims.CompanyCode, "GEOFENCE_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Geofence %d updated", id))
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
@@ -829,7 +842,7 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 		FROM %s.tm_routes r
 		LEFT JOIN %s.tm_group_routes gr ON r.id = gr.route_id
 		WHERE r.deleted_at IS NULL ORDER BY r.id ASC
-	`, schema, schema))
+	`, schema, schema, schema))
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list routes")
 		return
