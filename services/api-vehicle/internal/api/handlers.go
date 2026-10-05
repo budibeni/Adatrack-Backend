@@ -620,7 +620,10 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 		var coords, bounds json.RawMessage
 		var radius *float64
 		var groupID *int
-		if err := rows.Scan(&id, &name, &areaType, &coords, &radius, &bounds, &createdBy, &groupID); err == nil {
+		var vehicleIds []int32
+		if err := rows.Scan(&id, &name, &areaType, &coords, &radius, &bounds, &createdBy, &groupID, &vehicleIds); err != nil {
+			fmt.Printf("Scan error: %v\n", err)
+		} else {
 			geofence := map[string]interface{}{
 				"id":              id,
 				"name":            name,
@@ -633,6 +636,7 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 			if groupID != nil {
 				geofence["groupId"] = fmt.Sprintf("%d", *groupID)
 			}
+			geofence["vehicle_ids"] = vehicleIds
 			geofences = append(geofences, geofence)
 		}
 	}
