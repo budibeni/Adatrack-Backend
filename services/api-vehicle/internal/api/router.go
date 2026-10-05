@@ -132,7 +132,8 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 			r.Post("/drivers", h.CreateDriver)
 			r.Get("/drivers/{id}", h.GetDriver)
 			r.Put("/drivers/{id}", h.UpdateDriver)
-			r.Delete("/drivers/{id}", h.SoftDeleteDriver)
+			r.Delete("/drivers/{id}", h.DeleteDriver)
+			r.Post("/drivers/{id}/assignments", h.AssignDriverVehicle)
 
 			// Public Share Links (B12)
 			r.Get("/share-links", h.ListShareLinks)

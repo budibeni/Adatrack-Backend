@@ -88,61 +88,6 @@ func (h *Handler) UpdateRoleMenuAccess(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
-	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
-	query := fmt.Sprintf(`SELECT id, name, phone, email, license_number, license_type, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth::text, address, placement, join_date::text, license_expiry::text FROM %s.tm_drivers WHERE deleted_at IS NULL`, schema)
-	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
-	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
-		return
-	}
-	defer rows.Close()
-	var items []Driver
-	for rows.Next() {
-		var d Driver
-		rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.RFIDTag, &d.GroupID, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.LicenseExpiry)
-		items = append(items, d)
-	}
-	h.writeJSON(w, http.StatusOK, items)
-}
-
-func (h *Handler) CreateDriver(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
-	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
-	var d Driver
-	if err := json.NewDecoder(r.Body).Decode(&d); err != nil {
-		h.writeError(w, http.StatusBadRequest, "BAD_REQUEST", err.Error())
-		return
-	}
-	query := fmt.Sprintf(`INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth, address, placement, join_date, license_expiry) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::DATE, $11, $12, NULLIF($13, '')::DATE, NULLIF($14, '')::DATE) RETURNING id`, schema)
-	err := dbclient.Pool.QueryRow(r.Context(), query, d.Name, d.Phone, d.Email, d.LicenseNumber, d.LicenseType, d.RFIDTag, d.GroupID, d.KTPNumber, d.PlaceOfBirth, d.DateOfBirth, d.Address, d.Placement, d.JoinDate, d.LicenseExpiry).Scan(&d.ID)
-	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
-		return
-	}
-	h.writeJSON(w, http.StatusOK, d)
-}
-
-func (h *Handler) GetDriver(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-func (h *Handler) UpdateDriver(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
-}
-func (h *Handler) SoftDeleteDriver(w http.ResponseWriter, r *http.Request) {
-	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
-	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
-	id := chi.URLParam(r, "id")
-	query := fmt.Sprintf(`UPDATE %s.tm_drivers SET deleted_at = NOW() WHERE id = $1`, schema)
-	_, err := dbclient.Pool.Exec(r.Context(), query, id)
-	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, []string{})
 }

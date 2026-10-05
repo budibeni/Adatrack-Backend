@@ -40,5 +40,5 @@ services/ingestion-tcp/ingestion-tcp
 *.py
 *.js
 main
-api-vehicle
+services/api-vehicle/api-vehicle
 
