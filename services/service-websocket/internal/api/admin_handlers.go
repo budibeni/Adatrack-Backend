@@ -13,6 +13,7 @@ import (
 	
 	"backend/internal/auth"
 	"backend/internal/dbclient"
+	"backend/internal/logger"
 )
 
 type DashboardStats struct {
