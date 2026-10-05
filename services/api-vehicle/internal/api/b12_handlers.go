@@ -91,7 +91,7 @@ func (h *Handler) UpdateRoleMenuAccess(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
-	query := fmt.Sprintf(`SELECT id, name, phone, email, license_number, license_type, rfid_tag FROM %s.tm_drivers WHERE deleted_at IS NULL`, schema)
+	query := fmt.Sprintf(`SELECT id, name, phone, email, license_number, license_type, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth::text, address, placement, join_date::text, license_expiry::text FROM %s.tm_drivers WHERE deleted_at IS NULL`, schema)
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", err.Error())

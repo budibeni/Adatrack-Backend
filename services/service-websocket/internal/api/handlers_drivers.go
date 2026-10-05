@@ -67,7 +67,7 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	
 	args = append(args, limit, offset)
 	query := fmt.Sprintf(`
-		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at
+		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at, ktp_number, place_of_birth, CAST(date_of_birth AS TEXT), address, placement, CAST(join_date AS TEXT)
 		FROM %s.tm_drivers
 		%s
 		ORDER BY id ASC LIMIT $%d OFFSET $%d
@@ -126,10 +126,10 @@ func (h *Handler) GetDriver(w http.ResponseWriter, r *http.Request) {
 	router := tenant.NewReadRouter(claims.CompanyCode)
 	
 	err = router.QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at
+		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at, ktp_number, place_of_birth, CAST(date_of_birth AS TEXT), address, placement, CAST(join_date AS TEXT)
 		FROM %s.tm_drivers
 		WHERE id = $1 AND deleted_at IS NULL
-	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt)
+	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate)
 	
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", fmt.Sprintf("Driver with ID %d not found", driverID))
@@ -171,7 +171,7 @@ func (h *Handler) CreateDriver(w http.ResponseWriter, r *http.Request) {
 	var newID int64
 	err := router.QueryRow(r.Context(), fmt.Sprintf(`
 		INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, license_expiry, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth, address, placement, join_date)
-		VALUES ($1, $2, $3, $4, $5, CAST($6 AS DATE), $7, $8, $9, $10, CAST($11 AS DATE), $12, $13, CAST($14 AS DATE)) RETURNING id
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::DATE, $7, $8, $9, $10, NULLIF($11, '')::DATE, $12, $13, NULLIF($14, '')::DATE) RETURNING id
 	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate).Scan(&newID)
 	
 	if err != nil {
@@ -218,9 +218,9 @@ func (h *Handler) UpdateDriver(w http.ResponseWriter, r *http.Request) {
 	router := dbclient.Pool
 
 	res, err := router.Exec(r.Context(), fmt.Sprintf(`
-		UPDATE %s.tm_drivers SET name = $1, phone = $2, email = $3, license_number = $4, license_type = $5, license_expiry = CAST($6 AS DATE), rfid_tag = $7, group_id = $8, updated_at = CURRENT_TIMESTAMP
+		UPDATE %s.tm_drivers SET name = $1, phone = $2, email = $3, license_number = $4, license_type = $5, license_expiry = NULLIF($6, '')::DATE, rfid_tag = $7, group_id = $8, ktp_number = $10, place_of_birth = $11, date_of_birth = NULLIF($12, '')::DATE, address = $13, placement = $14, join_date = NULLIF($15, '')::DATE, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $9 AND deleted_at IS NULL
-	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, driverID)
+	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, driverID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate)
 	
 	if err != nil {
 		logger.Log.Error("Failed to update driver", "err", err)

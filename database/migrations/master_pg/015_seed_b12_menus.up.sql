@@ -4,7 +4,7 @@ SET search_path TO adatrack_gps_master;
 INSERT INTO tm_modules (code, name, app, sort_order) VALUES
 ('main', 'Utama', 'business', 1),
 ('master', 'Master Data', 'business', 2),
-('access', 'Akses', 'business', 3),
+('access', 'Kartu Akses', 'business', 3),
 ('asset', 'Aset & Perawatan', 'business', 4),
 ('safety', 'Keamanan', 'business', 5),
 ('analysis', 'Analisis & Laporan', 'business', 6),
