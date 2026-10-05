@@ -1,0 +1,1 @@
+ALTER TABLE tm_vehicles ADD COLUMN IF NOT EXISTS internal_id VARCHAR(50);

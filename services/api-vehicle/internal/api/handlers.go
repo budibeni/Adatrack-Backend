@@ -232,9 +232,11 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		var groupId, year *int
 		var groupName, vehicleName, category, fuelType, color, notes, deviceBrand, deviceModel, simNumber, currentAddress *string
 		var fuelCapacity *float64
+		var internalId, driverName *string
+		var driverId *int
 		if err := rows.Scan(&id, &imei, &plate, &make, &model, &status, &odo, &hrs, &lat, &lon, &lastSeen, &groupId, &groupName,
 			&vehicleName, &category, &year, &fuelType, &color, &fuelCapacity, &stnkExpiry, &kirExpiry, &notes, &gpsInstallDate,
-			&deviceBrand, &deviceModel, &simNumber, &currentAddress); err == nil {
+			&deviceBrand, &deviceModel, &simNumber, &currentAddress, &internalId, &driverId, &driverName); err == nil {
 			vData := map[string]interface{}{
 				"id":           id,
 				"imei":         imei,
@@ -254,6 +256,9 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 				"device_brand": deviceBrand,
 				"device_type":  deviceModel,
 				"sim_number":   simNumber,
+				"internal_id":  internalId,
+				"driver_id":    driverId,
+				"driver_name":  driverName,
 			}
 			if currentAddress != nil { vData["address"] = *currentAddress }
 			if stnkExpiry != nil { vData["stnk_expiry"] = stnkExpiry.Format("2006-01-02") }
