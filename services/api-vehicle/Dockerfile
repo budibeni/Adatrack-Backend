@@ -1,5 +1,5 @@
 # Build phase
-FROM golang:alpine AS builder
+FROM mirror.gcr.io/library/golang:alpine AS builder
 
 WORKDIR /app
 # Enable Go modules workspace
@@ -15,7 +15,7 @@ RUN go build -o /app/bin/db-migrate ./tools/migrate/main.go
 RUN go build -o /app/bin/service ./services/api-vehicle/main.go
 
 # Runtime phase
-FROM alpine:latest
+FROM mirror.gcr.io/library/alpine:latest
 
 # Add timezone data and CA certs
 RUN apk --no-cache add ca-certificates tzdata

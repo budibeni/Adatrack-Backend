@@ -25,7 +25,7 @@ services:
     networks:
     - coolify
   redis:
-    image: redis:7-alpine
+    image: mirror.gcr.io/library/redis:7-alpine
     container_name: adatrack_redis
     command: redis-server --requirepass "${REDIS_PASSWORD}"
     volumes:
@@ -44,7 +44,7 @@ services:
     networks:
     - coolify
   nats:
-    image: nats:2.10-alpine
+    image: mirror.gcr.io/library/nats:2.10-alpine
     container_name: adatrack_nats
     command:
     - -js
@@ -67,7 +67,7 @@ services:
     networks:
     - coolify
   minio:
-    image: elestio/minio:latest
+    image: mirror.gcr.io/elestio/minio:latest
     container_name: adatrack_minio
     command: server /data --console-address ":9001"
     environment:
@@ -88,7 +88,7 @@ services:
     networks:
     - coolify
   minio-setup:
-    image: alpine:latest
+    image: mirror.gcr.io/library/alpine:latest
     container_name: adatrack_minio_setup
     restart: "no"
      
@@ -170,7 +170,7 @@ services:
     networks:
     - coolify
   redis-replica:
-    image: redis:7-alpine
+    image: mirror.gcr.io/library/redis:7-alpine
     container_name: adatrack_redis_replica
     command: redis-server --replicaof redis 6379 --requirepass "${REDIS_PASSWORD}"
     depends_on:

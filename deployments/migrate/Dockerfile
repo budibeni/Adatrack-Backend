@@ -1,11 +1,11 @@
-FROM golang:alpine AS builder
+FROM mirror.gcr.io/library/golang:alpine AS builder
 
 WORKDIR /app
 COPY . .
 
 RUN cd tools/migrate && go mod download && go build -o /migrate main.go
 
-FROM alpine:latest
+FROM mirror.gcr.io/library/alpine:latest
 RUN apk --no-cache add postgresql-client
 WORKDIR /app
 COPY --from=builder /migrate /app/migrate

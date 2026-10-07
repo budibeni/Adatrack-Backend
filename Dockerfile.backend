@@ -1,5 +1,5 @@
 # Build phase
-FROM golang:alpine AS builder
+FROM mirror.gcr.io/library/golang:alpine AS builder
 
 WORKDIR /app
 ENV CGO_ENABLED=0 GOOS=linux
@@ -24,7 +24,7 @@ RUN go build -o /app/bin/api-vehicle ./services/api-vehicle/main.go && \
 # ==========================================
 
 # --- api-vehicle ---
-FROM alpine:latest AS api-vehicle
+FROM mirror.gcr.io/library/alpine:latest AS api-vehicle
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/api-vehicle /app/service
@@ -34,7 +34,7 @@ EXPOSE 8084
 CMD ["/app/service"]
 
 # --- ingestion-tcp ---
-FROM alpine:latest AS ingestion-tcp
+FROM mirror.gcr.io/library/alpine:latest AS ingestion-tcp
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/ingestion-tcp /app/service
@@ -42,28 +42,28 @@ EXPOSE 8081
 CMD ["/app/service"]
 
 # --- worker-live ---
-FROM alpine:latest AS worker-live
+FROM mirror.gcr.io/library/alpine:latest AS worker-live
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/worker-live /app/service
 CMD ["/app/service"]
 
 # --- worker-persistence ---
-FROM alpine:latest AS worker-persistence
+FROM mirror.gcr.io/library/alpine:latest AS worker-persistence
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/worker-persistence /app/service
 CMD ["/app/service"]
 
 # --- worker-alert ---
-FROM alpine:latest AS worker-alert
+FROM mirror.gcr.io/library/alpine:latest AS worker-alert
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/worker-alert /app/service
 CMD ["/app/service"]
 
 # --- service-websocket ---
-FROM alpine:latest AS service-websocket
+FROM mirror.gcr.io/library/alpine:latest AS service-websocket
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/service-websocket /app/service
@@ -72,7 +72,7 @@ EXPOSE 8080
 CMD ["/app/service"]
 
 # --- foundation-check ---
-FROM alpine:latest AS foundation-check
+FROM mirror.gcr.io/library/alpine:latest AS foundation-check
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/foundation-check /app/service
@@ -80,7 +80,7 @@ EXPOSE 8080
 CMD ["/app/service"]
 
 # --- service-monitor ---
-FROM alpine:latest AS service-monitor
+FROM mirror.gcr.io/library/alpine:latest AS service-monitor
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /app/bin/service-monitor /app/service
