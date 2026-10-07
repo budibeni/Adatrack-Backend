@@ -633,7 +633,7 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 				"created_by":      createdBy,
 			}
 			if groupID != nil {
-				geofence["groupId"] = fmt.Sprintf("%d", *groupID)
+				geofence["group_id"] = fmt.Sprintf("%d", *groupID)
 			}
 			geofence["vehicle_ids"] = vehicleIds
 			geofences = append(geofences, geofence)
@@ -874,7 +874,7 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 				"deviation_threshold_meters": threshold,
 			}
 			if groupID != nil {
-				route["groupId"] = fmt.Sprintf("%d", *groupID)
+				route["group_id"] = fmt.Sprintf("%d", *groupID)
 			}
 			routes = append(routes, route)
 		}
