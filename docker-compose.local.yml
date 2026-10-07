@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   postgres:
-    image: postgis/postgis:15-3.3-alpine
+    image: mirror.gcr.io/postgis/postgis:15-3.3-alpine
     container_name: adatrack_postgres_local
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 5
   redis:
-    image: redis:7-alpine
+    image: mirror.gcr.io/library/redis:7-alpine
     container_name: adatrack_redis_local
     command: redis-server --requirepass ""
     ports:
@@ -35,7 +35,7 @@ services:
       timeout: 5s
       retries: 5
   nats:
-    image: nats:2.10-alpine
+    image: mirror.gcr.io/library/nats:2.10-alpine
     container_name: adatrack_nats_local
     command:
     - -js
@@ -54,7 +54,7 @@ services:
       timeout: 5s
       retries: 5
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: mirror.gcr.io/prom/prometheus:v2.45.0
     container_name: adatrack_prometheus_local
     ports:
     - 9090:9090
@@ -63,7 +63,7 @@ services:
     - ./deployments/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml
     - ./deployments/prometheus/targets:/etc/prometheus/targets
   grafana:
-    image: grafana/grafana:10.0.3
+    image: mirror.gcr.io/grafana/grafana:10.0.3
     container_name: adatrack_grafana_local
     ports:
     - 3003:3000
@@ -76,7 +76,7 @@ services:
     - ./deployments/grafana/provisioning:/etc/grafana/provisioning
     - ./deployments/grafana/dashboards:/var/lib/grafana/dashboards
   minio:
-    image: elestio/minio:latest
+    image: mirror.gcr.io/elestio/minio:latest
     container_name: adatrack_minio_local
     command: server /data --console-address ":9001"
     environment:
@@ -97,7 +97,7 @@ services:
       timeout: 20s
       retries: 3
   minio-setup:
-    image: alpine:latest
+    image: mirror.gcr.io/library/alpine:latest
     container_name: adatrack_minio_setup_local
     depends_on:
       minio:
@@ -109,7 +109,7 @@ services:
 
       '
   node-exporter:
-    image: quay.io/prometheus/node-exporter:v1.6.0
+    image: mirror.gcr.io/prom/node-exporter:v1.6.0
     container_name: adatrack_node_exporter_local
     ports:
     - 9100:9100
@@ -127,7 +127,7 @@ services:
     - /var/lib/docker/:/var/lib/docker:ro
     - /dev/disk/:/dev/disk:ro
   postgres-exporter:
-    image: quay.io/prometheuscommunity/postgres-exporter:v0.12.0
+    image: mirror.gcr.io/prometheuscommunity/postgres-exporter:v0.12.0
     container_name: adatrack_postgres_exporter_local
     environment:
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
@@ -136,12 +136,12 @@ services:
     depends_on:
     - postgres
   alertmanager:
-    image: quay.io/prometheus/alertmanager:v0.25.0
+    image: mirror.gcr.io/prom/alertmanager:v0.25.0
     container_name: adatrack_alertmanager_local
     ports:
     - 9093:9093
   postgres-replica:
-    image: postgis/postgis:15-3.3-alpine
+    image: mirror.gcr.io/postgis/postgis:15-3.3-alpine
     container_name: adatrack_postgres_replica_local
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -160,7 +160,7 @@ services:
 
       '
   redis-replica:
-    image: redis:7-alpine
+    image: mirror.gcr.io/library/redis:7-alpine
     container_name: adatrack_redis_replica_local
     command: redis-server --replicaof redis 6379 --requirepass ""
     ports:

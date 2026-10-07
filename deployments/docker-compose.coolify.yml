@@ -20,7 +20,7 @@ services:
   # Infra (managed as Coolify resources; internal-only networking)
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:15-alpine
+    image: mirror.gcr.io/library/postgres:15-alpine
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.coolify}
@@ -41,7 +41,7 @@ services:
     networks: [adatrack]
 
   redis:
-    image: redis:7-alpine
+    image: mirror.gcr.io/library/redis:7-alpine
     restart: always
     command:
       - redis-server
@@ -63,7 +63,7 @@ services:
     networks: [adatrack]
 
   nats:
-    image: nats:2.10-alpine
+    image: mirror.gcr.io/library/nats:2.10-alpine
     restart: always
     command: ["-c", "/etc/nats/nats.conf"]
     volumes:
