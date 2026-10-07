@@ -602,11 +602,10 @@ func (h *Handler) ListGeofences(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
-		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points, g.created_by, gg.group_id, (SELECT COALESCE(array_agg(vehicle_id), ARRAY[]::integer[]) FROM %s.tm_geofence_vehicles WHERE geofence_id = g.id) as vehicle_ids
+		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points, g.created_by, g.group_id, (SELECT COALESCE(array_agg(vehicle_id), ARRAY[]::integer[]) FROM %s.tm_geofence_vehicles WHERE geofence_id = g.id) as vehicle_ids
 		FROM %s.tm_geofences g
-		LEFT JOIN %s.tm_group_geofences gg ON g.id = gg.geofence_id
 		WHERE g.deleted_at IS NULL ORDER BY g.id ASC
-	`, schema, schema, schema))
+	`, schema, schema))
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to list geofences")
 		return
@@ -664,13 +663,14 @@ func (h *Handler) GetGeofence(w http.ResponseWriter, r *http.Request) {
 		RadiusMeters   *float64        `json:"radius_meters"`
 		BoundaryPoints json.RawMessage `json:"boundary_points"`
 		CreatedBy      int             `json:"created_by"`
+		GroupID        *int            `json:"group_id,omitempty"`
 		VehicleIDs     []int32         `json:"vehicle_ids"`
 	}
 
 	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, name, area_type, coordinates, radius_meters, boundary_points, created_by, (SELECT COALESCE(array_agg(vehicle_id), ARRAY[]::integer[]) FROM %s.tm_geofence_vehicles WHERE geofence_id = g.id) as vehicle_ids 
-		FROM %s.tm_geofences g WHERE id = $1 AND deleted_at IS NULL
-	`, schema, schema), id).Scan(&g.ID, &g.Name, &g.AreaType, &g.Coordinates, &g.RadiusMeters, &g.BoundaryPoints, &g.CreatedBy, &g.VehicleIDs)
+		SELECT g.id, g.name, g.area_type, g.coordinates, g.radius_meters, g.boundary_points, g.created_by, g.group_id, (SELECT COALESCE(array_agg(vehicle_id), ARRAY[]::integer[]) FROM %s.tm_geofence_vehicles WHERE geofence_id = g.id) as vehicle_ids 
+		FROM %s.tm_geofences g WHERE g.id = $1 AND g.deleted_at IS NULL
+	`, schema, schema), id).Scan(&g.ID, &g.Name, &g.AreaType, &g.Coordinates, &g.RadiusMeters, &g.BoundaryPoints, &g.CreatedBy, &g.GroupID, &g.VehicleIDs)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "GEOFENCE_NOT_FOUND", "Geofence not found")
 		return
