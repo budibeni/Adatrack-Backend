@@ -703,9 +703,12 @@ func (h *Handler) UpdateGeofence(w http.ResponseWriter, r *http.Request) {
 		    radius_meters = COALESCE($2, radius_meters),
 		    group_id = COALESCE($3, group_id),
 		    description = COALESCE($4, description),
-		    status = COALESCE($5, status)
+		    status = COALESCE($5, status),
+		    area_type = COALESCE(NULLIF($7, ''), area_type),
+		    coordinates = COALESCE($8, coordinates),
+		    boundary_points = COALESCE($9, boundary_points)
 		WHERE id = $6 AND deleted_at IS NULL
-	`, schema), req.Name, req.RadiusMeters, req.GroupID, req.Description, req.Status, id)
+	`, schema), req.Name, req.RadiusMeters, req.GroupID, req.Description, req.Status, id, req.AreaType, req.Coordinates, req.BoundaryPoints)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update geofence")
 		return
