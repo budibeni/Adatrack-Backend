@@ -705,13 +705,13 @@ func (h *Handler) UpdateGeofence(w http.ResponseWriter, r *http.Request) {
 	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
 		UPDATE %s.tm_geofences
 		SET name = COALESCE(NULLIF($1, ''), name),
-		    radius_meters = COALESCE($2, radius_meters),
-		    group_id = COALESCE($3, group_id),
+		    radius_meters = $2,
+		    group_id = $3,
 		    description = COALESCE($4, description),
 		    status = COALESCE($5, status),
 		    area_type = COALESCE(NULLIF($7, ''), area_type),
-		    coordinates = COALESCE($8, coordinates),
-		    boundary_points = COALESCE($9, boundary_points)
+		    coordinates = $8,
+		    boundary_points = $9
 		WHERE id = $6 AND deleted_at IS NULL
 	`, schema), req.Name, req.RadiusMeters, req.GroupID, req.Description, req.Status, id, req.AreaType, req.Coordinates, req.BoundaryPoints)
 	if err != nil {
