@@ -2,9 +2,13 @@ package geocoder
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"strings"
+	"time"
 
 	"backend/internal/dbclient"
 )
@@ -97,5 +101,51 @@ func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 		}
 	}
 
+	
+	// Nominatim Fallback
+	addr, err := reverseGeocodeNominatim(lat, lon)
+	if err == nil && addr != "" {
+		mu.Lock()
+		cache[cacheKey] = addr
+		mu.Unlock()
+		return addr, nil
+	}
+
 	return "", fmt.Errorf("geocoding failed: no offline data found")
+
+}
+
+func reverseGeocodeNominatim(lat, lon float64) (string, error) {
+	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f", lat, lon)
+	
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Adatrack-Geocoder/1.0")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("nominatim returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	var data struct {
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", err
+	}
+
+	return data.DisplayName, nil
 }
