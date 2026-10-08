@@ -15,9 +15,9 @@ ALTER TABLE tm_users_b2c DROP COLUMN IF EXISTS role;
 
 INSERT INTO tm_roles (company_code, code, name, is_system, permissions) VALUES
 (NULL, 'SUPER_ADMIN', 'Super Admin', true, '["*"]'::jsonb),
-(NULL, 'ADMIN', 'Admin', true, '["users:read", "users:write", "vehicles:read", "vehicles:write"]'::jsonb),
-(NULL, 'MANAGER', 'Manager', true, '["vehicles:read", "reports:read"]'::jsonb),
-(NULL, 'DRIVER', 'Driver', true, '["vehicles:read"]'::jsonb),
-(NULL, 'OPERATOR', 'Operator', true, '["vehicles:read", "alerts:read"]'::jsonb),
+(NULL, 'ADMIN', 'Admin', true, '["*"]'::jsonb),
+(NULL, 'MANAGER', 'Manager', true, '["vehicles:read", "vehicles:write", "routes:read", "routes:write", "geofences:read", "geofences:write", "alerts:read", "reports:read", "users:read"]'::jsonb),
+(NULL, 'DRIVER', 'Driver', true, '["vehicles:read", "routes:read"]'::jsonb),
+(NULL, 'OPERATOR', 'Operator', true, '["vehicles:read", "routes:read", "alerts:read", "reports:read"]'::jsonb),
 (NULL, 'CUSTOMER_SERVICE', 'Customer Service', true, '["users:read", "vehicles:read"]'::jsonb)
-ON CONFLICT (company_code, code) DO NOTHING;
+ON CONFLICT (company_code, code) DO UPDATE SET permissions = EXCLUDED.permissions;
