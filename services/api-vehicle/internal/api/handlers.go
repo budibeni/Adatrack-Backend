@@ -710,7 +710,7 @@ func (h *Handler) UpdateGeofence(w http.ResponseWriter, r *http.Request) {
 		    description = COALESCE($4, description),
 		    status = COALESCE($5, status),
 		    area_type = COALESCE(NULLIF($7, ''), area_type),
-		    coordinates = $8,
+		    coordinates = COALESCE($8, '{}'::jsonb),
 		    boundary_points = $9
 		WHERE id = $6 AND deleted_at IS NULL
 	`, schema), req.Name, req.RadiusMeters, req.GroupID, req.Description, req.Status, id, req.AreaType, req.Coordinates, req.BoundaryPoints)
