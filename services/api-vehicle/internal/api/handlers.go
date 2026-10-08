@@ -818,9 +818,9 @@ func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 
 	var id int
 	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_routes (name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters)
-		VALUES ($1, $2, $3, $4, 'active', $5) RETURNING id
-	`, schema), req.Name, req.Waypoints, req.DriverUserID, req.VehicleID, req.DeviationThresholdMeters).Scan(&id)
+		INSERT INTO %s.tm_routes (name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters, group_id, description, planned_distance, estimated_duration)
+		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9) RETURNING id
+	`, schema), req.Name, req.Waypoints, req.DriverUserID, req.VehicleID, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration).Scan(&id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create route")
 		return
@@ -995,6 +995,49 @@ func (h *Handler) AssignRoute(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"data":   map[string]interface{}{"assignment_id": assignID, "status": "assigned"},
 	})
+}
+
+
+func (h *Handler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	if claims.Role != "ADMIN" && claims.Role != "Admin" && claims.Role != "SUPER_ADMIN" && claims.Role != "SuperAdmin" && claims.Role != "MANAGER" && claims.Role != "Manager" {
+		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Only Admin or Manager can manage routes")
+		return
+	}
+	routeID, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	if routeID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "INVALID_ID", "Invalid Route ID")
+		return
+	}
+
+	var req RouteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body")
+		return
+	}
+	if req.Name == "" || len(req.Waypoints) == 0 {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "name and waypoints are required")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+	
+	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+		UPDATE %s.tm_routes
+		SET name = $1, waypoints = $2, deviation_threshold_meters = $3, group_id = $4, description = $5, planned_distance = $6, estimated_duration = $7
+		WHERE id = $8
+	`, schema), req.Name, req.Waypoints, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration, routeID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update route")
+		return
+	}
+
+	h.auditLog(r.Context(), claims.CompanyCode, "ROUTE_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Route %d updated", routeID))
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
 }
 
 func (h *Handler) UpdateRouteStatus(w http.ResponseWriter, r *http.Request) {

@@ -67,6 +67,7 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Get("/routes", h.ListRoutes)
 		r.Get("/routes/{id}", h.GetRoute)
 		r.Post("/routes", h.CreateRoute)
+		r.Put("/routes/{id}", h.UpdateRoute)
 		r.Delete("/routes/{id}", h.SoftDeleteRoute)
 		r.Post("/routes/{id}/restore", h.RestoreRoute)
 		r.Post("/routes/{id}/assignments", h.AssignRoute)
