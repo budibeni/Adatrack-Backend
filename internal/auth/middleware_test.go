@@ -12,7 +12,7 @@ import (
 func TestAuthMiddleware(t *testing.T) {
 	cfg := &config.Config{JWTSecret: "test-secret"}
 
-	token, _ := GenerateToken(cfg, 1, "test@test.com", "COMPANY_A", "Operator", 1*time.Hour)
+	token, _ := GenerateToken(cfg, 1, "test@test.com", "COMPANY_A", "Operator", []string{"*"}, 1*time.Hour)
 
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

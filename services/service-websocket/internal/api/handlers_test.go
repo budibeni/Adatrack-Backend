@@ -80,7 +80,7 @@ func TestHandler_PlatformOnlyMiddleware(t *testing.T) {
 	router := SetupRouter(cfg, hub)
 
 	// User with role Admin (not SuperAdmin) trying to call POST /api/v1/companies
-	token, _ := auth.GenerateToken(cfg, 10, "admin@company.com", "COMPANY_A", "Admin", 1*time.Hour)
+	token, _ := auth.GenerateToken(cfg, 10, "admin@company.com", "COMPANY_A", "Admin", []string{"*"}, 1*time.Hour)
 
 	req := httptest.NewRequest("POST", "/api/v1/companies", bytes.NewReader([]byte(`{"code":"NEWCO","name":"New Company"}`)))
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -109,7 +109,7 @@ func TestHandler_ClaimsContext(t *testing.T) {
 	}
 
 	// Refresh with valid token
-	token, err := auth.GenerateToken(cfg, claims.UserID, claims.Email, claims.CompanyCode, claims.Role, 1*time.Hour)
+	token, err := auth.GenerateToken(cfg, claims.UserID, claims.Email, claims.CompanyCode, claims.Role, []string{"*"}, 1*time.Hour)
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}

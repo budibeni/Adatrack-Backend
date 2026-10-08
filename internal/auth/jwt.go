@@ -9,20 +9,31 @@ import (
 )
 
 type Claims struct {
-	UserID      int64  `json:"user_id"`
-	Email       string `json:"email"`
-	CompanyCode string `json:"company_code"`
-	Role        string `json:"role"`
+	UserID      int64    `json:"user_id"`
+	Email       string   `json:"email"`
+	CompanyCode string   `json:"company_code"`
+	Role        string   `json:"role"`
+	Permissions []string `json:"permissions,omitempty"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(cfg *config.Config, userID int64, email string, companyCode string, role string, expiry time.Duration) (string, error) {
+func (c *Claims) HasPermission(perm string) bool {
+	for _, p := range c.Permissions {
+		if p == "*" || p == perm {
+			return true
+		}
+	}
+	return false
+}
+
+func GenerateToken(cfg *config.Config, userID int64, email string, companyCode string, role string, permissions []string, expiry time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID:      userID,
 		Email:       email,
 		CompanyCode: companyCode,
 		Role:        role,
+		Permissions: permissions,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(now),

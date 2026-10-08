@@ -134,7 +134,7 @@ func (h *Handler) GetDriver(w http.ResponseWriter, r *http.Request) {
 		SELECT d.id, d.name, d.phone, d.email, d.license_number, d.license_type, CAST(d.license_expiry AS TEXT), d.rfid_tag, d.group_id, d.created_at, d.updated_at, d.ktp_number, d.place_of_birth, CAST(d.date_of_birth AS TEXT), d.address, d.placement, CAST(d.join_date AS TEXT), (SELECT vehicle_id FROM %[1]s.tm_driver_vehicles v WHERE v.driver_id = d.id AND v.unassigned_at IS NULL ORDER BY v.assigned_at DESC LIMIT 1) as assigned_vehicle_id
 		FROM %s.tm_drivers d
 		WHERE d.id = $1 AND deleted_at IS NULL
-	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.AssignedVehicle)
+	`, schema, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.AssignedVehicle)
 	
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", fmt.Sprintf("Driver with ID %d not found: %v", driverID, err))

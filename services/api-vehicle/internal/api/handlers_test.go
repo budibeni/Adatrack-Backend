@@ -47,7 +47,7 @@ func TestApiVehicle_Validation(t *testing.T) {
 	cfg := &config.Config{JWTSecret: "test_secret"}
 	router := SetupRouter(cfg, nil)
 
-	token, _ := auth.GenerateToken(cfg, 1, "admin@test.local", "DEFAULT", "Admin", 1*time.Hour)
+	token, _ := auth.GenerateToken(cfg, 1, "admin@test.local", "DEFAULT", "Admin", []string{"*"}, 1*time.Hour)
 
 	// 1. Create vehicle with empty body
 	req := httptest.NewRequest("POST", "/api/v1/vehicles", bytes.NewReader([]byte("{}")))
@@ -94,7 +94,7 @@ func TestApiVehicle_RBACForbidden(t *testing.T) {
 	router := SetupRouter(cfg, nil)
 
 	// Driver user trying to create vehicle (requires Admin/Manager)
-	driverToken, _ := auth.GenerateToken(cfg, 99, "driver@test.local", "DEFAULT", "Driver", 1*time.Hour)
+	driverToken, _ := auth.GenerateToken(cfg, 99, "driver@test.local", "DEFAULT", "Driver", []string{"*"}, 1*time.Hour)
 
 	req := httptest.NewRequest("POST", "/api/v1/vehicles", bytes.NewReader([]byte(`{"imei":"123","plate_number":"B1234XYZ"}`)))
 	req.Header.Set("Authorization", "Bearer "+driverToken)

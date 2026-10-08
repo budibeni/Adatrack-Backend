@@ -234,7 +234,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		role = *roleCode
 	}
 
-	accessToken, err := auth.GenerateToken(h.cfg, userID, req.Email, req.CompanyCode, role, 24*time.Hour)
+	var permBytes []byte
+	if dbclient.Pool != nil {
+		dbclient.Pool.QueryRow(r.Context(),
+			"SELECT permissions FROM adatrack_gps_master.tm_roles WHERE (company_code = $1 OR company_code IS NULL) AND code = $2 ORDER BY company_code DESC NULLS LAST LIMIT 1",
+			req.CompanyCode, role).Scan(&permBytes)
+	}
+
+	var permissions []string
+	if len(permBytes) > 0 {
+		json.Unmarshal(permBytes, &permissions)
+	} else {
+		permissions = []string{"*"} // Mock or fallback
+	}
+
+	accessToken, err := auth.GenerateToken(h.cfg, userID, req.Email, req.CompanyCode, role, permissions, 24*time.Hour)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "TOKEN_GENERATION_FAILED", "Failed to generate access token")
 		return
@@ -336,7 +350,19 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		claimsData.Role = claims.Role
 	}
 
-	accessToken, err := auth.GenerateToken(h.cfg, claimsData.UserID, claimsData.Email, claimsData.CompanyCode, claimsData.Role, 24*time.Hour)
+	var permBytes []byte
+	if dbclient.Pool != nil {
+		dbclient.Pool.QueryRow(r.Context(),
+			"SELECT permissions FROM adatrack_gps_master.tm_roles WHERE (company_code = $1 OR company_code IS NULL) AND code = $2 ORDER BY company_code DESC NULLS LAST LIMIT 1",
+			claimsData.CompanyCode, claimsData.Role).Scan(&permBytes)
+	}
+	var permissions []string
+	if len(permBytes) > 0 {
+		json.Unmarshal(permBytes, &permissions)
+	} else {
+		permissions = []string{"*"} // Mock or default fallback
+	}
+	accessToken, err := auth.GenerateToken(h.cfg, claimsData.UserID, claimsData.Email, claimsData.CompanyCode, claimsData.Role, permissions, 24*time.Hour)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "TOKEN_GENERATION_FAILED", "Failed to generate access token")
 		return
