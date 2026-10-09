@@ -801,6 +801,7 @@ type RouteRequest struct {
 	PlannedDistance          *float64        `json:"planned_distance,omitempty"`
 	EstimatedDuration        *float64        `json:"estimated_duration,omitempty"`
 	Status                   *string         `json:"status,omitempty"`
+	PlannedPath              json.RawMessage `json:"planned_path,omitempty"`
 }
 
 func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
@@ -1091,7 +1092,7 @@ func (h *Handler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	
 	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
 		UPDATE %s.tm_routes
-		SET name = $1, waypoints = $2, deviation_threshold_meters = $3, group_id = $4, description = $5, planned_distance = $6, estimated_duration = $7
+		SET name = $1, waypoints = $2, deviation_threshold_meters = $3, group_id = $4, description = $5, planned_distance = $6, estimated_duration = $7, planned_path_geojson = $9
 		WHERE id = $8
 	`, schema), req.Name, req.Waypoints, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration, routeID)
 	if err != nil {
