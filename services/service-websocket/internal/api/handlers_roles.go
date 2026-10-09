@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"context"
 	"time"
+	"database/sql"
 
 	"github.com/go-chi/chi/v5"
 	"backend/internal/auth"
@@ -47,22 +48,26 @@ func (h *Handler) GetTenantRoles(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int
 		var code, name string
-		var description *string
+		var description sql.NullString
 		var isSystem bool
-		var permBytes []byte
+		var permStr sql.NullString
 
-		if err := rows.Scan(&id, &code, &name, &description, &isSystem, &permBytes); err != nil {
+		if err := rows.Scan(&id, &code, &name, &description, &isSystem, &permStr); err != nil {
+			fmt.Println("Scan error:", err)
 			continue
 		}
 
 		var permissions []string
-		if len(permBytes) > 0 {
-			json.Unmarshal(permBytes, &permissions)
+		if permStr.Valid && permStr.String != "" {
+			json.Unmarshal([]byte(permStr.String), &permissions)
+		}
+		if permissions == nil {
+			permissions = []string{}
 		}
 
 		desc := ""
-		if description != nil {
-			desc = *description
+		if description.Valid {
+			desc = description.String
 		}
 
 		roles = append(roles, map[string]interface{}{
