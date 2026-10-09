@@ -832,9 +832,9 @@ func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 
 	var id int
 	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_routes (name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters, group_id, description, planned_distance, estimated_duration)
-		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9) RETURNING id
-	`, schema), req.Name, req.Waypoints, req.DriverUserID, req.VehicleID, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration).Scan(&id)
+		INSERT INTO %s.tm_routes (name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters, group_id, description, planned_distance, estimated_duration, planned_path_geojson)
+		VALUES ($1, $2, $3, $4, 'active', $5, $6, $7, $8, $9, $10) RETURNING id
+	`, schema), req.Name, req.Waypoints, req.DriverUserID, req.VehicleID, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration, req.PlannedPath).Scan(&id)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create route")
 		return
@@ -1094,7 +1094,7 @@ func (h *Handler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 		UPDATE %s.tm_routes
 		SET name = $1, waypoints = $2, deviation_threshold_meters = $3, group_id = $4, description = $5, planned_distance = $6, estimated_duration = $7, planned_path_geojson = $9
 		WHERE id = $8
-	`, schema), req.Name, req.Waypoints, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration, routeID)
+	`, schema), req.Name, req.Waypoints, req.DeviationThresholdMeters, req.GroupID, req.Description, req.PlannedDistance, req.EstimatedDuration, routeID, req.PlannedPath)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update route")
 		return
