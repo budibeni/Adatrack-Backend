@@ -222,6 +222,19 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	// Get active route assignments
+	activeAssignments := make(map[int]int)
+	assignmentRows, _ := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`SELECT vehicle_id, route_id FROM %s.th_route_assignments WHERE status = 'assigned' AND (end_date IS NULL OR end_date >= CURRENT_DATE)`, schema))
+	if assignmentRows != nil {
+		for assignmentRows.Next() {
+			var vID, rID int
+			if assignmentRows.Scan(&vID, &rID) == nil {
+				activeAssignments[vID] = rID
+			}
+		}
+		assignmentRows.Close()
+	}
+
 	vehicles := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id int
@@ -268,7 +281,7 @@ func (h *Handler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 			if gpsInstallDate != nil { vData["gps_install_date"] = *gpsInstallDate }
 			if lat != nil { vData["lat"] = *lat }
 			if lon != nil { vData["lon"] = *lon }
-			if groupId != nil { vData["group_id"] = *groupId }
+			if groupId != nil { vData["group_id"] = *groupId }; if rID, ok := activeAssignments[id]; ok { vData["current_route_id"] = rID }
 			if groupName != nil { vData["group_name"] = *groupName }
 			if lastSeen != nil {
 				vData["timestamp"] = lastSeen.Format(time.RFC3339)
