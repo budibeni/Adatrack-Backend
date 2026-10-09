@@ -1,0 +1,1 @@
+ALTER TABLE th_route_assignments ADD COLUMN IF NOT EXISTS end_time TIMESTAMP WITH TIME ZONE;

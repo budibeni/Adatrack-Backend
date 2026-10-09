@@ -829,7 +829,7 @@ func (h *Handler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	// If vehicle is assigned, create entry in th_route_assignments
 	if req.VehicleID != nil && *req.VehicleID > 0 {
 		dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
-			INSERT INTO %s.th_route_assignments (route_id, vehicle_id, driver_user_id, status)
+			INSERT INTO %s.th_route_assignments (route_id, vehicle_id, driver_user_id, status, end_time)
 			VALUES ($1, $2, $3, 'assigned')
 		`, schema), id, *req.VehicleID, req.DriverUserID)
 	}
@@ -987,8 +987,9 @@ func (h *Handler) AssignRoute(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	var req struct {
-		VehicleID    int  `json:"vehicle_id"`
-		DriverUserID *int `json:"driver_user_id"`
+		VehicleID    int     `json:"vehicle_id"`
+		DriverUserID *int    `json:"driver_user_id"`
+		EndTime      *string `json:"end_time"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.VehicleID <= 0 {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "vehicle_id is required")
@@ -997,9 +998,9 @@ func (h *Handler) AssignRoute(w http.ResponseWriter, r *http.Request) {
 
 	var assignID int64
 	err := dbclient.Pool.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.th_route_assignments (route_id, vehicle_id, driver_user_id, status)
-		VALUES ($1, $2, $3, 'assigned') RETURNING id
-	`, schema), routeID, req.VehicleID, req.DriverUserID).Scan(&assignID)
+		INSERT INTO %s.th_route_assignments (route_id, vehicle_id, driver_user_id, status, end_time)
+		VALUES ($1, $2, $3, 'assigned', $4) RETURNING id
+	`, schema), routeID, req.VehicleID, req.DriverUserID, req.EndTime).Scan(&assignID)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to assign route")
 		return

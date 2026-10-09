@@ -315,7 +315,7 @@ func (h *Handler) AssignRoute(w http.ResponseWriter, r *http.Request) {
 	
 	// Create assignment log
 	_, err = router.Exec(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.th_route_assignments (route_id, vehicle_id, driver_user_id, status) VALUES ($1, $2, $3, 'assigned')
+		INSERT INTO %s.th_route_assignments (route_id, vehicle_id, driver_user_id, status, end_time) VALUES ($1, $2, $3, 'assigned')
 	`, schema), routeID, req.VehicleID, req.DriverUserID)
 	
 	if err != nil {
