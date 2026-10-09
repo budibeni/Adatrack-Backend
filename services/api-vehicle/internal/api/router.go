@@ -72,6 +72,7 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Post("/routes/{id}/restore", h.RestoreRoute)
 		r.Post("/routes/{id}/assignments", h.AssignRoute)
 		r.Put("/routes/{id}/status", h.UpdateRouteStatus)
+			r.Put("/routes/assignments/{id}/status", h.UpdateAssignmentStatus)
 
 		// Speed Configs
 		r.Get("/speed-configs", h.ListSpeedConfigs)

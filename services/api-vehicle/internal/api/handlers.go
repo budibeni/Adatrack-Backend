@@ -873,6 +873,36 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	assignmentsMap := make(map[int][]map[string]interface{})
+	aRows, errA := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
+		SELECT a.id, a.route_id, a.vehicle_id, a.driver_user_id, a.end_date, v.vehicle_name, v.plate_number
+		FROM %s.th_route_assignments a
+		JOIN %s.tm_vehicles v ON a.vehicle_id = v.id
+		WHERE a.status = 'assigned' AND (a.end_date IS NULL OR a.end_date >= CURRENT_DATE)
+	`, schema, schema))
+	if errA == nil {
+		for aRows.Next() {
+			var aId, rId, vId int
+			var dId *int
+			var eDate *time.Time
+			var vName, pNum string
+			if aRows.Scan(&aId, &rId, &vId, &dId, &eDate, &vName, &pNum) == nil {
+				assignObj := map[string]interface{}{
+					"id": aId,
+					"vehicle_id": vId,
+					"driver_user_id": dId,
+					"vehicle_name": vName,
+					"plate_number": pNum,
+				}
+				if eDate != nil {
+					assignObj["end_date"] = eDate.Format("2006-01-02")
+				}
+				assignmentsMap[rId] = append(assignmentsMap[rId], assignObj)
+			}
+		}
+		aRows.Close()
+	}
+
 	routes := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var id int
@@ -897,6 +927,11 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 			}
 			if description != nil {
 				route["description"] = *description
+			}
+			if asgmts, ok := assignmentsMap[id]; ok {
+				route["active_assignments"] = asgmts
+			} else {
+				route["active_assignments"] = []map[string]interface{}{}
 			}
 			if plannedDist != nil {
 				route["planned_distance"] = *plannedDist
@@ -1065,6 +1100,34 @@ func (h *Handler) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.auditLog(r.Context(), claims.CompanyCode, "ROUTE_UPDATED", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Route %d updated", routeID))
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
+}
+
+func (h *Handler) UpdateAssignmentStatus(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	assignmentID, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+
+	var req struct {
+		Status string `json:"status"` // assigned, in_progress, completed, cancelled
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Status == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "status is required")
+		return
+	}
+
+	_, err := dbclient.Pool.Exec(r.Context(), fmt.Sprintf(`
+		UPDATE %s.th_route_assignments SET status = $1 WHERE id = $2
+	`, schema), req.Status, assignmentID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update assignment status")
+		return
+	}
+
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success"})
 }
 
