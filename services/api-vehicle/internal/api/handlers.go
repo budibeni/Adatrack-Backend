@@ -864,7 +864,7 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 
 	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), fmt.Sprintf(`
-		SELECT r.id, r.name, r.waypoints, r.driver_user_id, r.vehicle_id, r.status, r.deviation_threshold_meters, r.group_id, r.description, r.planned_distance, r.estimated_duration
+		SELECT r.id, r.name, r.waypoints, r.driver_user_id, r.vehicle_id, r.status, r.deviation_threshold_meters, r.group_id, r.description, r.planned_distance, r.estimated_duration, r.planned_path_geojson
 		FROM %s.tm_routes r
 		WHERE r.deleted_at IS NULL ORDER BY r.id ASC
 	`, schema))
@@ -908,12 +908,12 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int
 		var name, status string
-		var waypoints json.RawMessage
+		var waypoints, plannedPath json.RawMessage
 		var driverID, vehicleID, groupID *int
 		var description *string
 		var plannedDist, estDur *float64
 		var threshold float64
-		if err := rows.Scan(&id, &name, &waypoints, &driverID, &vehicleID, &status, &threshold, &groupID, &description, &plannedDist, &estDur); err == nil {
+		if err := rows.Scan(&id, &name, &waypoints, &driverID, &vehicleID, &status, &threshold, &groupID, &description, &plannedDist, &estDur, &plannedPath); err == nil {
 			route := map[string]interface{}{
 				"id":                         id,
 				"name":                       name,
@@ -922,6 +922,7 @@ func (h *Handler) ListRoutes(w http.ResponseWriter, r *http.Request) {
 				"vehicle_id":                 vehicleID,
 				"status":                     status,
 				"deviation_threshold_meters": threshold,
+				"planned_path_geojson":       plannedPath,
 			}
 			if groupID != nil {
 				route["group_id"] = fmt.Sprintf("%d", *groupID)
@@ -971,12 +972,13 @@ func (h *Handler) GetRoute(w http.ResponseWriter, r *http.Request) {
 		Description              *string         `json:"description"`
 		PlannedDistance          *float64        `json:"planned_distance"`
 		EstimatedDuration        *float64        `json:"estimated_duration"`
+		PlannedPath              json.RawMessage `json:"planned_path_geojson"`
 	}
 
 	err := tenant.NewReadRouter(claims.CompanyCode).QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters, group_id, description, planned_distance, estimated_duration
+		SELECT id, name, waypoints, driver_user_id, vehicle_id, status, deviation_threshold_meters, group_id, description, planned_distance, estimated_duration, planned_path_geojson
 		FROM %s.tm_routes WHERE id = $1 AND deleted_at IS NULL
-	`, schema), id).Scan(&route.ID, &route.Name, &route.Waypoints, &route.DriverUserID, &route.VehicleID, &route.Status, &route.DeviationThresholdMeters, &route.GroupID, &route.Description, &route.PlannedDistance, &route.EstimatedDuration)
+	`, schema), id).Scan(&route.ID, &route.Name, &route.Waypoints, &route.DriverUserID, &route.VehicleID, &route.Status, &route.DeviationThresholdMeters, &route.GroupID, &route.Description, &route.PlannedDistance, &route.EstimatedDuration, &route.PlannedPath)
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "ROUTE_NOT_FOUND", "Route not found")
 		return
