@@ -27,7 +27,7 @@ ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO tm_roles (code, name, is_system, permissions) VALUES
 ('SUPER_ADMIN', 'Super Admin', true, '["*"]'::jsonb),
-('ADMIN', 'Admin', true, '["users:read", "users:write", "vehicles:read", "vehicles:write"]'::jsonb),
+('ADMIN', 'Admin', true, '["*"]'::jsonb),
 ('MANAGER', 'Manager', true, '["vehicles:read", "reports:read"]'::jsonb),
 ('DRIVER', 'Driver', true, '["vehicles:read"]'::jsonb),
 ('OPERATOR', 'Operator', true, '["vehicles:read", "alerts:read"]'::jsonb),
