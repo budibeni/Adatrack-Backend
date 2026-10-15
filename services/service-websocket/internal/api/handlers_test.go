@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,3 +138,63 @@ func TestHandler_ClaimsContext(t *testing.T) {
 		t.Errorf("expected access_token to be non-empty")
 	}
 }
+
+func TestHandler_MobileTrackingAuth(t *testing.T) {
+	cfg := &config.Config{JWTSecret: "test_secret"}
+	hub := ws.NewHub(cfg)
+	h := NewHandler(cfg, hub)
+
+	// 1. Without Authorization header -> 401
+	req1 := httptest.NewRequest("POST", "/api/v1/tracking/mobile", bytes.NewReader([]byte(`{"device_id":"TEST-1"}`)))
+	w1 := httptest.NewRecorder()
+	h.HandleMobileTracking(w1, req1)
+	if w1.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without auth header, got %d", w1.Code)
+	}
+
+	// 2. With legacy X-Device-Token header -> 401 rejected
+	req2 := httptest.NewRequest("POST", "/api/v1/tracking/mobile", bytes.NewReader([]byte(`{"device_id":"TEST-1"}`)))
+	req2.Header.Set("X-Device-Token", "adatrack-mobile-secret-2026")
+	w2 := httptest.NewRecorder()
+	h.HandleMobileTracking(w2, req2)
+	if w2.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 with X-Device-Token, got %d", w2.Code)
+	}
+	var resp2 map[string]interface{}
+	json.NewDecoder(w2.Body).Decode(&resp2)
+	if msg, ok := resp2["message"].(string); !ok || !strings.Contains(msg, "Authorization: Bearer") {
+		t.Errorf("expected rejection message referencing Bearer, got: %v", resp2["message"])
+	}
+
+	// 3. With invalid Bearer token -> 401
+	req3 := httptest.NewRequest("POST", "/api/v1/tracking/mobile", bytes.NewReader([]byte(`{"device_id":"TEST-1"}`)))
+	req3.Header.Set("Authorization", "Bearer invalid.jwt.token")
+	w3 := httptest.NewRecorder()
+	h.HandleMobileTracking(w3, req3)
+	if w3.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for invalid Bearer token, got %d", w3.Code)
+	}
+
+	// 4. With empty Bearer token -> 401
+	req4 := httptest.NewRequest("POST", "/api/v1/tracking/mobile", bytes.NewReader([]byte(`{"device_id":"TEST-1"}`)))
+	req4.Header.Set("Authorization", "Bearer ")
+	w4 := httptest.NewRecorder()
+	h.HandleMobileTracking(w4, req4)
+	if w4.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for empty Bearer token, got %d", w4.Code)
+	}
+
+	// 5. With valid Bearer token, but malformed JSON body -> passes auth, fails at body validation (400)
+	validToken, err := auth.GenerateToken(cfg, 1, "driver@test.local", "DEMOCO", "Driver", []string{"driver:track"}, 1*time.Hour)
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+	req5 := httptest.NewRequest("POST", "/api/v1/tracking/mobile", bytes.NewReader([]byte(`invalid-json`)))
+	req5.Header.Set("Authorization", "Bearer "+validToken)
+	w5 := httptest.NewRecorder()
+	h.HandleMobileTracking(w5, req5)
+	if w5.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for bad json body after successful auth, got %d", w5.Code)
+	}
+}
+

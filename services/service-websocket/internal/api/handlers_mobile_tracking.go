@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -75,37 +74,31 @@ func (h *Handler) HandleMobileTracking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Mandatory Header Token Authentication: ONLY X-Device-Token or Authorization Bearer
-	token := r.Header.Get("X-Device-Token")
-	if token == "" {
-		authHeader := r.Header.Get("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
+	// 1. Mandatory Header Token Authentication: Strictly Authorization: Bearer <JWT_TOKEN>
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		if r.Header.Get("X-Device-Token") != "" {
+			h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Header 'X-Device-Token' sudah tidak didukung. Autentikasi wajib menggunakan 'Authorization: Bearer <JWT_TOKEN>' baik pada lingkungan development maupun produksi.")
+			return
 		}
-	}
-
-	if strings.TrimSpace(token) == "" {
-		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Header token autentikasi wajib disertakan ('X-Device-Token: <token>' atau 'Authorization: Bearer <token>')")
+		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Header token autentikasi wajib disertakan ('Authorization: Bearer <JWT_TOKEN>')")
 		return
 	}
 
-	// Validate token against pre-shared secret or valid JWT token
-	defaultMobileSecret := os.Getenv("MOBILE_DEVICE_TOKEN")
-	if defaultMobileSecret == "" {
-		defaultMobileSecret = "adatrack-mobile-secret-2026"
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+	if token == "" {
+		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Token Bearer tidak boleh kosong")
+		return
 	}
 
-	isValid := false
-	if token == defaultMobileSecret {
-		isValid = true
-	} else if h.cfg != nil {
-		if claims, errJwt := auth.ValidateToken(h.cfg, token); errJwt == nil && claims != nil {
-			isValid = true
-		}
+	if h.cfg == nil {
+		h.writeMobileError(w, http.StatusInternalServerError, "SERVER_ERROR", "Konfigurasi server belum siap")
+		return
 	}
 
-	if !isValid {
-		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Token autentikasi tidak valid atau sudah kedaluwarsa")
+	claims, errJwt := auth.ValidateToken(h.cfg, token)
+	if errJwt != nil || claims == nil {
+		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "JWT token tidak valid atau sudah kedaluwarsa")
 		return
 	}
 
@@ -218,6 +211,8 @@ func (h *Handler) HandleMobileTracking(w http.ResponseWriter, r *http.Request) {
 
 		if assignedCompany != nil && *assignedCompany != "" {
 			companyCode = *assignedCompany
+		} else if claims != nil && claims.CompanyCode != "" {
+			companyCode = claims.CompanyCode
 		} else {
 			companyCode = "DEFAULT"
 		}

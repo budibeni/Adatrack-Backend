@@ -11,8 +11,8 @@ Platform Adatrack menggunakan arsitektur *event-driven pipeline* berkinerja ting
 ```
 [Aplikasi Smartphone]
         │
-        ▼ (HTTP POST /api/v1/tracking/mobile + Header Token Wajib)
-[Backend API Adatrack] (Verifikasi X-Device-Token / Bearer Header)
+        ▼ (HTTP POST /api/v1/tracking/mobile + Header Authorization Bearer JWT)
+[Backend API Adatrack] (Verifikasi JWT Token Driver / Device)
         │
         ▼ (Publikasi Event ke NATS JetStream)
 [NATS: telemetry.raw.<device_id>]
@@ -31,31 +31,53 @@ Platform Adatrack menggunakan arsitektur *event-driven pipeline* berkinerja ting
 * **Method:** `POST`
 * **Content-Type:** `application/json`
 
-### Header Autentikasi (WAJIB - EXCLUSIVE)
+### Header Autentikasi (WAJIB: JWT Bearer Token)
 
 > [!IMPORTANT]
 > **Kebijakan Keamanan:**
-> Setiap kali aplikasi smartphone berkomunikasi dengan backend, **TOKEN AUTENTIKASI HARUS SELALU DISERTAKAN MELALUI HTTP HEADER**.
-> Sistem secara ketat **HANYA** menerima salah satu dari dua format header berikut:
-> 1. **Header `X-Device-Token`** (Pre-shared Token Perangkat)
-> 2. **Header `Authorization: Bearer <token>`** (JWT Token Driver Login)
+> Setiap kali aplikasi smartphone berkomunikasi dengan backend, **TOKEN AUTENTIKASI HARUS SELALU DISERTAKAN MELALUI HTTP HEADER DENGAN FORMAT BEARER JWT**, baik pada lingkungan **Development, Staging, maupun Produksi**.
 > 
-> *Catatan: Pengiriman token melalui body/payload JSON tidak didukung. Token wajib berada pada HTTP Request Header.*
-> Request tanpa salah satu header di atas atau dengan token yang tidak valid/kedaluwarsa akan langsung ditolak oleh backend dengan status HTTP **`401 Unauthorized`**.
+> ```http
+> Authorization: Bearer <JWT_TOKEN>
+> ```
+> 
+> *Catatan:*
+> 1. Header `X-Device-Token` **sudah tidak digunakan**. Seluruh komunikasi wajib menggunakan `Authorization: Bearer <JWT_TOKEN>`.
+> 2. Pengiriman token melalui body/payload JSON tidak didukung. Token wajib berada pada HTTP Request Header.
+> 3. Request tanpa header `Authorization: Bearer <token>` atau dengan token yang tidak valid/kedaluwarsa akan langsung ditolak oleh backend dengan status HTTP **`401 Unauthorized`**.
 
-Pilih salah satu format header berikut pada **setiap** request HTTP POST:
+### Cara Mendapatkan JWT Token Driver
 
-1. **Format Rekomendasi (Header `X-Device-Token`):**
-   ```http
-   X-Device-Token: <SECRET_DEVICE_TOKEN>
-   ```
-   *Nilai default staging:* `X-Device-Token: adatrack-mobile-secret-2026`
+Aplikasi smartphone driver melakukan autentikasi ke endpoint login Adatrack untuk mendapatkan `access_token` JWT:
 
-2. **Format Driver Login (Header `Authorization` Bearer):**
-   ```http
-   Authorization: Bearer <JWT_TOKEN_DRIVER>
-   ```
-   *(Digunakan jika aplikasi mobile memiliki sesi login driver)*
+* **Endpoint:** `POST /api/v1/auth/login`
+* **Headers:** `Content-Type: application/json`
+* **Request Body:**
+  ```json
+  {
+    "email": "driver@company.com",
+    "password": "driver-secure-password"
+  }
+  ```
+* **Response Body (200 OK):**
+  ```json
+  {
+    "status": "success",
+    "message": "Login successful",
+    "data": {
+      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "user": {
+        "id": 12,
+        "name": "Budi Santoso",
+        "email": "driver@company.com",
+        "company_code": "ACME",
+        "role": "Driver"
+      }
+    }
+  }
+  ```
+Simpan `access_token` ini di Secure Storage aplikasi (Keychain / EncryptedSharedPreferences) dan sertakan pada header `Authorization: Bearer <access_token>`.
 
 ---
 
@@ -158,7 +180,7 @@ Jika smartphone sempat melewati area *blank spot* (basement, terowongan, daerah 
     "success": false,
     "status": "error",
     "error_code": "UNAUTHORIZED",
-    "message": "Header token autentikasi wajib disertakan ('X-Device-Token: <token>' atau 'Authorization: Bearer <token>')"
+    "message": "Header token autentikasi wajib disertakan ('Authorization: Bearer <JWT_TOKEN>')"
   }
   ```
 
@@ -199,8 +221,9 @@ Sebelum aplikasi smartphone mulai mengirim koordinat, Admin tenant mendaftarkan 
 ## 7. Praktik Terbaik Pengembang Aplikasi Mobile (*Best Practices*)
 
 1. **Penyertaan Token di Setiap Request:**
-   * Simpan token di local secure storage aplikasi (`flutter_secure_storage` / `EncryptedSharedPreferences` / `Keychain`).
-   * Selalu lampirkan header `X-Device-Token` atau `Authorization: Bearer <token>` pada setiap request HTTP ke `/api/v1/tracking/mobile`.
+   * Simpan token JWT di local secure storage aplikasi (`flutter_secure_storage` / `EncryptedSharedPreferences` / `Keychain`).
+   * Selalu lampirkan header `Authorization: Bearer <JWT_TOKEN>` pada setiap request HTTP ke `/api/v1/tracking/mobile`.
+   * Lakukan refresh token jika token access mendekati masa kedaluwarsa.
 2. **Efisiensi Baterai Smartphone (Smart Interval):**
    * **Saat Kendaraan Bergerak:** Ambil koordinat GPS setiap 5–10 detik, kirim ke server setiap 10–15 detik.
    * **Saat Kendaraan Diam (Parkir):** Kurangi interval ke 60–120 detik untuk menghemat baterai HP driver.
@@ -214,11 +237,11 @@ Sebelum aplikasi smartphone mulai mengirim koordinat, Admin tenant mendaftarkan 
 
 ## 8. Contoh Implementasi Kode untuk Tim Mobile
 
-### A. Contoh Request cURL (Menggunakan Header X-Device-Token)
+### A. Contoh Request cURL (Menggunakan Header Authorization Bearer)
 ```bash
 curl -X POST "http://api.103.69.106.62.nip.io/api/v1/tracking/mobile" \
   -H "Content-Type: application/json" \
-  -H "X-Device-Token: adatrack-mobile-secret-2026" \
+  -H "Authorization: Bearer <JWT_TOKEN_DRIVER>" \
   -d '{
     "device_id": "APP-DRV-08123456789",
     "lat": -6.2087634,
@@ -234,28 +257,14 @@ curl -X POST "http://api.103.69.106.62.nip.io/api/v1/tracking/mobile" \
   }'
 ```
 
-### B. Contoh Request cURL (Menggunakan Header Authorization Bearer)
-```bash
-curl -X POST "http://api.103.69.106.62.nip.io/api/v1/tracking/mobile" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <JWT_TOKEN_DRIVER>" \
-  -d '{
-    "device_id": "APP-DRV-08123456789",
-    "lat": -6.2087634,
-    "lon": 106.8455990,
-    "speed": 35.0,
-    "heading": 90.0,
-    "timestamp": 1729050000
-  }'
-```
-
-### C. Contoh Implementasi di Flutter / Dart (Dengan Header Token)
+### B. Contoh Implementasi di Flutter / Dart (Dengan Header Bearer JWT)
 ```dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 Future<void> sendLocationToAdatrack({
   required String deviceId,
+  required String jwtToken, // Bearer JWT token driver yang aktif
   required double latitude,
   required double longitude,
   required double speed,
@@ -263,7 +272,6 @@ Future<void> sendLocationToAdatrack({
   required int batteryLevel,
   bool isCharging = false,
   bool isSos = false,
-  String deviceToken = 'adatrack-mobile-secret-2026', // Header token
 }) async {
   final url = Uri.parse('http://api.103.69.106.62.nip.io/api/v1/tracking/mobile');
   
@@ -284,7 +292,7 @@ Future<void> sendLocationToAdatrack({
       url,
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-Token': deviceToken, // Dikirimkan via header
+        'Authorization': 'Bearer $jwtToken', // Dikirimkan via header Authorization Bearer
       },
       body: jsonEncode(payload),
     );
@@ -292,7 +300,7 @@ Future<void> sendLocationToAdatrack({
     if (response.statusCode == 200 || response.statusCode == 202) {
       print('Location sent successfully');
     } else if (response.statusCode == 401) {
-      print('Autentikasi gagal: Token tidak valid');
+      print('Autentikasi gagal: Token JWT tidak valid atau kedaluwarsa');
     } else {
       // Simpan sementara ke database lokal SQLite HP (untuk di-sync saat online)
     }
