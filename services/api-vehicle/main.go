@@ -43,6 +43,7 @@ func main() {
 	defer appCancel()
 
 	api.StartRetentionJob(appCtx, cfg, store)
+	api.StartPartitionJob(appCtx, cfg)
 
 	router := api.SetupRouter(cfg, store)
 

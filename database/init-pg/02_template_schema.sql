@@ -126,6 +126,57 @@ CREATE TABLE IF NOT EXISTS th_fuel_logs (
     PRIMARY KEY(id, timestamp)
 ) PARTITION BY RANGE (timestamp);
 CREATE TABLE IF NOT EXISTS th_fuel_logs_default PARTITION OF th_fuel_logs DEFAULT;
+
+-- Generate initial 36 months partitions (2026-2028)
+DO $$
+DECLARE
+    cur_month DATE := date_trunc('month', CURRENT_DATE)::date;
+    target_month DATE := (cur_month + (36 || ' months')::interval)::date;
+    m DATE := DATE '2026-01-01';
+    part_telem TEXT;
+    part_fuel TEXT;
+BEGIN
+    WHILE m <= target_month LOOP
+        part_telem := 'th_telemetry_logs_p' || to_char(m, 'YYYYMM');
+        part_fuel := 'th_fuel_logs_p' || to_char(m, 'YYYYMM');
+        
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I PARTITION OF th_telemetry_logs FOR VALUES FROM (%L) TO (%L)',
+            part_telem, m, (m + INTERVAL '1 month')::date
+        );
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I PARTITION OF th_fuel_logs FOR VALUES FROM (%L) TO (%L)',
+            part_fuel, m, (m + INTERVAL '1 month')::date
+        );
+        m := (m + INTERVAL '1 month')::date;
+    END LOOP;
+END $$;
+
+CREATE OR REPLACE FUNCTION tm_ensure_monthly_partitions(months_ahead INT DEFAULT 12)
+RETURNS void AS $$
+DECLARE
+    cur_month DATE := date_trunc('month', CURRENT_DATE)::date;
+    target_month DATE := (cur_month + (months_ahead || ' months')::interval)::date;
+    m DATE := cur_month - INTERVAL '1 month';
+    part_telem TEXT;
+    part_fuel TEXT;
+BEGIN
+    WHILE m <= target_month LOOP
+        part_telem := 'th_telemetry_logs_p' || to_char(m, 'YYYYMM');
+        part_fuel := 'th_fuel_logs_p' || to_char(m, 'YYYYMM');
+        
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I PARTITION OF th_telemetry_logs FOR VALUES FROM (%L) TO (%L)',
+            part_telem, m, (m + INTERVAL '1 month')::date
+        );
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS %I PARTITION OF th_fuel_logs FOR VALUES FROM (%L) TO (%L)',
+            part_fuel, m, (m + INTERVAL '1 month')::date
+        );
+        m := (m + INTERVAL '1 month')::date;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS th_alerts (
     id BIGSERIAL PRIMARY KEY,
     type VARCHAR(50) NOT NULL,
