@@ -32,7 +32,6 @@ type MobileLocationPoint struct {
 
 type MobileTrackingRequest struct {
 	DeviceID  string                `json:"device_id"`
-	Token     *string               `json:"token,omitempty"`
 	Locations []MobileLocationPoint `json:"locations,omitempty"`
 
 	// Flat single-point fields fallback
@@ -76,28 +75,17 @@ func (h *Handler) HandleMobileTracking(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req MobileTrackingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeMobileError(w, http.StatusBadRequest, "INVALID_PAYLOAD", "Malformed JSON body: "+err.Error())
-		return
-	}
-
-	// 1. Mandatory Token Authentication (Token MUST always be provided)
+	// 1. Mandatory Header Token Authentication: ONLY X-Device-Token or Authorization Bearer
 	token := r.Header.Get("X-Device-Token")
 	if token == "" {
 		authHeader := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			token = strings.TrimPrefix(authHeader, "Bearer ")
-		} else if authHeader != "" {
-			token = authHeader
 		}
-	}
-	if token == "" && req.Token != nil {
-		token = *req.Token
 	}
 
 	if strings.TrimSpace(token) == "" {
-		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Token autentikasi wajib disertakan (gunakan header 'Authorization: Bearer <token>' atau 'X-Device-Token: <token>')")
+		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Header token autentikasi wajib disertakan ('X-Device-Token: <token>' atau 'Authorization: Bearer <token>')")
 		return
 	}
 
@@ -118,6 +106,12 @@ func (h *Handler) HandleMobileTracking(w http.ResponseWriter, r *http.Request) {
 
 	if !isValid {
 		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Token autentikasi tidak valid atau sudah kedaluwarsa")
+		return
+	}
+
+	var req MobileTrackingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeMobileError(w, http.StatusBadRequest, "INVALID_PAYLOAD", "Malformed JSON body: "+err.Error())
 		return
 	}
 
