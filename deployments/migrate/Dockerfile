@@ -23,6 +23,8 @@ RUN echo '#!/bin/sh' > /app/run.sh && \
     echo 'psql -f /app/database/init-pg/03_seed_master.sql' >> /app/run.sh && \
     echo 'PSQL_EXIT=$?' >> /app/run.sh && \
     echo 'if [ $PSQL_EXIT -ne 0 ]; then echo "PSQL SEED FAILED WITH CODE $PSQL_EXIT"; exit 1; fi' >> /app/run.sh && \
+    echo 'echo "Applying reference seed data (wilayah Indonesia)..."' >> /app/run.sh && \
+    echo 'for f in $(ls -1 /app/database/seed/reference/*.sql | sort); do echo "Seeding $f..."; psql -f "$f" || true; done' >> /app/run.sh && \
     echo 'echo "Migration and Seeding complete!"' >> /app/run.sh && \
     chmod +x /app/run.sh
 

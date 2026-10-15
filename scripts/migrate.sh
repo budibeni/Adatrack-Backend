@@ -20,6 +20,11 @@ echo "Running golang-migrate..."
 if [ "$1" != "down" ]; then
   echo "Applying Seed Data..."
   cat ../../database/init-pg/03_seed_master.sql | docker exec -i adatrack_postgres_local psql -U adatrack_gps_user -d adatrack_gps_master
+  echo "Applying Wilayah Indonesia Reference Seeds..."
+  for f in ../../database/seed/reference/*.sql; do
+    echo "Seeding $f..."
+    cat "$f" | docker exec -i adatrack_postgres_local psql -U adatrack_gps_user -d adatrack_gps_master || true
+  done
 fi
 
 echo "Migration pipeline complete!"
