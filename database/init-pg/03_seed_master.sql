@@ -25,14 +25,14 @@ INSERT INTO tm_companies (code, name, legal_name, tax_id, country_code, business
 VALUES ('DEFAULT', 'Adatrack System', 'PT Adatrack Teknologi', '00.000.000.0-000.000', 'ID', 'b2b')
 ON CONFLICT (code) DO NOTHING;
 
-INSERT INTO tm_roles (code, name, is_system, permissions) VALUES
-('SUPER_ADMIN', 'Super Admin', true, '["*"]'::jsonb),
-('ADMIN', 'Admin', true, '["*"]'::jsonb),
-('MANAGER', 'Manager', true, '["vehicles:read", "reports:read"]'::jsonb),
-('DRIVER', 'Driver', true, '["vehicles:read"]'::jsonb),
-('OPERATOR', 'Operator', true, '["vehicles:read", "alerts:read"]'::jsonb),
-('CUSTOMER_SERVICE', 'Customer Service', true, '["users:read", "vehicles:read"]'::jsonb)
-ON CONFLICT (code) DO NOTHING;
+INSERT INTO tm_roles (code, name, is_system, permissions, company_code) VALUES
+('SUPER_ADMIN', 'Super Admin', true, '["*"]'::jsonb, 'DEFAULT'),
+('ADMIN', 'Admin', true, '["*"]'::jsonb, 'DEFAULT'),
+('MANAGER', 'Manager', true, '["vehicles:read", "reports:read"]'::jsonb, 'DEFAULT'),
+('DRIVER', 'Driver', true, '["vehicles:read"]'::jsonb, 'DEFAULT'),
+('OPERATOR', 'Operator', true, '["vehicles:read", "alerts:read"]'::jsonb, 'DEFAULT'),
+('CUSTOMER_SERVICE', 'Customer Service', true, '["users:read", "vehicles:read"]'::jsonb, 'DEFAULT')
+ON CONFLICT (code, company_code) DO NOTHING;
 
 INSERT INTO tm_users (email, password_hash, must_change_password) 
 VALUES ('superadmin@adatrack.local', '$2a$12$e/M.q9oFq1hH4KqJv6T.7O2s3b5K5tE7xR8Wq8N/kCqP6D.LqF6Xy', false)
