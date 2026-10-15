@@ -11,8 +11,8 @@ Platform Adatrack menggunakan arsitektur *event-driven pipeline* berkinerja ting
 ```
 [Aplikasi Smartphone]
         │
-        ▼ (HTTP POST /api/v1/tracking/mobile)
-[Backend API Adatrack]
+        ▼ (HTTP POST /api/v1/tracking/mobile + Token Wajib)
+[Backend API Adatrack] (Verifikasi Token & Validasi Device)
         │
         ▼ (Publikasi Event ke NATS JetStream)
 [NATS: telemetry.raw.<device_id>]
@@ -31,15 +31,29 @@ Platform Adatrack menggunakan arsitektur *event-driven pipeline* berkinerja ting
 * **Method:** `POST`
 * **Content-Type:** `application/json`
 
-### Header Autentikasi
-Aplikasi mobile wajib menyertakan salah satu header autentikasi berikut:
-```http
-X-Device-Token: <SECRET_DEVICE_TOKEN>
-```
-*atau*
-```http
-Authorization: Bearer <JWT_TOKEN_DRIVER>
-```
+### Header Autentikasi (WAJIB / MANDATORY)
+
+> [!IMPORTANT]
+> **Kebijakan Keamanan Backend:**
+> Setiap kali aplikasi smartphone berkomunikasi dengan backend, **TOKEN AUTENTIKASI HARUS SELALU DISERTAKAN**.
+> Request tanpa token atau dengan token yang tidak valid/kedaluwarsa akan langsung ditolak oleh backend dengan status HTTP **`401 Unauthorized`**.
+
+Aplikasi mobile wajib menyertakan salah satu format token berikut pada **setiap** request HTTP POST:
+
+1. **Format Rekomendasi (Device Token Header):**
+   ```http
+   X-Device-Token: <SECRET_DEVICE_TOKEN>
+   ```
+   *Nilai default staging:* `X-Device-Token: adatrack-mobile-secret-2026`
+
+2. **Format Driver Login (Bearer JWT Header):**
+   ```http
+   Authorization: Bearer <JWT_TOKEN_DRIVER>
+   ```
+   *(Digunakan jika aplikasi mobile memiliki fitur login driver)*
+
+3. **Format Payload Fallback:**
+   Bisa juga menyertakan field `"token": "<SECRET_DEVICE_TOKEN>"` di dalam JSON payload.
 
 ---
 
@@ -65,8 +79,9 @@ Digunakan saat smartphone memiliki koneksi internet aktif. Direkomendasikan diki
   "timestamp": 1729050000
 }
 ```
+*(Catatan: Backend fleksibel menerima format `lat` / `lon` maupun `latitude` / `longitude`)*
 
-### Mode B: Batch Location Sync (Setelah Melewati Area Tanpa Sinyal)
+### Mode B: Batch Location Sync (Setelah Melewati Area Blank Spot)
 Jika smartphone sempat melewati area *blank spot* (basement, terowongan, daerah pelosok), aplikasi mobile wajib menyimpan titik-titik koordinat ke penyimpanan lokal HP (SQLite / Room / CoreData). Begitu koneksi internet pulih, kirimkan seluruh titik yang tertunda dalam satu request *batch*:
 
 ```json
@@ -107,10 +122,11 @@ Jika smartphone sempat melewati area *blank spot* (basement, terowongan, daerah 
 
 | Field | Tipe Data | Wajib? | Satuan / Format | Keterangan |
 | :--- | :--- | :--- | :--- | :--- |
-| `device_id` | `string` | **Ya** | Alfanumerik (max 50) | ID unik perangkat, misal nomor telepon driver (`APP-0812345678`) atau UUID perangkat. |
-| `lat` | `float` | **Ya** | Desimal derajat | Lintang GPS WGS84 (contoh: `-6.2087634`). |
-| `lon` | `float` | **Ya** | Desimal derajat | Bujur GPS WGS84 (contoh: `106.8455990`). |
+| `device_id` | `string` | **Ya** | Alfanumerik (max 50) | ID unik perangkat, misal nomor telepon driver (`APP-DRV-08123456789`) atau UUID perangkat. |
+| `lat` / `latitude` | `float` | **Ya** | Desimal derajat | Lintang GPS WGS84 (contoh: `-6.2087634`). |
+| `lon` / `longitude`| `float` | **Ya** | Desimal derajat | Bujur GPS WGS84 (contoh: `106.8455990`). |
 | `timestamp` | `integer` | **Ya** | Unix Epoch (Detik/Milidetik) | Waktu pengambilan titik GPS di perangkat (UTC). |
+| `token` | `string` | Opsional jika ada di header | String | Token autentikasi jika tidak dikirim via HTTP header. |
 | `speed` | `float` | Opsional | km/jam (km/h) | Kecepatan gerak kendaraan/HP. Default `0.0`. |
 | `heading` | `float` | Opsional | Derajat (`0.0 - 360.0`) | Arah kompas gerak (*bearing*). `0` = Utara, `90` = Timur, `180` = Selatan. |
 | `altitude` | `float` | Opsional | Meter (m) | Ketinggian di atas permukaan laut. |
@@ -123,7 +139,7 @@ Jika smartphone sempat melewati area *blank spot* (basement, terowongan, daerah 
 
 ## 5. Respons API (*API Responses*)
 
-### Respons Berhasil (200 OK / 202 Accepted)
+### Respons Berhasil (200 OK)
 ```json
 {
   "success": true,
@@ -134,59 +150,70 @@ Jika smartphone sempat melewati area *blank spot* (basement, terowongan, daerah 
 ```
 
 ### Respons Gagal
-* **400 Bad Request:** Format JSON salah, `lat`/`lon` tidak valid, atau `device_id` kosong.
+
+* **401 Unauthorized (Token Kosong atau Tidak Valid):**
   ```json
   {
     "success": false,
-    "error_code": "INVALID_PAYLOAD",
-    "message": "Field 'device_id', 'lat', and 'lon' are required"
-  }
-  ```
-* **401 Unauthorized:** Token perangkat salah atau tidak disertakan di header.
-  ```json
-  {
-    "success": false,
+    "status": "error",
     "error_code": "UNAUTHORIZED",
-    "message": "Invalid or expired device token"
+    "message": "Token autentikasi wajib disertakan (gunakan header 'Authorization: Bearer <token>' atau 'X-Device-Token: <token>')"
   }
   ```
-* **404 Not Found:** `device_id` belum didaftarkan di sistem Adatrack.
+
+* **400 Bad Request (Data Tidak Lengkap atau JSON Rusak):**
   ```json
   {
     "success": false,
+    "status": "error",
+    "error_code": "NO_LOCATION_DATA",
+    "message": "At least one location point (lat, lon) is required"
+  }
+  ```
+
+* **404 Not Found (ID Perangkat Belum Didaftarkan):**
+  ```json
+  {
+    "success": false,
+    "status": "error",
     "error_code": "DEVICE_NOT_REGISTERED",
-    "message": "Device ID APP-DRV-08123456789 is not mapped to any vehicle or company"
+    "message": "Device ID 'APP-DRV-08123456789' is not registered in Adatrack master devices"
   }
   ```
 
 ---
 
-## 6. Pendaftaran Perangkat Smartphone di Web Admin Adatrack
+## 6. Pendaftaran Perangkat Smartphone di Portal Web Business Adatrack
 
-Sebelum aplikasi smartphone mulai mengirim koordinat, Admin tenant atau tim operasional mendaftarkan perangkat terlebih dahulu melalui Dashboard Web Adatrack:
-1. Buka menu **Master Devices / Perangkat GPS**.
-2. Masukkan ID Perangkat (misal: `APP-DRV-08123456789`).
-3. Pilih Protokol: **`SMARTPHONE`** (atau `HTTP_MOBILE`).
-4. Tautkan perangkat ini ke **Nama Kendaraan** (misal: `Motor Kurir Budi - B 1234 XYZ`) atau **Profil Driver**.
+Sebelum aplikasi smartphone mulai mengirim koordinat, Admin tenant mendaftarkan ID perangkat terlebih dahulu melalui Dashboard Web Adatrack Business:
+1. Buka menu **GPS & Perangkat** (`/gps-devices`) pada portal Business.
+2. Klik tombol **Daftarkan Perangkat**.
+3. Pilih tipe: **Smartphone App Driver**.
+4. Masukkan ID Perangkat (misal nomor telepon driver: `APP-DRV-08123456789`).
+5. Masukkan merk dan model smartphone (misal: `Samsung Galaxy A54`).
+6. Tautkan perangkat ini ke **Armada Kendaraan** yang dikendarai oleh driver (opsional, dapat diubah sewaktu-waktu).
 
 ---
 
 ## 7. Praktik Terbaik Pengembang Aplikasi Mobile (*Best Practices*)
 
-1. **Efisiensi Baterai Smartphone (Smart Interval):**
+1. **Penyertaan Token di Setiap Request:**
+   * Simpan token di local secure storage aplikasi (`flutter_secure_storage` / `EncryptedSharedPreferences` / `Keychain`).
+   * Selalu lampirkan header `X-Device-Token` pada setiap request HTTP ke `/api/v1/tracking/mobile`.
+2. **Efisiensi Baterai Smartphone (Smart Interval):**
    * **Saat Kendaraan Bergerak:** Ambil koordinat GPS setiap 5–10 detik, kirim ke server setiap 10–15 detik.
    * **Saat Kendaraan Diam (Parkir):** Kurangi interval ke 60–120 detik untuk menghemat baterai HP driver.
-2. **Izin Lokasi Latar Belakang (*Background Location Permission*):**
+3. **Izin Lokasi Latar Belakang (*Background Location Permission*):**
    * **Android:** Wajib menggunakan *Foreground Service* dengan *Sticky Notification* (agar aplikasi tidak dimatikan paksa oleh manajemen baterai sistem Android / MIUI / OneUI).
    * **iOS:** Memerlukan izin `Always Allow` dan pengaturan `UIBackgroundModes: location`.
-3. **Filter Akurasi GPS (*Drift Filter*):**
+4. **Filter Akurasi GPS (*Drift Filter*):**
    * Jangan kirim titik koordinat jika nilai `accuracy > 30` meter (biasanya terjadi ketika driver baru keluar dari dalam gedung).
 
 ---
 
 ## 8. Contoh Implementasi Kode untuk Tim Mobile
 
-### A. Contoh Request cURL (Untuk Uji Coba Postman / Terminal)
+### A. Contoh Request cURL (Menggunakan Token Wajib)
 ```bash
 curl -X POST "http://api.103.69.106.62.nip.io/api/v1/tracking/mobile" \
   -H "Content-Type: application/json" \
@@ -206,7 +233,7 @@ curl -X POST "http://api.103.69.106.62.nip.io/api/v1/tracking/mobile" \
   }'
 ```
 
-### B. Contoh Implementasi di Flutter / Dart
+### B. Contoh Implementasi di Flutter / Dart (Dengan Header Token)
 ```dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -220,6 +247,7 @@ Future<void> sendLocationToAdatrack({
   required int batteryLevel,
   bool isCharging = false,
   bool isSos = false,
+  String deviceToken = 'adatrack-mobile-secret-2026', // Token wajib
 }) async {
   final url = Uri.parse('http://api.103.69.106.62.nip.io/api/v1/tracking/mobile');
   
@@ -240,15 +268,18 @@ Future<void> sendLocationToAdatrack({
       url,
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-Token': 'adatrack-mobile-secret-2026',
+        'X-Device-Token': deviceToken, // Token selalu dikirimkan di header
       },
       body: jsonEncode(payload),
     );
 
     if (response.statusCode == 200 || response.statusCode == 202) {
-      // Sukses terkirim ke server Adatrack
+      // Sukses diterima server Adatrack
+      print('Location sent successfully');
+    } else if (response.statusCode == 401) {
+      print('Autentikasi gagal: Token tidak valid');
     } else {
-      // Simpan sementara ke database lokal SQLite HP (untuk di-sync nanti)
+      // Simpan sementara ke database lokal SQLite HP (untuk di-sync saat online)
     }
   } catch (e) {
     // Terjadi masalah koneksi / offline -> Simpan ke database lokal HP
@@ -259,4 +290,4 @@ Future<void> sendLocationToAdatrack({
 ---
 
 ## 9. Kontak Dukungan Backend
-Jika tim aplikasi mobile membutuhkan pengujian sandbox atau simulasi kredensial uji coba, silakan hubungi tim Backend Adatrack.
+Jika tim aplikasi mobile membutuhkan pengujian sandbox atau informasi konfigurasi token, silakan hubungi tim Backend Adatrack.

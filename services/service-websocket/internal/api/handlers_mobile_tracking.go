@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
+	"backend/internal/auth"
 	"backend/internal/dbclient"
 	"backend/internal/logger"
 	"backend/internal/models"
@@ -29,6 +32,7 @@ type MobileLocationPoint struct {
 
 type MobileTrackingRequest struct {
 	DeviceID  string                `json:"device_id"`
+	Token     *string               `json:"token,omitempty"`
 	Locations []MobileLocationPoint `json:"locations,omitempty"`
 
 	// Flat single-point fields fallback
@@ -75,6 +79,45 @@ func (h *Handler) HandleMobileTracking(w http.ResponseWriter, r *http.Request) {
 	var req MobileTrackingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeMobileError(w, http.StatusBadRequest, "INVALID_PAYLOAD", "Malformed JSON body: "+err.Error())
+		return
+	}
+
+	// 1. Mandatory Token Authentication (Token MUST always be provided)
+	token := r.Header.Get("X-Device-Token")
+	if token == "" {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		} else if authHeader != "" {
+			token = authHeader
+		}
+	}
+	if token == "" && req.Token != nil {
+		token = *req.Token
+	}
+
+	if strings.TrimSpace(token) == "" {
+		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Token autentikasi wajib disertakan (gunakan header 'Authorization: Bearer <token>' atau 'X-Device-Token: <token>')")
+		return
+	}
+
+	// Validate token against pre-shared secret or valid JWT token
+	defaultMobileSecret := os.Getenv("MOBILE_DEVICE_TOKEN")
+	if defaultMobileSecret == "" {
+		defaultMobileSecret = "adatrack-mobile-secret-2026"
+	}
+
+	isValid := false
+	if token == defaultMobileSecret {
+		isValid = true
+	} else if h.cfg != nil {
+		if claims, errJwt := auth.ValidateToken(h.cfg, token); errJwt == nil && claims != nil {
+			isValid = true
+		}
+	}
+
+	if !isValid {
+		h.writeMobileError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Token autentikasi tidak valid atau sudah kedaluwarsa")
 		return
 	}
 
