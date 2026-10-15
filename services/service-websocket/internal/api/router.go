@@ -82,6 +82,11 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 
 			// Tenant endpoints
 			r.Get("/gps/available", h.GetAvailableGPSDevices)
+			r.Get("/devices", h.ListTenantDevices)
+			r.Get("/devices/{imei}", h.GetTenantDevice)
+			r.Post("/devices", h.CreateTenantDevice)
+			r.Put("/devices/{imei}", h.UpdateTenantDevice)
+			r.Delete("/devices/{imei}", h.DeleteTenantDevice)
 			r.Get("/vehicles", h.ListVehicles)
 			r.Get("/vehicles/{id}", h.GetVehicle)
 			r.Get("/vehicles/{id}/history", h.GetVehicleHistory)

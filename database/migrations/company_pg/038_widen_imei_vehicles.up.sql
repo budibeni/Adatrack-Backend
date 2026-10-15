@@ -1,0 +1,1 @@
+ALTER TABLE tm_vehicles ALTER COLUMN imei TYPE VARCHAR(50);
