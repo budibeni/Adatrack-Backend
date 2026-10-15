@@ -115,6 +115,9 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 		r.Get("/ws", func(w http.ResponseWriter, r *http.Request) {
 			ws.ServeWS(hub, w, r, cfg) 
 		})
+
+		// Mobile Tracker Ingestion endpoint (open for mobile apps with device token/ID validation)
+		r.Post("/tracking/mobile", h.HandleMobileTracking)
 		
 		// Fallback for /tracking/live, just alias to ListVehicles which already supports live_state
 		r.With(auth.AuthMiddleware(cfg)).Get("/tracking/live", h.ListVehicles)

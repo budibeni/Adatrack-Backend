@@ -1,0 +1,1 @@
+ALTER TABLE th_telemetry_logs ALTER COLUMN imei TYPE VARCHAR(50);
