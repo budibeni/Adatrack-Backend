@@ -258,19 +258,17 @@ func (h *Handler) CreateTenantDevice(w http.ResponseWriter, r *http.Request) {
 	if req.Protocol == "" {
 		req.Protocol = "SMARTPHONE"
 	}
+	protoUpper := strings.ToUpper(strings.TrimSpace(req.Protocol))
+	if protoUpper != "SMARTPHONE" && protoUpper != "HTTP_MOBILE" {
+		h.writeError(w, http.StatusBadRequest, "INVALID_PROTOCOL", "Hanya perangkat dengan protokol smartphone (SMARTPHONE / HTTP_MOBILE) yang dapat didaftarkan pada portal ini. Pendaftaran GPS fisik dilakukan melalui Admin Portal.")
+		return
+	}
+
 	if req.DeviceBrand == "" {
-		if strings.ToUpper(req.Protocol) == "SMARTPHONE" {
-			req.DeviceBrand = "Smartphone Android/iOS"
-		} else {
-			req.DeviceBrand = "Universal GPS"
-		}
+		req.DeviceBrand = "Smartphone Android/iOS"
 	}
 	if req.DeviceModel == "" {
-		if strings.ToUpper(req.Protocol) == "SMARTPHONE" {
-			req.DeviceModel = "Mobile Tracker App"
-		} else {
-			req.DeviceModel = "Standard Tracker"
-		}
+		req.DeviceModel = "Mobile Tracker App"
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -363,16 +361,33 @@ func (h *Handler) UpdateTenantDevice(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Verify device belongs to this tenant
+	// Verify device belongs to this tenant and check protocol
 	var currentAssigned *string
+	var currentProtocol string
 	err := dbclient.Pool.QueryRow(ctx,
-		"SELECT assigned_company FROM adatrack_gps_master.tm_gps_devices WHERE imei = $1",
+		"SELECT assigned_company, protocol FROM adatrack_gps_master.tm_gps_devices WHERE imei = $1",
 		imei,
-	).Scan(&currentAssigned)
+	).Scan(&currentAssigned, &currentProtocol)
 
 	if err != nil || currentAssigned == nil || !strings.EqualFold(*currentAssigned, claims.CompanyCode) {
 		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Perangkat tidak ditemukan di perusahaan Anda")
 		return
+	}
+
+	protoUpper := strings.ToUpper(strings.TrimSpace(currentProtocol))
+	if protoUpper != "SMARTPHONE" && protoUpper != "HTTP_MOBILE" {
+		h.writeError(w, http.StatusForbidden, "READ_ONLY_DEVICE", "Perangkat GPS fisik tidak dapat diedit melalui portal ini. Perangkat GPS fisik hanya dapat dilihat (read-only) dan dikelola melalui Admin Portal.")
+		return
+	}
+
+	if req.Protocol == "" {
+		req.Protocol = "SMARTPHONE"
+	} else {
+		newProtoUpper := strings.ToUpper(strings.TrimSpace(req.Protocol))
+		if newProtoUpper != "SMARTPHONE" && newProtoUpper != "HTTP_MOBILE" {
+			h.writeError(w, http.StatusBadRequest, "INVALID_PROTOCOL", "Protokol perangkat hanya dapat berupa protokol smartphone (SMARTPHONE / HTTP_MOBILE)")
+			return
+		}
 	}
 
 	status := req.Status
@@ -453,15 +468,22 @@ func (h *Handler) DeleteTenantDevice(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Verify device belongs to this tenant
+	// Verify device belongs to this tenant and check protocol
 	var currentAssigned *string
+	var currentProtocol string
 	err := dbclient.Pool.QueryRow(ctx,
-		"SELECT assigned_company FROM adatrack_gps_master.tm_gps_devices WHERE imei = $1",
+		"SELECT assigned_company, protocol FROM adatrack_gps_master.tm_gps_devices WHERE imei = $1",
 		imei,
-	).Scan(&currentAssigned)
+	).Scan(&currentAssigned, &currentProtocol)
 
 	if err != nil || currentAssigned == nil || !strings.EqualFold(*currentAssigned, claims.CompanyCode) {
 		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Perangkat tidak ditemukan di perusahaan Anda")
+		return
+	}
+
+	protoUpper := strings.ToUpper(strings.TrimSpace(currentProtocol))
+	if protoUpper != "SMARTPHONE" && protoUpper != "HTTP_MOBILE" {
+		h.writeError(w, http.StatusForbidden, "READ_ONLY_DEVICE", "Perangkat GPS fisik tidak dapat dihapus melalui portal ini. Pengelolaan hanya dapat dilakukan melalui Admin Portal.")
 		return
 	}
 
