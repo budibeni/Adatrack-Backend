@@ -860,7 +860,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var item TelemetryHistoryItem
 		if err := rows.Scan(&item.ID, &item.VehicleID, &item.IMEI, &item.Lat, &item.Lon, &item.Speed, &item.Heading, &item.Altitude, &item.ACCStatus, &item.BatteryLevel, &item.Timestamp); err == nil {
-			if addr, err := geocoder.ReverseGeocode(r.Context(), item.Lat, item.Lon); err == nil && addr != "" {
+			if addr, ok := geocoder.GetCached(item.Lat, item.Lon); ok {
 				item.Address = addr
 			}
 			history = append(history, item)

@@ -1666,8 +1666,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for i := range points {
-		addr, err := geocoder.ReverseGeocode(r.Context(), points[i].Lat, points[i].Lng)
-		if err == nil && addr != "" {
+		if addr, ok := geocoder.GetCached(points[i].Lat, points[i].Lng); ok {
 			points[i].Address = addr
 		}
 	}

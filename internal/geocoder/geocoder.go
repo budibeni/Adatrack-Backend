@@ -33,6 +33,14 @@ func SetCache(lat, lon float64, address string) {
 	cache[cacheKey] = address
 }
 
+func GetCached(lat, lon float64) (string, bool) {
+	cacheKey := fmt.Sprintf("%.4f,%.4f", lat, lon)
+	mu.RLock()
+	defer mu.RUnlock()
+	val, ok := cache[cacheKey]
+	return val, ok && val != ""
+}
+
 func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 	cacheKey := fmt.Sprintf("%.4f,%.4f", lat, lon)
 
