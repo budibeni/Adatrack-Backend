@@ -31,6 +31,7 @@ type DriverItem struct {
 	JoinDate      *string    `json:"join_date,omitempty"`
 	RFIDTag       *string    `json:"rfid_tag,omitempty"`
 	GroupID       *int64     `json:"group_id,omitempty"`
+	DeviceIMEI    *string    `json:"device_imei,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	AssignedVehicle *int64   `json:"assigned_vehicle_id,omitempty"`
@@ -67,10 +68,10 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	
 	args = append(args, limit, offset)
 	query := fmt.Sprintf(`
-		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at, ktp_number, place_of_birth, CAST(date_of_birth AS TEXT), address, placement, CAST(join_date AS TEXT)
-		FROM %s.tm_drivers
+		SELECT d.id, d.name, d.phone, d.email, d.license_number, d.license_type, CAST(d.license_expiry AS TEXT), d.rfid_tag, d.group_id, d.created_at, d.updated_at, d.ktp_number, d.place_of_birth, CAST(d.date_of_birth AS TEXT), d.address, d.placement, CAST(d.join_date AS TEXT), d.device_imei, (SELECT vehicle_id FROM %[1]s.tm_driver_vehicles v WHERE v.driver_id = d.id AND v.unassigned_at IS NULL ORDER BY v.assigned_at DESC LIMIT 1) as assigned_vehicle_id
+		FROM %[1]s.tm_drivers d
 		%s
-		ORDER BY id ASC LIMIT $%d OFFSET $%d
+		ORDER BY d.id ASC LIMIT $%d OFFSET $%d
 	`, schema, queryWhere, len(args)-1, len(args))
 
 	var total int
@@ -88,7 +89,7 @@ func (h *Handler) ListDrivers(w http.ResponseWriter, r *http.Request) {
 	var drivers []DriverItem
 	for rows.Next() {
 		var d DriverItem
-		if err := rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate); err == nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.DeviceIMEI, &d.AssignedVehicle); err == nil {
 			drivers = append(drivers, d)
 		} else {
 			logger.Log.Error("Scan error", "err", err)
@@ -126,20 +127,15 @@ func (h *Handler) GetDriver(w http.ResponseWriter, r *http.Request) {
 	router := tenant.NewReadRouter(claims.CompanyCode)
 	
 	err = router.QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT id, name, phone, email, license_number, license_type, CAST(license_expiry AS TEXT), rfid_tag, group_id, created_at, updated_at, ktp_number, place_of_birth, CAST(date_of_birth AS TEXT), address, placement, CAST(join_date AS TEXT)
-		FROM %s.tm_drivers
-		WHERE id = $1 AND deleted_at IS NULL
-	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate)
+		SELECT d.id, d.name, d.phone, d.email, d.license_number, d.license_type, CAST(d.license_expiry AS TEXT), d.rfid_tag, d.group_id, d.created_at, d.updated_at, d.ktp_number, d.place_of_birth, CAST(d.date_of_birth AS TEXT), d.address, d.placement, CAST(d.join_date AS TEXT), d.device_imei, (SELECT vehicle_id FROM %[1]s.tm_driver_vehicles v WHERE v.driver_id = d.id AND v.unassigned_at IS NULL ORDER BY v.assigned_at DESC LIMIT 1) as assigned_vehicle_id
+		FROM %[1]s.tm_drivers d
+		WHERE d.id = $1 AND d.deleted_at IS NULL
+	`, schema), driverID).Scan(&d.ID, &d.Name, &d.Phone, &d.Email, &d.LicenseNumber, &d.LicenseType, &d.LicenseExpiry, &d.RFIDTag, &d.GroupID, &d.CreatedAt, &d.UpdatedAt, &d.KTPNumber, &d.PlaceOfBirth, &d.DateOfBirth, &d.Address, &d.Placement, &d.JoinDate, &d.DeviceIMEI, &d.AssignedVehicle)
 	
 	if err != nil {
 		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", fmt.Sprintf("Driver with ID %d not found", driverID))
 		return
 	}
-	
-	// Get currently assigned vehicle
-	_ = router.QueryRow(r.Context(), fmt.Sprintf(`
-		SELECT vehicle_id FROM %s.tm_driver_vehicles WHERE driver_id = $1 AND unassigned_at IS NULL ORDER BY assigned_at DESC LIMIT 1
-	`, schema), driverID).Scan(&d.AssignedVehicle)
 
 	h.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status": "success",
@@ -170,14 +166,25 @@ func (h *Handler) CreateDriver(w http.ResponseWriter, r *http.Request) {
 
 	var newID int64
 	err := router.QueryRow(r.Context(), fmt.Sprintf(`
-		INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, license_expiry, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth, address, placement, join_date)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::DATE, $7, $8, $9, $10, NULLIF($11, '')::DATE, $12, $13, NULLIF($14, '')::DATE) RETURNING id
-	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate).Scan(&newID)
+		INSERT INTO %s.tm_drivers (name, phone, email, license_number, license_type, license_expiry, rfid_tag, group_id, ktp_number, place_of_birth, date_of_birth, address, placement, join_date, device_imei)
+		VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::DATE, $7, $8, $9, $10, NULLIF($11, '')::DATE, $12, $13, NULLIF($14, '')::DATE, $15) RETURNING id
+	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate, req.DeviceIMEI).Scan(&newID)
 	
 	if err != nil {
 		logger.Log.Error("Failed to create driver", "err", err)
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to create driver")
 		return
+	}
+
+	if req.DeviceIMEI != nil && *req.DeviceIMEI != "" {
+		// Clear device_imei from any other driver
+		_, _ = router.Exec(r.Context(), fmt.Sprintf(`
+			UPDATE %s.tm_drivers SET device_imei = NULL WHERE device_imei = $1 AND id != $2
+		`, schema), *req.DeviceIMEI, newID)
+		// Set device status assigned in master
+		_, _ = router.Exec(r.Context(), `
+			UPDATE adatrack_gps_master.tm_gps_devices SET status = 'assigned', updated_at = CURRENT_TIMESTAMP WHERE imei = $1
+		`, *req.DeviceIMEI)
 	}
 	
 	req.ID = newID
@@ -217,10 +224,16 @@ func (h *Handler) UpdateDriver(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 	router := dbclient.Pool
 
+	// Get previous device_imei
+	var prevDeviceIMEI *string
+	_ = router.QueryRow(r.Context(), fmt.Sprintf(`
+		SELECT device_imei FROM %s.tm_drivers WHERE id = $1
+	`, schema), driverID).Scan(&prevDeviceIMEI)
+
 	res, err := router.Exec(r.Context(), fmt.Sprintf(`
-		UPDATE %s.tm_drivers SET name = $1, phone = $2, email = $3, license_number = $4, license_type = $5, license_expiry = NULLIF($6, '')::DATE, rfid_tag = $7, group_id = $8, ktp_number = $10, place_of_birth = $11, date_of_birth = NULLIF($12, '')::DATE, address = $13, placement = $14, join_date = NULLIF($15, '')::DATE, updated_at = CURRENT_TIMESTAMP
+		UPDATE %s.tm_drivers SET name = $1, phone = $2, email = $3, license_number = $4, license_type = $5, license_expiry = NULLIF($6, '')::DATE, rfid_tag = $7, group_id = $8, ktp_number = $10, place_of_birth = $11, date_of_birth = NULLIF($12, '')::DATE, address = $13, placement = $14, join_date = NULLIF($15, '')::DATE, device_imei = $16, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $9 AND deleted_at IS NULL
-	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, driverID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate)
+	`, schema), req.Name, req.Phone, req.Email, req.LicenseNumber, req.LicenseType, req.LicenseExpiry, req.RFIDTag, req.GroupID, driverID, req.KTPNumber, req.PlaceOfBirth, req.DateOfBirth, req.Address, req.Placement, req.JoinDate, req.DeviceIMEI)
 	
 	if err != nil {
 		logger.Log.Error("Failed to update driver", "err", err)
@@ -231,6 +244,28 @@ func (h *Handler) UpdateDriver(w http.ResponseWriter, r *http.Request) {
 	if res.RowsAffected() == 0 {
 		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", "Driver not found")
 		return
+	}
+
+	if req.DeviceIMEI != nil && *req.DeviceIMEI != "" {
+		// If changed from previous, clear old device status
+		if prevDeviceIMEI != nil && *prevDeviceIMEI != *req.DeviceIMEI {
+			_, _ = router.Exec(r.Context(), `
+				UPDATE adatrack_gps_master.tm_gps_devices SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE imei = $1
+			`, *prevDeviceIMEI)
+		}
+		// Clear device_imei from any other driver
+		_, _ = router.Exec(r.Context(), fmt.Sprintf(`
+			UPDATE %s.tm_drivers SET device_imei = NULL WHERE device_imei = $1 AND id != $2
+		`, schema), *req.DeviceIMEI, driverID)
+		// Update new device to assigned
+		_, _ = router.Exec(r.Context(), `
+			UPDATE adatrack_gps_master.tm_gps_devices SET status = 'assigned', updated_at = CURRENT_TIMESTAMP WHERE imei = $1
+		`, *req.DeviceIMEI)
+	} else if prevDeviceIMEI != nil && *prevDeviceIMEI != "" {
+		// Device unassigned
+		_, _ = router.Exec(r.Context(), `
+			UPDATE adatrack_gps_master.tm_gps_devices SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE imei = $1
+		`, *prevDeviceIMEI)
 	}
 
 	req.ID = driverID
@@ -259,8 +294,13 @@ func (h *Handler) DeleteDriver(w http.ResponseWriter, r *http.Request) {
 	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
 	router := dbclient.Pool
 
+	var delDeviceIMEI *string
+	_ = router.QueryRow(r.Context(), fmt.Sprintf(`
+		SELECT device_imei FROM %s.tm_drivers WHERE id = $1
+	`, schema), driverID).Scan(&delDeviceIMEI)
+
 	res, err := router.Exec(r.Context(), fmt.Sprintf(`
-		UPDATE %s.tm_drivers SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1 AND deleted_at IS NULL
+		UPDATE %s.tm_drivers SET deleted_at = CURRENT_TIMESTAMP, device_imei = NULL WHERE id = $1 AND deleted_at IS NULL
 	`, schema), driverID)
 	
 	if err != nil {
@@ -272,6 +312,12 @@ func (h *Handler) DeleteDriver(w http.ResponseWriter, r *http.Request) {
 	if res.RowsAffected() == 0 {
 		h.writeError(w, http.StatusNotFound, "DRIVER_NOT_FOUND", "Driver not found")
 		return
+	}
+
+	if delDeviceIMEI != nil && *delDeviceIMEI != "" {
+		_, _ = router.Exec(r.Context(), `
+			UPDATE adatrack_gps_master.tm_gps_devices SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE imei = $1
+		`, *delDeviceIMEI)
 	}
 
 	h.auditLog(r.Context(), claims.CompanyCode, "DELETE_DRIVER", "success", claims.UserID, claims.Email, claims.Role, fmt.Sprintf("Deleted driver %d", driverID))
