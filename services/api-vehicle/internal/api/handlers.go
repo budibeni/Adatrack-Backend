@@ -15,6 +15,7 @@ import (
 	"backend/internal/auth"
 	"backend/internal/config"
 	"backend/internal/dbclient"
+	"backend/internal/geocoder"
 	"backend/internal/logger"
 	"backend/internal/tenant"
 	"backend/internal/models"
@@ -1648,6 +1649,7 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 		Speed     float64 `json:"speed"`
 		Heading   float64 `json:"heading"`
 		Timestamp string  `json:"timestamp"`
+		Address   string  `json:"address"`
 		Odometer  float64 `json:"odometer"`
 	}
 
@@ -1660,6 +1662,13 @@ func (h *Handler) GetVehicleHistory(w http.ResponseWriter, r *http.Request) {
 			points = append(points, p)
 		} else {
 			fmt.Printf("Scan error in GetVehicleHistory: %v\n", err)
+		}
+	}
+
+	for i := range points {
+		addr, err := geocoder.ReverseGeocode(r.Context(), points[i].Lat, points[i].Lng)
+		if err == nil && addr != "" {
+			points[i].Address = addr
 		}
 	}
 
