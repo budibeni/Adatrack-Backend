@@ -1790,3 +1790,34 @@ func (h *Handler) GetVehicleAlerts(w http.ResponseWriter, r *http.Request) {
 		"data": alerts,
 	})
 }
+
+// ReverseGeocode handles GET /geocoder/reverse?lat={lat}&lon={lon}
+func (h *Handler) ReverseGeocode(w http.ResponseWriter, r *http.Request) {
+	latStr := r.URL.Query().Get("lat")
+	lonStr := r.URL.Query().Get("lon")
+	if lonStr == "" {
+		lonStr = r.URL.Query().Get("lng")
+	}
+
+	lat, err1 := strconv.ParseFloat(latStr, 64)
+	lon, err2 := strconv.ParseFloat(lonStr, 64)
+	if err1 != nil || err2 != nil {
+		h.writeError(w, http.StatusBadRequest, "INVALID_PARAMS", "invalid lat or lon")
+		return
+	}
+
+	addr, err := geocoder.ReverseGeocode(r.Context(), lat, lon)
+	if err != nil || addr == "" {
+		addr = fmt.Sprintf("%.6f, %.6f", lat, lon)
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"address": addr,
+			"lat":     lat,
+			"lon":     lon,
+		},
+	})
+}
+

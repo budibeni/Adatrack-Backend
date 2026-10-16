@@ -39,8 +39,13 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 
 	h := NewHandler(cfg, store)
 
+	// Geocoder endpoint (public & fast)
+	r.Get("/api/v1/geocoder/reverse", h.ReverseGeocode)
+
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(auth.AuthMiddleware(cfg))
+
+		r.Get("/geocoder/reverse", h.ReverseGeocode)
 
 		// Vehicles
 		r.Get("/vehicles", h.ListVehicles)
