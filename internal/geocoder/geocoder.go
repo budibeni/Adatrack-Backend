@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sync"
 	"strings"
 	"time"
@@ -26,22 +27,43 @@ func ClearCache() {
 }
 
 func SetCache(lat, lon float64, address string) {
-	cacheKey := fmt.Sprintf("%.3f,%.3f", lat, lon)
+	cacheKey := fmt.Sprintf("%.4f,%.4f", lat, lon)
 	mu.Lock()
 	defer mu.Unlock()
 	cache[cacheKey] = address
 }
 
 func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
-	cacheKey := fmt.Sprintf("%.3f,%.3f", lat, lon)
+	cacheKey := fmt.Sprintf("%.4f,%.4f", lat, lon)
 
 	mu.RLock()
-	if val, ok := cache[cacheKey]; ok {
+	if val, ok := cache[cacheKey]; ok && val != "" {
 		mu.RUnlock()
 		return val, nil
 	}
 	mu.RUnlock()
 
+	// 1. Priority: Google Maps Geocoding API if GOOGLE_MAPS_API_KEY is configured
+	if apiKey := os.Getenv("GOOGLE_MAPS_API_KEY"); apiKey != "" {
+		addr, err := reverseGeocodeGoogle(lat, lon, apiKey)
+		if err == nil && addr != "" {
+			mu.Lock()
+			cache[cacheKey] = addr
+			mu.Unlock()
+			return addr, nil
+		}
+	}
+
+	// 2. High-precision Reverse Geocode via Nominatim (OpenStreetMap) with Indonesian language
+	addr, err := reverseGeocodeNominatim(lat, lon)
+	if err == nil && addr != "" {
+		mu.Lock()
+		cache[cacheKey] = addr
+		mu.Unlock()
+		return addr, nil
+	}
+
+	// 3. Fallback: Local database spatial query if offline / external network unavailable
 	if dbclient.Pool != nil {
 		query := `
 			SELECT r.name, r.level, p1.name, p2.name, p3.name
@@ -69,12 +91,12 @@ func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 			if p2 != nil { parts = append(parts, *p2) }
 			if p3 != nil { parts = append(parts, *p3) }
 			parts = append(parts, "Indonesia")
-			addr := strings.Join(parts, ", ")
+			dbAddr := strings.Join(parts, ", ")
 
 			mu.Lock()
-			cache[cacheKey] = addr
+			cache[cacheKey] = dbAddr
 			mu.Unlock()
-			return addr, nil
+			return dbAddr, nil
 		}
 
 		var cityName, provinceName string
@@ -88,35 +110,59 @@ func ReverseGeocode(ctx context.Context, lat, lon float64) (string, error) {
 		`
 		err = dbclient.Pool.QueryRow(ctx, queryFallbackAlt, lat, lon).Scan(&cityName, &provinceName)
 		if err == nil && cityName != "" {
-			var addr string
+			var dbAddr string
 			if provinceName != "" {
-				addr = fmt.Sprintf("%s, %s, Indonesia", cityName, provinceName)
+				dbAddr = fmt.Sprintf("%s, %s, Indonesia", cityName, provinceName)
 			} else {
-				addr = fmt.Sprintf("%s, Indonesia", cityName)
+				dbAddr = fmt.Sprintf("%s, Indonesia", cityName)
 			}
 			mu.Lock()
-			cache[cacheKey] = addr
+			cache[cacheKey] = dbAddr
 			mu.Unlock()
-			return addr, nil
+			return dbAddr, nil
 		}
 	}
 
-	
-	// Nominatim Fallback
-	addr, err := reverseGeocodeNominatim(lat, lon)
-	if err == nil && addr != "" {
-		mu.Lock()
-		cache[cacheKey] = addr
-		mu.Unlock()
-		return addr, nil
+	return "", fmt.Errorf("geocoding failed: no address found")
+}
+
+func reverseGeocodeGoogle(lat, lon float64, apiKey string) (string, error) {
+	url := fmt.Sprintf("https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s&language=id", lat, lon, apiKey)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("google maps returned status %d", resp.StatusCode)
 	}
 
-	return "", fmt.Errorf("geocoding failed: no offline data found")
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
 
+	var data struct {
+		Status  string `json:"status"`
+		Results []struct {
+			FormattedAddress string `json:"formatted_address"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", err
+	}
+
+	if data.Status == "OK" && len(data.Results) > 0 && data.Results[0].FormattedAddress != "" {
+		return data.Results[0].FormattedAddress, nil
+	}
+
+	return "", fmt.Errorf("google geocoding status: %s", data.Status)
 }
 
 func reverseGeocodeNominatim(lat, lon float64) (string, error) {
-	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f", lat, lon)
+	url := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f&accept-language=id", lat, lon)
 	
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
