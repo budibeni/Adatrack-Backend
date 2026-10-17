@@ -281,6 +281,13 @@ func (h *Handler) CreateTenantUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cleanRole := strings.ToUpper(strings.ReplaceAll(claims.Role, "_", ""))
+	isAdmin := cleanRole == "ADMIN" || cleanRole == "SUPERADMIN"
+	if !isAdmin {
+		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Hanya role admin yang dapat menambahkan pengguna baru")
+		return
+	}
+
 	var req TenantUserPayload
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid payload")
@@ -405,6 +412,20 @@ func (h *Handler) UpdateTenantUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cleanRole := strings.ToUpper(strings.ReplaceAll(claims.Role, "_", ""))
+	isAdmin := cleanRole == "ADMIN" || cleanRole == "SUPERADMIN"
+
+	if req.IsActive != nil {
+		if !isAdmin {
+			h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Hanya role admin yang dapat mengubah status aktif pengguna")
+			return
+		}
+		if int64(userID) == claims.UserID && !*req.IsActive {
+			h.writeError(w, http.StatusBadRequest, "CANNOT_DEACTIVATE_SELF", "Anda tidak dapat menonaktifkan akun Anda sendiri")
+			return
+		}
+	}
+
 	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -455,6 +476,13 @@ func (h *Handler) DeleteTenantUser(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
 	if !ok || claims == nil {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+
+	cleanRole := strings.ToUpper(strings.ReplaceAll(claims.Role, "_", ""))
+	isAdmin := cleanRole == "ADMIN" || cleanRole == "SUPERADMIN"
+	if !isAdmin {
+		h.writeError(w, http.StatusForbidden, "FORBIDDEN", "Hanya role admin yang dapat menghapus pengguna")
 		return
 	}
 
