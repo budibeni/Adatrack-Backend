@@ -150,7 +150,7 @@ func runMigrate(sourceURL, dbURL, targetSchema string, action string) {
 	
 	if err != nil && err != migrate.ErrNoChange {
 		if strings.Contains(err.Error(), "Dirty database") {
-			log.Printf("[%s] Dirty database detected! Resetting schema to recover...", targetSchema)
+			log.Printf("[%s] Dirty database detected! Clearing dirty flag to recover safely...", targetSchema)
 			
 			db, errOpen := sql.Open("postgres", dbURL)
 			if errOpen != nil {
@@ -158,13 +158,10 @@ func runMigrate(sourceURL, dbURL, targetSchema string, action string) {
 			}
 			defer db.Close()
 
-			_, dropErr := db.Exec(fmt.Sprintf("DROP SCHEMA %s CASCADE", targetSchema))
-			if dropErr != nil {
-				log.Fatalf("Failed to drop dirty schema %s: %v", targetSchema, dropErr)
-			}
-			_, createErr := db.Exec(fmt.Sprintf("CREATE SCHEMA %s", targetSchema))
-			if createErr != nil {
-				log.Fatalf("Failed to recreate schema %s: %v", targetSchema, createErr)
+			// Decrement version and clear dirty flag in schema_migrations so the failed migration is retried cleanly
+			_, fixErr := db.Exec(fmt.Sprintf("UPDATE %s.schema_migrations SET version = GREATEST(version - 1, 0), dirty = false", targetSchema))
+			if fixErr != nil {
+				log.Fatalf("Failed to clear dirty flag on %s: %v", targetSchema, fixErr)
 			}
 			
 			// Re-instantiate migrate and run again
@@ -180,7 +177,7 @@ func runMigrate(sourceURL, dbURL, targetSchema string, action string) {
 			}
 			
 			if err != nil && err != migrate.ErrNoChange {
-				log.Fatalf("[%s] Failed to run migrations after reset: %v", targetSchema, err)
+				log.Fatalf("[%s] Failed to run migrations after clearing dirty flag: %v", targetSchema, err)
 			}
 			log.Printf("[%s] Successfully recovered from dirty state and applied migrations!", targetSchema)
 			return
