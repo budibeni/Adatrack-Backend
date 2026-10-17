@@ -77,6 +77,12 @@ func SetupRouter(cfg *config.Config, hub *ws.Hub) *chi.Mux {
 			r.Put("/settings/roles/{id}", h.UpdateTenantRole)
 			r.Delete("/settings/roles/{id}", h.DeleteTenantRole)
 
+			// Settings / Users endpoints
+			r.Get("/settings/users", h.GetTenantUsers)
+			r.Post("/settings/users", h.CreateTenantUser)
+			r.Put("/settings/users/{id}", h.UpdateTenantUser)
+			r.Delete("/settings/users/{id}", h.DeleteTenantUser)
+
 			// User endpoints
 			r.Get("/users/me/modules", h.GetMyModules)
 

@@ -63,6 +63,7 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Handle("/api/v1/devices*", wsProxy)
 		r.Handle("/api/v1/companies*", wsProxy)
 		r.Handle("/api/v1/users*", wsProxy)
+		r.Handle("/api/v1/settings*", wsProxy)
 		r.Handle("/api/v1/admin/*", wsProxy)
 		r.Handle("/api/v1/gps/*", wsProxy)
 	}
@@ -159,8 +160,12 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireRoleMiddleware("admin", "superadmin"))
 			
-						r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
+						r.Get("/access/system-menus", h.GetSystemMenus)
+			r.Get("/access/roles/{role}/menu", h.GetRoleMenuAccess)
 			r.Post("/access/roles/{role}/menu", h.UpdateRoleMenuAccess)
+			r.Get("/access/users/{id}/menu", h.GetUserMenuAccess)
+			r.Post("/access/users/{id}/menu", h.UpdateUserMenuAccess)
+			r.Delete("/access/users/{id}/menu", h.ResetUserMenuAccess)
 
 			// Drivers (B12)
 			r.Get("/drivers", h.ListDrivers)

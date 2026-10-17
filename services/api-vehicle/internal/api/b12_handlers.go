@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"backend/internal/dbclient"
 	"strconv"
+	"strings"
 	"time"
 
 	"backend/internal/auth"
@@ -51,23 +52,82 @@ type ShareLink struct {
 	CreatedBy int       `json:"created_by"`
 }
 
+type MenuItemAccess struct {
+	MenuID            int    `json:"menu_id"`
+	ModuleID          int    `json:"module_id"`
+	ModuleCode        string `json:"module_code"`
+	ModuleName        string `json:"module_name"`
+	MenuCode          string `json:"menu_code"`
+	MenuName          string `json:"menu_name"`
+	Path              string `json:"path"`
+	SortOrder         int    `json:"sort_order"`
+	CanView           bool   `json:"can_view"`
+	RoleCanView       bool   `json:"role_can_view,omitempty"`
+	HasCustomOverride bool   `json:"has_custom_override,omitempty"`
+}
+
+type MenuAccessUpdateRequest struct {
+	Items []MenuAccessItemUpdate `json:"items"`
+}
+
+type MenuAccessItemUpdate struct {
+	MenuID  int  `json:"menu_id"`
+	CanView bool `json:"can_view"`
+}
+
 func (h *Handler) GetAccessibleMenus(w http.ResponseWriter, r *http.Request) {
 	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
 	if !ok || claims == nil {
 		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
 		return
 	}
-	schema := fmt.Sprintf("adatrack_gps_%s", claims.CompanyCode)
+
+	// Super Admin always has access to all active menus
+	if strings.ToLower(claims.Role) == "super_admin" || strings.ToLower(claims.Role) == "superadmin" {
+		query := `
+			SELECT m.id, m.module_id, m.code, m.name, m.path, m.parent_id, m.sort_order, m.enabled
+			FROM adatrack_gps_master.tm_menus m
+			JOIN adatrack_gps_master.tm_modules mod ON m.module_id = mod.id
+			WHERE m.enabled = true AND mod.enabled = true
+			ORDER BY mod.sort_order ASC, m.sort_order ASC
+		`
+		rows, err := dbclient.Pool.Query(r.Context(), query)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch menus")
+			return
+		}
+		defer rows.Close()
+
+		var menus []Menu
+		for rows.Next() {
+			var m Menu
+			rows.Scan(&m.ID, &m.ModuleID, &m.Code, &m.Name, &m.Path, &m.ParentID, &m.SortOrder, &m.Enabled)
+			menus = append(menus, m)
+		}
+		h.writeJSON(w, http.StatusOK, menus)
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	// Effective access resolution:
+	// 1. If tm_user_menu_access has an override, use user's can_view
+	// 2. Else if tm_role_menu_access has a configuration, use role's can_view
+	// 3. Else default to true
 	query := fmt.Sprintf(`
 		SELECT m.id, m.module_id, m.code, m.name, m.path, m.parent_id, m.sort_order, m.enabled
 		FROM adatrack_gps_master.tm_menus m
-		JOIN %s.tm_user_menu_access rma ON m.id = rma.menu_id
-		WHERE rma.user_id = $1 AND rma.can_view = true AND rma.enabled = true AND m.enabled = true
-		ORDER BY m.sort_order
-	`, schema)
-	rows, err := tenant.NewReadRouter(claims.CompanyCode).Query(r.Context(), query, claims.UserID)
+		JOIN adatrack_gps_master.tm_modules mod ON m.module_id = mod.id
+		LEFT JOIN %s.tm_role_menu_access rma ON m.id = rma.menu_id AND rma.role_code = $1 AND rma.deleted_at IS NULL
+		LEFT JOIN %s.tm_user_menu_access uma ON m.id = uma.menu_id AND uma.user_id = $2 AND uma.deleted_at IS NULL
+		WHERE m.enabled = true AND mod.enabled = true
+		  AND COALESCE(uma.can_view, rma.can_view, true) = true
+		ORDER BY mod.sort_order ASC, m.sort_order ASC
+	`, schema, schema)
+
+	rows, err := dbclient.Pool.Query(r.Context(), query, claims.Role, claims.UserID)
 	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch menus")
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch menus: "+err.Error())
 		return
 	}
 	defer rows.Close()
@@ -81,11 +141,256 @@ func (h *Handler) GetAccessibleMenus(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, menus)
 }
 
-func (h *Handler) GetRoleMenuAccess(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+func (h *Handler) GetSystemMenus(w http.ResponseWriter, r *http.Request) {
+	query := `
+		SELECT m.id, m.module_id, mod.code, mod.name, m.code, m.name, m.path, m.sort_order, m.enabled
+		FROM adatrack_gps_master.tm_menus m
+		JOIN adatrack_gps_master.tm_modules mod ON m.module_id = mod.id
+		WHERE m.enabled = true AND mod.enabled = true
+		ORDER BY mod.sort_order ASC, m.sort_order ASC
+	`
+	rows, err := dbclient.Pool.Query(r.Context(), query)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch system menus: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	items := make([]MenuItemAccess, 0)
+	for rows.Next() {
+		var item MenuItemAccess
+		var enabled bool
+		if err := rows.Scan(&item.MenuID, &item.ModuleID, &item.ModuleCode, &item.ModuleName, &item.MenuCode, &item.MenuName, &item.Path, &item.SortOrder, &enabled); err == nil {
+			item.CanView = enabled
+			items = append(items, item)
+		}
+	}
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": items})
 }
+
+func (h *Handler) GetRoleMenuAccess(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	roleCode := chi.URLParam(r, "role")
+	if roleCode == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Role code is required")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	query := fmt.Sprintf(`
+		SELECT m.id, m.module_id, mod.code, mod.name, m.code, m.name, m.path, m.sort_order,
+		       COALESCE(rma.can_view, true) as can_view
+		FROM adatrack_gps_master.tm_menus m
+		JOIN adatrack_gps_master.tm_modules mod ON m.module_id = mod.id
+		LEFT JOIN %s.tm_role_menu_access rma ON m.id = rma.menu_id AND rma.role_code = $1 AND rma.deleted_at IS NULL
+		WHERE m.enabled = true AND mod.enabled = true
+		ORDER BY mod.sort_order ASC, m.sort_order ASC
+	`, schema)
+
+	rows, err := dbclient.Pool.Query(r.Context(), query, roleCode)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch role menu access: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	items := make([]MenuItemAccess, 0)
+	for rows.Next() {
+		var item MenuItemAccess
+		if err := rows.Scan(&item.MenuID, &item.ModuleID, &item.ModuleCode, &item.ModuleName, &item.MenuCode, &item.MenuName, &item.Path, &item.SortOrder, &item.CanView); err == nil {
+			items = append(items, item)
+		}
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "data": items})
+}
+
 func (h *Handler) UpdateRoleMenuAccess(w http.ResponseWriter, r *http.Request) {
-	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	roleCode := chi.URLParam(r, "role")
+	if roleCode == "" {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Role code is required")
+		return
+	}
+
+	var req MenuAccessUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid payload")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	tx, err := dbclient.Pool.Begin(r.Context())
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to begin transaction: "+err.Error())
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	for _, item := range req.Items {
+		upsertQuery := fmt.Sprintf(`
+			INSERT INTO %s.tm_role_menu_access (role_code, menu_id, can_view, enabled)
+			VALUES ($1, $2, $3, true)
+			ON CONFLICT (role_code, menu_id) 
+			DO UPDATE SET can_view = EXCLUDED.can_view, enabled = true, deleted_at = NULL
+		`, schema)
+		_, err := tx.Exec(r.Context(), upsertQuery, roleCode, item.MenuID, item.CanView)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update role menu access: "+err.Error())
+			return
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to commit: "+err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "message": "Hak akses menu role berhasil disimpan"})
+}
+
+func (h *Handler) GetUserMenuAccess(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	userID, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	if userID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid user ID")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	var roleCode string
+	err := dbclient.Pool.QueryRow(r.Context(),
+		fmt.Sprintf("SELECT COALESCE(role_code, '') FROM %s.tm_user_company_access WHERE user_id = $1 AND deleted_at IS NULL", schema),
+		userID).Scan(&roleCode)
+	if err != nil {
+		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Pengguna tidak ditemukan di perusahaan ini")
+		return
+	}
+
+	query := fmt.Sprintf(`
+		SELECT m.id, m.module_id, mod.code, mod.name, m.code, m.name, m.path, m.sort_order,
+		       COALESCE(rma.can_view, true) as role_can_view,
+		       (uma.id IS NOT NULL AND uma.deleted_at IS NULL) as has_custom_override,
+		       COALESCE(uma.can_view, rma.can_view, true) as effective_can_view
+		FROM adatrack_gps_master.tm_menus m
+		JOIN adatrack_gps_master.tm_modules mod ON m.module_id = mod.id
+		LEFT JOIN %s.tm_role_menu_access rma ON m.id = rma.menu_id AND rma.role_code = $1 AND rma.deleted_at IS NULL
+		LEFT JOIN %s.tm_user_menu_access uma ON m.id = uma.menu_id AND uma.user_id = $2 AND uma.deleted_at IS NULL
+		WHERE m.enabled = true AND mod.enabled = true
+		ORDER BY mod.sort_order ASC, m.sort_order ASC
+	`, schema, schema)
+
+	rows, err := dbclient.Pool.Query(r.Context(), query, roleCode, userID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch user menu access: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	items := make([]MenuItemAccess, 0)
+	for rows.Next() {
+		var item MenuItemAccess
+		if err := rows.Scan(&item.MenuID, &item.ModuleID, &item.ModuleCode, &item.ModuleName, &item.MenuCode, &item.MenuName, &item.Path, &item.SortOrder, &item.RoleCanView, &item.HasCustomOverride, &item.CanView); err == nil {
+			items = append(items, item)
+		}
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"user_id":   userID,
+			"role_code": roleCode,
+			"menus":     items,
+		},
+	})
+}
+
+func (h *Handler) UpdateUserMenuAccess(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	userID, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	if userID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid user ID")
+		return
+	}
+
+	var req MenuAccessUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid payload")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	tx, err := dbclient.Pool.Begin(r.Context())
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to begin transaction: "+err.Error())
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	for _, item := range req.Items {
+		upsertQuery := fmt.Sprintf(`
+			INSERT INTO %s.tm_user_menu_access (user_id, menu_id, can_view, enabled)
+			VALUES ($1, $2, $3, true)
+			ON CONFLICT (user_id, menu_id)
+			DO UPDATE SET can_view = EXCLUDED.can_view, enabled = true, deleted_at = NULL
+		`, schema)
+		_, err := tx.Exec(r.Context(), upsertQuery, userID, item.MenuID, item.CanView)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to update user menu access: "+err.Error())
+			return
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to commit: "+err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "message": "Override akses menu pengguna berhasil disimpan"})
+}
+
+func (h *Handler) ResetUserMenuAccess(w http.ResponseWriter, r *http.Request) {
+	claims, ok := r.Context().Value(auth.ClaimsKey).(*auth.Claims)
+	if !ok || claims == nil {
+		h.writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
+		return
+	}
+	userID, _ := strconv.Atoi(chi.URLParam(r, "id"))
+	if userID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "Invalid user ID")
+		return
+	}
+
+	schema := fmt.Sprintf("adatrack_gps_%s", strings.ToLower(claims.CompanyCode))
+
+	query := fmt.Sprintf("DELETE FROM %s.tm_user_menu_access WHERE user_id = $1", schema)
+	_, err := dbclient.Pool.Exec(r.Context(), query, userID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to reset user menu access: "+err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]interface{}{"status": "success", "message": "Akses menu pengguna berhasil dikembalikan ke default role"})
 }
 
 func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
