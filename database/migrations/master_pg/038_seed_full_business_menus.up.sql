@@ -3,25 +3,23 @@
 -- ==============================================================================
 
 -- 1. Ensure all Modules exist in adatrack_gps_master.tm_modules
-INSERT INTO adatrack_gps_master.tm_modules (id, code, name, description, is_active, enabled) VALUES
-  (1, 'main', 'Utama', 'Modul Utama (Home & Live Tracking)', true, true),
-  (2, 'master', 'Master Data', 'Master Data Armada, Pengemudi, Rute, Geofence', true, true),
-  (3, 'access', 'Akses Kontrol', 'Akses Personel, Kartu, dan Log', true, true),
-  (4, 'asset', 'Manajemen Aset', 'Aset dan Pemeliharaan Armada', true, true),
-  (5, 'safety', 'Keselamatan', 'Pemantauan Keselamatan dan Insiden', true, true),
-  (6, 'analysis', 'Analisis & Laporan', 'Laporan dan Analitik Armada', true, true),
-  (7, 'rental', 'Rental Kendaraan', 'Manajemen Rental dan Kontrak Kendaraan', true, true),
-  (8, 'transport', 'Transportasi', 'Manajemen Transportasi dan Jadwal', true, true),
-  (9, 'logistics', 'Logistik', 'Manajemen Pengiriman dan Order Logistik', true, true),
-  (10, 'sales', 'Sales & CRM', 'Manajemen Penjualan dan Kunjungan Sales', true, true),
-  (11, 'field_service', 'Field Service', 'Work Order dan Penugasan Teknisi', true, true),
-  (12, 'patrol', 'Patroli', 'Jadwal dan Titik Checkpoint Patroli', true, true),
-  (13, 'project_site', 'Proyek & Site', 'Manajemen Proyek dan Site Lapangan', true, true),
-  (14, 'admin', 'Administrasi', 'Pengguna, Akses, dan Pengaturan Sistem', true, true)
+INSERT INTO adatrack_gps_master.tm_modules (id, code, name, app, sort_order, enabled) VALUES
+  (1, 'main', 'Utama', 'business', 1, true),
+  (2, 'master', 'Master Data', 'business', 2, true),
+  (3, 'access', 'Akses Kontrol', 'business', 3, true),
+  (4, 'asset', 'Manajemen Aset', 'business', 4, true),
+  (5, 'safety', 'Keselamatan', 'business', 5, true),
+  (6, 'analysis', 'Analisis & Laporan', 'business', 6, true),
+  (7, 'rental', 'Rental Kendaraan', 'business', 7, true),
+  (8, 'transport', 'Transportasi', 'business', 8, true),
+  (9, 'logistics', 'Logistik', 'business', 9, true),
+  (10, 'sales', 'Sales & CRM', 'business', 10, true),
+  (11, 'field_service', 'Field Service', 'business', 11, true),
+  (12, 'patrol', 'Patroli', 'business', 12, true),
+  (13, 'project_site', 'Proyek & Site', 'business', 13, true),
+  (14, 'admin', 'Administrasi', 'business', 14, true)
 ON CONFLICT (id) DO UPDATE SET 
   name = EXCLUDED.name,
-  description = EXCLUDED.description,
-  is_active = true,
   enabled = true;
 
 SELECT setval('adatrack_gps_master.tm_modules_id_seq', (SELECT MAX(id) FROM adatrack_gps_master.tm_modules));
