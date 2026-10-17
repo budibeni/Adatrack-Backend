@@ -34,9 +34,14 @@ func (h *Handler) GetTenantRoles(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	rows, err := dbclient.Pool.Query(ctx, `
-		SELECT id, code, name, description, is_system, permissions 
-		FROM adatrack_gps_master.tm_roles 
-		WHERE company_code = $1 OR company_code IS NULL
+		SELECT id, code, name, description, is_system, permissions
+		FROM (
+			SELECT DISTINCT ON (code) id, code, name, description, is_system, permissions
+			FROM adatrack_gps_master.tm_roles
+			WHERE (company_code = $1 OR company_code IS NULL)
+			  AND UPPER(code) NOT IN ('SUPER_ADMIN', 'SUPERADMIN')
+			ORDER BY code, (CASE WHEN company_code = $1 THEN 0 ELSE 1 END) ASC
+		) r
 		ORDER BY is_system DESC, name ASC
 	`, claims.CompanyCode)
 	if err != nil {

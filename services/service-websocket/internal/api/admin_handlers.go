@@ -470,7 +470,12 @@ func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	rows, err := dbclient.Pool.Query(ctx, "SELECT code, name, description FROM adatrack_gps_master.tm_roles ORDER BY id ASC")
+	rows, err := dbclient.Pool.Query(ctx, `
+		SELECT DISTINCT ON (code) code, name, description 
+		FROM adatrack_gps_master.tm_roles 
+		WHERE company_code IS NULL OR company_code = 'DEFAULT'
+		ORDER BY code, id ASC
+	`)
 	if err != nil {
 		h.writeError(w, http.StatusInternalServerError, "DB_ERROR", "Failed to fetch roles")
 		return
