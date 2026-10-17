@@ -190,9 +190,22 @@ func (h *Handler) DeleteTenantRole(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	var roleCode string
+	var isSystem bool
+	errRole := dbclient.Pool.QueryRow(ctx, `
+		SELECT code, is_system FROM adatrack_gps_master.tm_roles WHERE id = $1
+	`, roleID).Scan(&roleCode, &isSystem)
+	if errRole == nil {
+		cleanCode := strings.ToUpper(strings.ReplaceAll(roleCode, "_", ""))
+		if isSystem || cleanCode == "ADMIN" || cleanCode == "SUPERADMIN" {
+			h.writeError(w, http.StatusForbidden, "CANNOT_DELETE_ADMIN_ROLE", "Role admin atau sistem yang dibuat dari portal admin tidak dapat dihapus")
+			return
+		}
+	}
+
 	res, err := dbclient.Pool.Exec(ctx, `
 		DELETE FROM adatrack_gps_master.tm_roles 
-		WHERE id = $1 AND company_code = $2 AND is_system = false
+		WHERE id = $1 AND company_code = $2 AND is_system = false AND code NOT IN ('ADMIN', 'SUPER_ADMIN')
 	`, roleID, claims.CompanyCode)
 
 	if err != nil {
@@ -201,7 +214,7 @@ func (h *Handler) DeleteTenantRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if res.RowsAffected() == 0 {
-		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Role not found or cannot delete system role")
+		h.writeError(w, http.StatusNotFound, "NOT_FOUND", "Role not found or cannot delete system/admin role")
 		return
 	}
 
@@ -501,6 +514,20 @@ func (h *Handler) DeleteTenantUser(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+
+	// Prevent deleting user with ADMIN role
+	var targetRoleCode string
+	errRole := dbclient.Pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT role_code FROM %s.tm_user_company_access 
+		WHERE user_id = $1 AND deleted_at IS NULL
+	`, schema), userID).Scan(&targetRoleCode)
+	if errRole == nil {
+		cleanTargetRole := strings.ToUpper(strings.ReplaceAll(targetRoleCode, "_", ""))
+		if cleanTargetRole == "ADMIN" || cleanTargetRole == "SUPERADMIN" {
+			h.writeError(w, http.StatusForbidden, "CANNOT_DELETE_ADMIN", "Pengguna dengan role Admin yang dibuat dari Portal Admin tidak dapat dihapus melalui portal bisnis")
+			return
+		}
+	}
 
 	query := fmt.Sprintf(`
 		UPDATE %s.tm_user_company_access
