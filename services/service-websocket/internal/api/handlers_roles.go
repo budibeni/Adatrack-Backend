@@ -241,11 +241,15 @@ func (h *Handler) GetTenantUsers(w http.ResponseWriter, r *http.Request) {
 	query := fmt.Sprintf(`
 		SELECT u.id, u.email, COALESCE(u.full_name, '') as full_name, 
 		       COALESCE(a.role_code, '') as role_code, 
-		       COALESCE(r.name, a.role_code, 'Pengguna') as role_name,
+		       COALESCE((
+		           SELECT name FROM adatrack_gps_master.tm_roles r 
+		           WHERE r.code = a.role_code AND (r.company_code = $1 OR r.company_code IS NULL)
+		           ORDER BY (CASE WHEN r.company_code = $1 THEN 0 ELSE 1 END) ASC
+		           LIMIT 1
+		       ), a.role_code, 'Pengguna') as role_name,
 		       a.is_active, u.created_at
 		FROM %s.tm_user_company_access a
 		JOIN adatrack_gps_master.tm_users u ON u.id = a.user_id
-		LEFT JOIN adatrack_gps_master.tm_roles r ON (r.company_code = $1 OR r.company_code IS NULL) AND r.code = a.role_code
 		WHERE a.deleted_at IS NULL AND u.deleted_at IS NULL
 		ORDER BY u.created_at DESC
 	`, schema)
