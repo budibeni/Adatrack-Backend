@@ -2,6 +2,9 @@ package api
 
 import (
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -38,6 +41,31 @@ func SetupRouter(cfg *config.Config, store *storage.S3Store) *chi.Mux {
 	r.Handle("/metrics", promhttp.Handler())
 
 	h := NewHandler(cfg, store)
+
+	// Fallback reverse proxy to service-websocket for WebSocket, Auth, and other shared routes
+	wsTargetURL := os.Getenv("INTERNAL_BACKEND_URL")
+	if wsTargetURL == "" {
+		wsTargetURL = os.Getenv("SERVICE_WEBSOCKET_URL")
+	}
+	if wsTargetURL == "" {
+		wsTargetURL = "http://service-websocket:8080"
+	}
+	if wsTarget, err := url.Parse(wsTargetURL); err == nil {
+		wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
+		r.HandleFunc("/api/v1/ws", func(w http.ResponseWriter, r *http.Request) {
+			wsProxy.ServeHTTP(w, r)
+		})
+		r.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+			wsProxy.ServeHTTP(w, r)
+		})
+		r.Handle("/api/v1/auth/*", wsProxy)
+		r.Handle("/api/v1/tracking/*", wsProxy)
+		r.Handle("/api/v1/devices*", wsProxy)
+		r.Handle("/api/v1/companies*", wsProxy)
+		r.Handle("/api/v1/users*", wsProxy)
+		r.Handle("/api/v1/admin/*", wsProxy)
+		r.Handle("/api/v1/gps/*", wsProxy)
+	}
 
 	// Geocoder endpoint (public & fast)
 	r.Get("/api/v1/geocoder/reverse", h.ReverseGeocode)
